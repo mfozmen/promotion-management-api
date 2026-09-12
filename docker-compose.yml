@@ -31,6 +31,11 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # Lock waits are logged and the deadlock detector fires at 200ms, so the
+    # deadlock scenario in .claude/agents/e2e-tester.md measures a stack that
+    # can actually show one; the defaults (off, 1s) would report "no deadlock"
+    # from a run that never looked.
+    command: ['postgres', '-c', 'log_lock_waits=on', '-c', 'deadlock_timeout=200ms']
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-promo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-promo}
