@@ -1,8 +1,7 @@
-import { randomUUID } from 'node:crypto';
 import { Client, type Pool } from 'pg';
 import { afterAll, beforeAll } from 'vitest';
 import { createDb, createPool, type Db } from '../../src/shared/db/client.js';
-import { adminUrl, templateDatabase, urlFor } from './env.js';
+import { adminUrl, cloneName, templateDatabase, urlFor } from './env.js';
 
 async function onAdmin(statement: string): Promise<void> {
   const admin = new Client({ connectionString: adminUrl });
@@ -16,19 +15,19 @@ async function onAdmin(statement: string): Promise<void> {
 
 // Cloning the migrated template per file is what keeps files isolated under parallel runs.
 export function useTestDatabase(): () => Db {
-  const name = `pma_test_${randomUUID().replaceAll('-', '')}`;
+  const name = cloneName();
   let pool: Pool;
   let db: Db;
 
   beforeAll(async () => {
-    await onAdmin(`create database ${name} template ${templateDatabase}`);
+    await onAdmin(`create database "${name}" template "${templateDatabase}"`);
     pool = createPool(urlFor(name));
     db = createDb(pool);
   });
 
   afterAll(async () => {
     await pool.end();
-    await onAdmin(`drop database if exists ${name} with (force)`);
+    await onAdmin(`drop database if exists "${name}" with (force)`);
   });
 
   return () => db;
