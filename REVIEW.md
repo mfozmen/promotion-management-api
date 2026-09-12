@@ -274,8 +274,7 @@ child. Build once outside the loop.
 its own outage. Log per batch, with counts.
 
 6.8 **Queries are bounded and narrow.** Every list has a `LIMIT`; `SELECT *`
-where three columns are used is a finding on hot paths. Indexing rules are
-6.13 to 6.16.
+where three columns are used is a finding on hot paths. Indexing rules are in 6.12 to 6.15.
 
 6.9 **No deep offset paging in worker scans.** Keyset pagination
 (`where id > $last order by id limit n`) for anything that walks a category or
@@ -291,62 +290,62 @@ request handler.** That belongs to a worker; the request enqueues.
 **Database and Redis.** The write store holds 500 000 products and grows
 weekly; every query shape is reviewed as if it ran against that table.
 
-6.13 **Every new query shape arrives with its plan.** A PR that adds or changes
+6.12 **Every new query shape arrives with its plan.** A PR that adds or changes
 a query against `products`, `promotions`, `ingestion_chunks` or any table that
 grows includes the `EXPLAIN (ANALYZE, BUFFERS)` output against a seeded
 database of realistic size (the 500 000-row fixture), and the plan uses an
 index. A sequential scan on a growing table in a request handler or a worker
 loop is a finding.
 
-6.14 **The index matches the query, column order included.** A composite index
+6.13 **The index matches the query, column order included.** A composite index
 serves `WHERE a = ? AND b > ? ORDER BY b` only as `(a, b)`. An index that
 exists but cannot be used by the query it was added for is a finding. Partial
 indexes carry the same predicate the query uses (`where status = 'active'`).
 
-6.15 **Predicates are sargable.** No function on an indexed column in `WHERE`
+6.14 **Predicates are sargable.** No function on an indexed column in `WHERE`
 (`lower(sku)`, `date(created_at)`, `starts_at::date`), no leading-wildcard
 `LIKE`, no `NOT IN` on a large list, no `OR` across different columns where a
 `UNION` or a redesign would index. Compare `tstzrange(starts_at, ends_at) @>
 now()` against the GiST index that exists for it; a `starts_at <= now() and
 now() < ends_at` pair only uses a btree.
 
-6.16 **Every foreign key and every join or filter column has an index**, and
+6.15 **Every foreign key and every join or filter column has an index**, and
 every index earns its write cost. An index added "just in case" on a hot write
 table (`products` during ingestion) is a finding; say which query uses it.
 
-6.17 **Bulk writes are batched, not row-by-row, and not one giant statement.**
+6.16 **Bulk writes are batched, not row-by-row, and not one giant statement.**
 Ingestion upserts in multi-row statements of about 1 000 rows inside one
 transaction per batch. A single `INSERT` per row is a round trip per row; a
 single statement for 40 000 rows holds locks and blows the parameter limit.
 
-6.18 **Mass updates create dead tuples.** A weekly upsert of 500 000 rows leaves
+6.17 **Mass updates create dead tuples.** A weekly upsert of 500 000 rows leaves
 500 000 dead versions until autovacuum runs. A PR that touches ingestion states
 whether autovacuum defaults are adequate for the tables it writes, and a
 recompute that rewrites a row whose values did not change is a finding
 (`ON CONFLICT DO UPDATE ... WHERE excluded.x IS DISTINCT FROM products.x`).
 
-6.19 **Use `RETURNING`** instead of a write followed by a read. A
+6.18 **Use `RETURNING`** instead of a write followed by a read. A
 `SELECT` to fetch what an `INSERT` or `UPDATE` just wrote is a round trip and a
 race.
 
-6.20 **Connection and statement limits are explicit.** One pool per process,
+6.19 **Connection and statement limits are explicit.** One pool per process,
 sized below the server's `max_connections` divided by the number of processes;
 a `statement_timeout` on every pool; `idle_in_transaction_session_timeout` set.
 A worker that opens a connection per job, or a pool without a timeout, is a
 finding.
 
-6.21 **Hot-row contention is named.** A single row every writer updates
+6.20 **Hot-row contention is named.** A single row every writer updates
 (`ingestion_jobs.chunks_done`, `reconciler_state`) serialises those writers;
 state the write rate and why it is acceptable, or move the count to a query.
 
-6.22 **Redis memory and command cost are bounded.** A hash per product times
+6.21 **Redis memory and command cost are bounded.** A hash per product times
 500 000 products is the read model's footprint; a new field is multiplied by
 that. `ZRANGE` with `LIMIT` is O(log N + M); a `ZRANGE` without `LIMIT`, an
 `SMEMBERS` on a large set, or an `HGETALL` on an unbounded hash is a finding.
 Big pipelines are chunked (about 1 000 commands) so one reply does not buffer
 the whole category.
 
-6.23 **Measure what you claim.** Any change to a storefront route, the event
+6.22 **Measure what you claim.** Any change to a storefront route, the event
 handler or the chunk processor reports the `e2e-tester` numbers in the PR:
 requests per second, p50, p99, peak RSS. "Should be faster" without a number is
 a finding.
@@ -513,7 +512,7 @@ idempotent enough to re-run in a fresh database.
 11.2 A new column on a large table is nullable or has a non-volatile default; a
 new index on a hot table is created concurrently in any environment that matters.
 
-11.3 Every enum change is additive. Index rules are 6.13 to 6.16; a migration
+11.3 Every enum change is additive. Index rules are 6.12 to 6.15; a migration
 that adds a query-serving index names the query in its comment.
 
 11.4 The migration and the ORM schema describe the same thing; drift is a
