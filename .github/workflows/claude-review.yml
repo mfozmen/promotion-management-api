@@ -134,8 +134,8 @@ jobs:
             Group findings by severity (Critical / Warning / Suggestion) and
             keep every finding to at most three sentences: what breaks, what
             triggers it, what to do. Cite the rule number plus file and line
-            rather than restating the rule, and skip praise, diff summaries
-            and preamble (REVIEW.md, "Be brief"). Do not
+            rather than restating the rule. Skip praise, diff summaries and
+            preamble. REVIEW.md states the same rule under "Be brief". Do not
             nitpick style the linter already enforces. Spend turns
             economically — you have a limited budget and the summary must go
             out well before it runs dry.
