@@ -85,7 +85,7 @@ rewritten.
 
 ### 2026-09-12 — Rulebook expansion from review findings (PR #46, `docs/comment-density`)
 
-- Strategy: five review findings this session were classes of mistake rather
+- Strategy: six review findings this session were classes of mistake rather
   than one-off fixes, so each became a `REVIEW.md` rule in the same PR
   instead of a silent code fix, per the new 13b policy this PR also adds.
 - Human refinement: none needed — each rule states its own failure.
@@ -103,10 +103,20 @@ rewritten.
   - 8c (names match, commit `ef1d8e5`): `src/shared/http-error.ts` exported
     one class, `AppError`; a reader who saw the name in a stack trace grepped
     for `app-error` and found nothing.
-  - 8.3b (never echo what the client sent, commit `b30574a`): the
+  - 7.4b (a control is proved in the configuration production runs, commit
+    `936ab84`): twice in one pull request a control passed review while never
+    firing in production — Express prints a raw stack on every environment
+    except `test`, which is the one the suite runs in, and a compensating
+    `debug` log line sat under a root logger at `info` while the capture
+    logger in the test ran at `trace`.
+  - 8.3b and 8.3c (never echo what the client sent, and bound what you do
+    echo, commits `b30574a`, `936ab84`, `55b6634`): the
     don't-echo-client-input rule was applied in two places out of three — a
     404 withheld the path and body-parser messages were replaced, but zod
-    quoted the rejected key back and a test asserted it.
+    quoted the rejected key back and a test asserted it. The first draft of
+    the field-name exception then had no length bound, so a multi-kilobyte
+    key would have come straight back in the error body; 8.3c caps it at 64
+    characters and truncates rather than omits.
   - 13b (the rulebook learns, commit `2a2f479`): each of the findings above
     became a rule only because someone happened to notice; 13b makes turning
     a recurring finding into a rule (and fixing a rule that never fires) the
