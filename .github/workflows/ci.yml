@@ -14,7 +14,6 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # The integration layer runs against a real PostgreSQL, never a mock (ADR-0002).
     services:
       postgres:
         image: postgres:16-alpine
@@ -54,10 +53,6 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/promotion
 
-      # SonarCloud analyses `sonar.sources` and `sonar.tests`. A pull request that
-      # touches neither has nothing for it to read, and its result would be a copy
-      # of the previous one, so the scan is skipped. A push to `main` always scans,
-      # so the branch's own analysis never goes stale.
       - name: Is there anything for SonarCloud to analyse
         id: analysable
         env:
@@ -76,9 +71,6 @@ jobs:
             echo "No analysable file changed; skipping the SonarCloud scan."
           fi
 
-      # The token is here because uploading an analysis is a write. Reading the
-      # results back needs none on a public project, and nothing here reads them:
-      # SonarCloud posts its findings as a pull request comment (REVIEW.md 13.6).
       - name: SonarCloud Scan
         if: steps.analysable.outputs.needed == 'true'
         uses: SonarSource/sonarqube-scan-action@v6
