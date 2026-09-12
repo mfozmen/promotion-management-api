@@ -40,7 +40,7 @@ create table products (
   category               text not null,
   base_price_cents       bigint not null check (base_price_cents >= 0),
   stock_quantity         integer not null check (stock_quantity >= 0),
-  pricing_rules_version  integer,                -- set by ingestion, null for manual creates
+  ingestion_rules_version  integer,                -- set by ingestion, null for manual creates
   ingest_job_id          bigint,                 -- ingestion job that last wrote this product (identity, monotonic)
   ingest_source_offset   bigint,                 -- byte offset of that row inside its file
   created_at             timestamptz not null default now(),
@@ -199,8 +199,9 @@ create table ingestion_chunks (
 - **The seeded default is the lower effective price, in the customer's favour**
   (owner decision). Whichever candidate prices the product lower is applied, so
   a 50 % category sale also covers an accessory carrying its own 5 % promotion,
-  which is what a shopper expects a sale to mean. Ties break on the lower
-  promotion id. A higher-priority rule overrides the default by naming the
+  which is what a shopper expects a sale to mean. An equal price is decided by
+  the `<=` in `lower-price-product`, not by an id.
+  A higher-priority rule overrides the default by naming the
   other candidate — which is how a product whose own price was set deliberately
   keeps it inside a category sale. It cannot select _nothing_: the event
   vocabulary is `product | category`, so a product with no promotion of its own
@@ -229,7 +230,12 @@ create table ingestion_chunks (
 - `category` and `stockQuantity` are product facts the seeded rules do not
   read. They stay because they are already selected for the product row and are
   what an operator's first two rules would key on — a margin floor by category,
-  a stock-based adjustment. The candidates' windows were in this list and are
+  a stock-based adjustment. **They are as fresh as the product's last event, and
+  no fresher.** A product is re-resolved when it receives one; nothing watches
+  stock. There is no stock-update endpoint in section 10, so on this design a
+  rule reading `stockQuantity` re-evaluates on the next ingestion run — weekly,
+  not when stock crosses the threshold. Such a rule passes its test and lags in
+  production, which is the whole of the warning. The candidates' windows were in this list and are
   not any more: the query filters to active promotions, so they carried no
   information a rule could use, and the columns feeding them came back out of
   the query with them.
@@ -261,6 +267,16 @@ create table ingestion_chunks (
   absent candidate with `equal: null`, and `path: '$.id'` into a `null` object
   yields `undefined`, which is not `null` under `json-rules-engine`'s `equal` —
   a nested shape would make every arity-one rule silently never fire.
+- **The slot is the effective price.** "Slot non-null" in the table below means
+  `productEffectivePriceCents` / `categoryEffectivePriceCents`, never the
+  discount type or the value. A candidate that exists but cannot be priced —
+  `applyPromotion` returned `{ ok: false }` — is `null` in **all three** of its
+  keys plus a defect log carrying the `promotionId`, so it is absent to the
+  rules rather than half-present. Without this the two readings diverge on a
+  real customer: null the keys and the category discount applies with the
+  product promotion silently gone; write the base price into the price key and
+  `lower-price-category` fires instead. Both are defensible, so the spec picks
+  one.
 - **The seeded rule set is four rules, not three**, because a rule carries one
   event and "the lower price wins" is two outcomes. One rule comparing the
   candidates could only ever name one level; the other comparison would match
@@ -288,11 +304,26 @@ create table ingestion_chunks (
   would behave differently depending on whether a category sale happened to be
   running. Distinct priorities are a contract rather than a convention:
   `json-rules-engine` evaluates equal priorities concurrently and the order of
-  `results` is not guaranteed. The resolver takes the first event in engine
-  order and logs a priority collision at load, which is a seed defect.
+  `results` is not guaranteed. The resolver **selects the event whose rule
+  carries the highest `priority` in `results`** — not `results[0]`, and not the
+  first event emitted. `json-rules-engine` evaluates every rule and returns
+  every match; it does not stop at the first success. Reading positionally is
+  correct only by accident of buckets running in descending priority while
+  rules inside a bucket run concurrently, which the library does not promise
+  across versions. The first operator override above 30 makes two events fire
+  on the same product, and that is the ordinary case, not a defect. A priority
+  collision is still logged at load, which is a seed defect.
 - If no rule fires, no promotion is applied and the base price stands. A rule
   that names a candidate which is not in the fact set is a defect, logged and
   ignored rather than thrown, so a bad rule cannot take the storefront down.
+- **Silence with a candidate present is counted.** "No rule fired" and "no
+  candidate existed" are the same outcome — the base price — and only one of
+  them is intended. A counter increments when the fact set holds at least one
+  non-null candidate and no event fired. For the seeded four that condition is
+  unreachable, so it reads zero until the policy breaks; the alternative is
+  that an operator's mistyped condition drops a sale across 500 000 products
+  with nothing in the logs, and the reconciler cannot catch it because it
+  resolves through the same rules.
 - The rule the case calls "at most one active promotion per product" is
   implemented as **at most one applied promotion**. A product-level and a
   category-level promotion may both exist; the seeded rule applies whichever
@@ -351,8 +382,7 @@ Resolution query (used by the event handler and reconciler, batched by id):
 
 ```sql
 select p.*, pp.id as pp_id, pp.name as pp_name, pp.discount_type as pp_discount_type, pp.value as pp_value,
-             cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_discount_type, cp.value as cp_value,
-
+             cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_discount_type, cp.value as cp_value
 from products p
 left join promotions pp on pp.product_id = p.id and pp.status = 'active'
                        and tstzrange(pp.starts_at, pp.ends_at) @> now()
@@ -365,7 +395,7 @@ where p.id = any($1);
 
 | Key                   | Type | Content                                                                                                                                   |
 | --------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, pricingRulesVersion, updatedAt` |
+| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, ingestionRulesVersion, updatedAt` |
 | `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                        |
 | `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                           |
 | `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                      |
@@ -485,7 +515,7 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    (last row wins) and sort by `sku`** (a consistent lock order, so
    concurrent batches on overlapping SKUs cannot deadlock), run each row through the ingestion rules
    (`json-rules-engine`, rules loaded from `pricing_rules` where
-   `type = 'ingestion'` and cached for 60 s), producing `base_price_cents` and `pricing_rules_version`. Invalid
+   `type = 'ingestion'` and cached for 60 s), producing `base_price_cents` and `ingestion_rules_version`. Invalid
    rows are counted as rejected and logged with their byte offset; they never
    abort the batch.
 4. **Commit** one transaction: multi-row
