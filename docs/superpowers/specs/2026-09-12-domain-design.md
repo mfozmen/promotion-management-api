@@ -144,12 +144,15 @@ create table ingestion_chunks (
 
 ## 4. Promotion resolution and effective price
 
-- **Active** = `status = 'active' and starts_at <= now() < ends_at`, decided by
-  the **database clock** and evaluated only in SQL — the `active_promotions`
-  view, or the resolution query's `WHERE` until that view lands (REVIEW.md
-  2.7). The application never forms its own opinion and never takes an injected
-  `now`: no TypeScript copy of the predicate exists to disagree with SQL, the
-  last one having been deleted with its tests (`33422ce`). Two clocks for one predicate is how a read model publishes a
+- **Active** = `status = 'active' and tstzrange(starts_at, ends_at) @> now()`
+  — the half-open window `[starts_at, ends_at)`, spelled as the range operator
+  rather than as two comparisons so it uses the GiST index (REVIEW.md 6.14) —
+  decided by the **database clock** and evaluated only in SQL — the
+  `active_promotions` view, or the resolution query's `WHERE` until that view
+  lands (REVIEW.md 2.7). The application never forms its own opinion and never
+  takes an injected `now`: no TypeScript copy of the predicate exists to
+  disagree with SQL, the last one having been deleted with its tests
+  (`33422ce`). Two clocks for one predicate is how a read model publishes a
   discount for a promotion SQL considers expired.
 - **Applied promotion** for a product is decided by `json-rules-engine`, not by
   hard-coded precedence (owner decision, 2026-09-12). The resolver collects
@@ -664,8 +667,8 @@ src/
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
     promotion/
-      domain/    promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), effective-price.ts (effectivePrice, pure), pricing-input-error.ts (pricingInputError, the guards), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine)
-      db/        promotion.repository.ts
+      domain/    promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), effective-price.ts (effectivePrice, pure), pricing-input-error.ts (pricingInputError, the guards), candidate-selection.ts (runs the engine over already-loaded rules, pure)
+      db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
       jobs/      scheduling.ts
     pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
@@ -673,9 +676,10 @@ src/
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
   shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
-tests/
+tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
   unit/          effective-price, csv-lines, ingestion-rules, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
+  e2e/           the docs/e2e-cases scenarios against the running compose stack
 docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander
 Dockerfile           one image, command per service
 ```

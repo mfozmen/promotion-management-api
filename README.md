@@ -49,7 +49,7 @@ The compose file holds the two stores and a browser for each behind the `tools` 
 
 ```
 src/    application source code
-tests/  automated tests (unit, integration)
+tests/  automated tests (unit, integration, e2e), each layer mirroring src/
 docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
 
