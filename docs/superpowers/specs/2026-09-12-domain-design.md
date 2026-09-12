@@ -230,16 +230,18 @@ Two queues. Defaults for every job: `attempts: 3`, exponential backoff from
 1 s, `removeOnComplete: 1000`, `removeOnFail: false` (the failed set is the
 dead-letter queue, visible in Bull Board and the admin endpoints).
 
-| Queue       | Job name            | Payload                              | Producer                                            | Handler effect                                                                                                        |
-| ----------- | ------------------- | ------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `events`    | `product.upserted`  | `{ productIds: number[] }` (≤ 1 000) | `POST /api/products` (one id); ingestion batch      | recompute those products, write read model                                                                            |
-| `events`    | `promotion.changed` | `{ promotionId }`                    | create, cancel, delayed activate/expire, reconciler | product target: recompute 1; category target: keyset-scan the category by id in batches of 1 000, recompute, pipeline |
-| `events`    | `readmodel.rebuild` | `{ category?: string }`              | cold start, admin, reconciler                       | `SCAN`+`UNLINK` the scope, stream products from PostgreSQL, rebuild; full rebuild sets `readmodel:ready`              |
-| `events`    | `reconcile.run`     | `{}` (repeatable, every 5 min)       | reconciler worker schedule                          | see section 9                                                                                                         |
-| `ingestion` | `ingestion.chunk`   | `{ jobId, chunkIndex }`              | import registration, resume, time-budget hand-off   | process the chunk from its checkpoint (section 7)                                                                     |
+| Queue       | Job name            | Payload                              | Producer                                                                    | Handler effect                                                                                                        |
+| ----------- | ------------------- | ------------------------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `events`    | `product.upserted`  | `{ productIds: number[] }` (≤ 1 000) | `POST /api/products` (one id); ingestion batch                              | recompute those products, write read model                                                                            |
+| `events`    | `promotion.changed` | `{ promotionId }`                    | create (with a target), assign, cancel, delayed activate/expire, reconciler | product target: recompute 1; category target: keyset-scan the category by id in batches of 1 000, recompute, pipeline |
+| `events`    | `readmodel.rebuild` | `{ category?: string }`              | cold start, admin, reconciler                                               | `SCAN`+`UNLINK` the scope, stream products from PostgreSQL, rebuild; full rebuild sets `readmodel:ready`              |
+| `events`    | `reconcile.run`     | `{}` (repeatable, every 5 min)       | reconciler worker schedule                                                  | see section 9                                                                                                         |
+| `ingestion` | `ingestion.chunk`   | `{ jobId, chunkIndex }`              | import registration, resume, time-budget hand-off                           | process the chunk from its checkpoint (section 7)                                                                     |
 
-Scheduling of promotion boundaries: on create, enqueue `promotion.changed`
-immediately (if already started) or delayed until `startsAt` with
+Scheduling of promotion boundaries happens when a promotion first becomes
+`active`, which is either create-with-target or `assign`; a draft schedules
+nothing because it has no target. At that moment enqueue `promotion.changed`
+immediately (if `startsAt` has passed) or delayed until `startsAt` with
 `jobId = promo:{id}:activate`, and always a delayed job until `endsAt` with
 `jobId = promo:{id}:expire`. Cancel removes both by job id and enqueues an
 immediate `promotion.changed`. Delayed jobs persist in Redis across restarts;
