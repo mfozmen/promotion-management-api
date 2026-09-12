@@ -148,6 +148,8 @@ The rule "at most one active promotion per product" is implemented as **at most 
 - Cross-level coexistence is allowed rather than rejected. Rejecting it would require an application-side check that races; allowing it keeps the database the sole arbiter.
 - Percentage discounts round in the customer's disfavour by at most one cent (floor on the discount). Stated, deterministic, testable.
 - Only the ingestion rules are seeded (migration `0001`). Until the promotion rules land (#36) `pricing_rules` holds no `type = 'promotion'` row, so the resolver has nothing to fire and no promotion is applied; the schema is ready before the policy is.
+- The `discount_type` enum buys an enumerable vocabulary at the price of a migration for every new kind of discount (Decision). Acceptable for ModaCo: percentage and fixed are the case's own two, and a third is a deliberate product decision, not a configuration change.
+- "Active" is expressed twice — the `active_promotions` view (live at `now()`) and the exclusion constraints (overlapping at any instant). Two predicates instead of one is the cost of each answering the question it is actually asked (Decision); they are kept from drifting by the half-open `tstzrange` they share and by the integration test that fails if the view's bound changes (PR #50, commit `2142664`).
 - Reporting the conflicting promotion needs a second `SELECT` after SQLSTATE 23P01; acceptable on an admin path.
 
 ### Rejected alternatives
