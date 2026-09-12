@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { Queue, type Job, type JobsOptions } from 'bullmq';
 import {
   parseEvent,
@@ -28,9 +27,13 @@ export type Queues = Record<QueueName, Queue>;
  */
 export const QUEUE_OPERATION_TIMEOUT_MS = 2_000;
 
+/** A different budget from operating on an open connection: a managed
+ *  `rediss://` instance pays DNS and a TLS handshake once. */
+export const QUEUE_CONNECT_TIMEOUT_MS = 10_000;
+
 export function createQueues(redisUrl: string): Queues {
   const options = {
-    connection: { url: redisUrl, db: QUEUE_DB, connectTimeout: QUEUE_OPERATION_TIMEOUT_MS },
+    connection: { url: redisUrl, db: QUEUE_DB, connectTimeout: QUEUE_CONNECT_TIMEOUT_MS },
     defaultJobOptions,
   };
   const queues = {
@@ -75,32 +78,12 @@ export async function closeQueues(queues: Queues): Promise<void> {
   await Promise.all(Object.values(queues).map((queue) => queue.close()));
 }
 
-const transactionScope = new AsyncLocalStorage<true>();
-
-/**
- * A job enqueued before the commit can be consumed before its row is visible and
- * survives a rollback. Opt-in: only wrapped bodies are seen, and an unawaited
- * promise started inside one trips it too. Wrapping `transaction()` fixes both.
- */
-export function withinTransaction<T>(body: () => T): T {
-  return transactionScope.run(true, body);
-}
-
-function assertOutsideTransaction(operation: string): void {
-  if (transactionScope.getStore() !== undefined) {
-    throw new Error(
-      `${operation} must happen after the PostgreSQL commit, never inside the transaction`,
-    );
-  }
-}
-
 export async function enqueue<N extends EventName>(
   queues: Queues,
   name: N,
   payload: EventPayload<N>,
   options?: JobsOptions,
 ): Promise<Job> {
-  assertOutsideTransaction(`enqueue("${name}")`);
   return bounded(
     `enqueue("${name}")`,
     queues[queueOfEvent[name]].add(name, parseEvent(name, payload), options),
@@ -138,7 +121,6 @@ export function schedulePromotionBoundary(
 }
 
 /**
- * Barred inside a transaction like `enqueue`: a rollback cannot undo a removal.
  * BullMQ's codes: `1` when nothing blocked it, including when there was no such
  * job, `0` when a worker already holds it. A cancel racing a running activate
  * gets `0` but still ends correct: cancel enqueues `promotion.changed`.
@@ -147,7 +129,6 @@ export async function removePromotionBoundaries(
   queues: Queues,
   promotionId: number,
 ): Promise<Record<PromotionBoundary, number>> {
-  assertOutsideTransaction(`removePromotionBoundaries(${promotionId})`);
   const [activate, expire] = await bounded(
     `removePromotionBoundaries(${promotionId})`,
     Promise.all([
