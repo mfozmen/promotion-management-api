@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Instructions for Claude Code sessions working in this repository. Stack and scripts are in `package.json`.
+Instructions for Claude Code sessions working in this repository. For the stack and how to run it, read `package.json` (dependencies and scripts), `tsconfig.json` (compiler settings), `vitest.config.ts` (test and coverage settings) and `.github/workflows/` (CI).
 
 ## Rules
 
