@@ -1,18 +1,6 @@
 # CLAUDE.md
 
-Instructions for Claude Code sessions working in this repository.
-
-## Stack
-
-Node.js 22, Express 5, TypeScript (strict), Vitest + Supertest, ESLint + Prettier, SonarCloud, GitHub Actions.
-
-## Commands
-
-- `npm ci` — install
-- `npm run dev` — run locally
-- `npm test` — run tests
-- `npm run test:cov` — run tests with coverage
-- `npm run lint` — lint
+Instructions for Claude Code sessions working in this repository. Stack and scripts are in `package.json`.
 
 ## Rules
 
