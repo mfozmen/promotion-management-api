@@ -620,6 +620,12 @@ and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not.
 
+8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
+properties) carry no explanatory comments; the entry says what it does. At most
+one short line per variable in `.env.example`.
+
+Evidence: a 121-line compose file with 45 comment lines (PR #34).
+
 ---
 
 ## 8c. Names match
@@ -754,6 +760,13 @@ its own pull request, not in an issue to be dealt with later.
 
 12.4 Dependencies: prefer the standard library, then something already
 installed. A new dependency for a few lines of code is a finding.
+
+12.5 Startup validation checks only what would otherwise fail late and
+quietly (a URL that connects to the wrong database, two components sharing one
+Redis database, a lease shorter than its budget). One zod `parse` with a refine
+per such invariant; everything else fails on first use by itself.
+
+Evidence: a 149-line validator plus 296 test lines replaced by 37 lines (PR #34).
 
 ---
 

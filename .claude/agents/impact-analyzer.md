@@ -33,6 +33,13 @@ use `gh pr diff <n>`.
    - cache reads, writes and invalidations (key names, TTLs, what triggers a purge);
    - event emitters and listeners, database triggers, views, materialised data;
    - ingestion checkpoints and idempotency keys;
+   - configuration read through `src/shared/config.ts`: `DATABASE_URL`,
+     `REDIS_URL` with `REDIS_READ_MODEL_DB` (0, read model) and
+     `REDIS_QUEUE_DB` (1, BullMQ) kept separate, `PORT`, `UPLOAD_DIR`, and the
+     ingestion knobs `INGESTION_CHUNK_BYTES`, `INGESTION_BATCH_SIZE`,
+     `INGESTION_BUDGET_MS`, `INGESTION_LEASE_MS`, `INGESTION_MAX_FAILURES`,
+     `INGESTION_MAX_WAITING`. A new or renamed key must appear in
+     `.env.example`, and in `docker-compose.yml` when a container reads it;
    - anything that recomputes effective prices or promotion state.
      For each, state whether the change alters what they read or produce.
 4. **Data and contracts.** Compare schema or migration changes against every

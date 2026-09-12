@@ -1,6 +1,6 @@
 ---
 name: e2e-tester
-description: Black-box end-to-end tester. Boots the API locally, exercises endpoints with real HTTP, runs race-condition and load scenarios with autocannon, measures memory and latency, and reports PASS/FAIL. Use before every push and whenever a change touches an endpoint, a query, a cache, or an async job.
+description: Black-box end-to-end tester. Brings the stack up with docker compose, walks the user journeys in docs/e2e-cases/ with real HTTP, runs race-condition and load scenarios with autocannon, measures memory and latency, and reports PASS/FAIL. Runs when the owner asks for a run, not on every push.
 tools: Bash, Read, Grep, Glob
 ---
 
