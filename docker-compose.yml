@@ -17,9 +17,9 @@ name: promotion-management-api
 # through the published ports; containers on the `promotion` network use the
 # service names. .env.example carries both forms.
 #
-# Redis logical databases are separated by design (REVIEW.md 5.4): database 0
-# is the storefront read model, database 1 is the BullMQ queue. One server
-# holds both; see REDIS_READ_MODEL_DB / REDIS_QUEUE_DB in .env.example.
+# Redis logical databases are separated by design: database 0 is the storefront
+# read model, database 1 is the BullMQ queue. One server holds both; see
+# REDIS_READ_MODEL_DB / REDIS_QUEUE_DB in .env.example.
 
 services:
   postgres:
@@ -50,7 +50,7 @@ services:
     # Append-only persistence: the queue database holds jobs that must survive a
     # restart of this container. No `maxmemory` is set, so the default
     # `noeviction` policy holds: the read model has no TTL by design
-    # (REVIEW.md 5.7) and must never be silently evicted.
+    # and must never be silently evicted.
     command: ['redis-server', '--appendonly', 'yes']
     ports:
       - '${REDIS_PORT:-6379}:6379'

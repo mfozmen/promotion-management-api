@@ -2,10 +2,10 @@
  * Environment configuration, read and validated once at startup.
  *
  * `loadConfig` takes the environment as a parameter so tests inject a fixture
- * instead of mutating `process.env`. Validation is hand-written on purpose:
- * this is the first module in the repository and it must not pull in a
- * dependency for twenty lines of parsing (REVIEW.md 12.4). A later story that
- * adds zod for request bodies may fold this schema into it.
+ * instead of mutating `process.env`. Validation is hand-written so that the
+ * first module in the repository does not pull in a dependency for twenty
+ * lines of parsing; the story that adds zod for request bodies may fold this
+ * schema into it.
  */
 
 export interface IngestionConfig {
@@ -17,7 +17,6 @@ export interface IngestionConfig {
   readonly budgetMs: number;
   /** Chunk claim lease; must outlive the time budget so a healthy run keeps its claim. */
   readonly leaseMs: number;
-  /** Failures after which a chunk is marked failed. */
   readonly maxFailures: number;
   /** Waiting jobs above which new imports are rejected with 429 (backpressure). */
   readonly maxWaiting: number;
@@ -29,9 +28,8 @@ export interface Config {
   readonly uploadDir: string;
   /** Base Redis URL; the logical databases below are derived from it. */
   readonly redisUrl: string;
-  /** Logical database holding the storefront read model. */
   readonly redisReadModelDb: number;
-  /** Logical database holding the BullMQ queues, separate by design (REVIEW.md 5.4). */
+  /** Logical database holding the BullMQ queues; never the read model's. */
   readonly redisQueueDb: number;
   readonly redisReadModelUrl: string;
   readonly redisQueueUrl: string;
@@ -58,7 +56,7 @@ const parseUrl = (key: string, value: string): URL => {
     return new URL(value);
   } catch {
     // The value is not echoed: a connection string carries a password, and this
-    // message reaches a startup log (REVIEW.md 10.3).
+    // message reaches a startup log.
     throw new Error(`Invalid environment variable ${key}: expected a URL`);
   }
 };
@@ -80,7 +78,6 @@ const readInt = (env: Env, key: string, fallback: number, min: number, max: numb
 
 const MAX_SAFE_INT = Number.MAX_SAFE_INTEGER;
 
-/** Replaces the path of the base Redis URL with the logical database index. */
 const redisUrlForDb = (baseUrl: URL, db: number): string => {
   const url = new URL(baseUrl.href);
   url.pathname = `/${db}`;
