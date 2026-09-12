@@ -19,7 +19,7 @@ export function applyPromotion(basePriceCents: number, promotion: Promotion): Pr
   if (!Number.isSafeInteger(promotion.value) || promotion.value <= 0) {
     return {
       ok: false,
-      reason: `discount value ${promotion.value} is not a whole, positive number of minor units`,
+      reason: `discount value ${promotion.value} is not a whole, positive number`,
     };
   }
   if (promotion.discountType === 'percentage' && promotion.value > 10_000) {

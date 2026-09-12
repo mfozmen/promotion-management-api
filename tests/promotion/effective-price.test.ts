@@ -83,7 +83,7 @@ describe('applyPromotion', () => {
       for (const value of [2500.5, NaN, Infinity, -2500, 0, 2 ** 53]) {
         expect(applyPromotion(10_000, promotion({ discountType, value }))).toEqual({
           ok: false,
-          reason: `discount value ${value} is not a whole, positive number of minor units`,
+          reason: `discount value ${value} is not a whole, positive number`,
         });
       }
     }
