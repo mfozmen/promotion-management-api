@@ -3,7 +3,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { pino, type Logger } from 'pino';
 import { pinoHttp, type HttpLogger } from 'pino-http';
 
-/** drizzle-orm composes its message from the statement; the cause names the constraint and carries the SQLSTATE. */
 function rootCause(err: Error): Error {
   return err.cause instanceof Error ? err.cause : err;
 }
@@ -22,6 +21,7 @@ function stackFrames(err: Error): string {
 
 function safeMessage(err: Error): string {
   // One carrying a statement composed its message from it; others quote values.
+  // Ceiling: a bare pg error quotes them in forms this misses (#41).
   const { query, params } = err as Error & { query?: unknown; params?: unknown };
   if (query !== undefined || params !== undefined) {
     return 'database query failed';

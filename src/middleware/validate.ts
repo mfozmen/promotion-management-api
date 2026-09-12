@@ -14,12 +14,13 @@ const details = (error: ZodError): { path: string; message: string }[] =>
   error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message }));
 
 /**
- * Callers own nested strictness: `.strict()` reaches the top level only, so a
+ * Declared parts only: a part with no schema reaches the handler raw. Callers
+ * own nested strictness too — `.strict()` reaches the top level only, so a
  * nested object declares `z.strictObject(...)` itself or a field misspelled
  * inside it is dropped in silence (ADR-0008).
  */
 export function validate(schemas: RequestSchemas): RequestHandler {
-  // Strict once, at construction: never per request.
+  // Never per request: the hot path does no schema work.
   const strict = PARTS.flatMap((part) => {
     const schema = schemas[part];
 

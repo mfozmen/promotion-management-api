@@ -18,7 +18,7 @@ const CLIENT_ERRORS = new Map<number, { code: string; message: string }>([
 
 const OTHER_CLIENT_ERROR = { code: 'BAD_REQUEST', message: 'Request could not be processed' };
 
-/** Any error marked the http-errors way keeps its status, unless it claims a server fault. */
+/** Every error marked the http-errors way keeps its status, not an enumerated few (ADR-0008). */
 function clientError(err: unknown): ErrorMapping | undefined {
   const { status, expose } = err as { status?: unknown; expose?: unknown };
   if (expose !== true || typeof status !== 'number' || status >= 500) {

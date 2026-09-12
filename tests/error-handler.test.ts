@@ -103,7 +103,6 @@ describe('unexpected errors', () => {
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
-    // Never the value itself: an unknown thrown object may be the leak.
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
       error: { type: 'string' },
     });

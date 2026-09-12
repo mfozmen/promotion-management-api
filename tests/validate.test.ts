@@ -209,6 +209,17 @@ describe('validate: nested objects', () => {
   });
 });
 
+describe('validate: undeclared parts', () => {
+  it('leaves a part with no schema raw, so a handler must declare what it reads', async () => {
+    const app = appWith('/products/:id', validate({ params: z.object({ id: z.string() }) }));
+    const res = await request(app).post('/products/abc').send({ anything: 'unvalidated' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.params).toEqual({ id: 'abc' });
+    expect(res.body.body).toEqual({ anything: 'unvalidated' });
+  });
+});
+
 describe('validate: nothing configured', () => {
   it('is a no-op', async () => {
     const res = await request(appWith('/ping', validate({}))).get('/ping');
