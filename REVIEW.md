@@ -574,7 +574,7 @@ endpoint, job, cache or store.
 
 13.5 An architectural change without a matching `ADR.md` update is a finding.
 
-13.6 A SonarCloud finding is fixed, not ignored. An entry in
+13.7 A SonarCloud finding is fixed, not ignored. An entry in
 `sonar.issue.ignore.multicriteria` needs the repository owner's approval and a
 comment naming the rule, the scope and why the rule cannot apply there.
 Widening an existing scope so that a new finding falls inside it is a finding.

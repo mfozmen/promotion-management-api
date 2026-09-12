@@ -33,6 +33,12 @@ for (let attempt = 1; attempt <= 10; attempt += 1) {
     payload = await response.json();
     break;
   }
+  // A rejected token or an unknown project key answers the same way on every
+  // attempt, so retrying them only delays a failure that is already decided.
+  if (response.status < 500 && response.status !== 429) {
+    console.error(`::error::SonarCloud answered ${response.status}; not retrying`);
+    process.exit(1);
+  }
   console.log(`attempt ${attempt}: SonarCloud answered ${response.status}, retrying`);
   await new Promise((resolve) => setTimeout(resolve, 10_000));
 }
