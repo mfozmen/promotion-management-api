@@ -22,19 +22,22 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
-- PostgreSQL 16 for the integration tests
-- Docker, for the Redis the queue integration tests use (no mocks, REVIEW.md 7.3)
+- Docker with the Compose plugin (PostgreSQL 16 and Redis 7 run locally from `docker-compose.yml`); the integration tests use both, never a mock (REVIEW.md 7.3)
 
 ## Getting started
 
 ```bash
 npm ci
+cp .env.example .env          # placeholders only; .env is gitignored
+docker compose up -d --wait   # PostgreSQL on 5432, Redis on 6379, both healthy
 npm run dev
+```
 
-# Redis for the queue integration tests; override the port with QUEUE_TEST_REDIS_URL
-docker run -d --rm -p 6399:6379 redis:7-alpine
+Tests and checks:
+
+```bash
 npm test
-npm run test:cov # needs a PostgreSQL, see below
+npm run test:cov # needs PostgreSQL and Redis, see below
 npm run lint
 ```
 
@@ -78,6 +81,14 @@ rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the HT
 waits at most `SHUTDOWN_TIMEOUT_MS` (default 10 s, `0` exits immediately) for
 open connections before closing the queues anyway (ADR-0003).
 
+Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data` and `redis-data` volumes as well.
+
+### Configuration
+
+`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — but nothing calls it yet, so `npm run dev` currently starts without checking anything. The first module that opens a connection wires it in. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432 and 6379 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL` or `REDIS_URL` to match. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
+
+The compose file holds the two stores and a browser for each behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. Issue #19 adds the application containers (api, event-handler, ingestion-worker, reconciler), the migration step and the `monitoring` profile on top of it, so that a single `docker compose up` brings the whole stack up. Its `api` service must publish the fixed host port 3000 and answer `/api/health`: that is what `.claude/agents/e2e-tester.md` brings up and measures against, and the port is fixed so two runs cannot measure the same machine at once. Nothing publishes 3000 until then.
+
 ## Project structure
 
 ```
@@ -102,7 +113,7 @@ All endpoints are mounted under the `/api` prefix (ADR-0008).
 | ------ | ------------- | ----------------------------------------- | ---------------- |
 | GET    | `/api/health` | Liveness probe, returns `{"status":"ok"}` | none             |
 
-Further endpoints are documented as they land.
+Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`); the scaffold health route still sits at `/health` and moves with the `api` service in issue #19.
 
 ### Conventions
 

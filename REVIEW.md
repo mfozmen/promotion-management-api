@@ -512,6 +512,13 @@ a timeout. A flaky test is a finding, not a retry.
 7.6 **Isolation.** Each test file owns its data; tests pass in any order and in
 parallel. Shared mutable fixtures across files are a finding.
 
+7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
+the tree mirrors `src/` and one test file per source file. Nothing at `tests/`
+root, no per-module top-level directories.
+
+Evidence: `tests/promotion/`, `tests/unit/` and a root-level test file on three
+open branches at once (PRs #29, #39).
+
 ---
 
 ## 8. Boundaries, errors and API shape
@@ -578,7 +585,12 @@ memory on the smallest configured container.
 
 ## 8b. Comments
 
-**Severity: warning.**
+**Severity: critical. Blocking.**
+
+Raised from warning on 2026-09-13: as a warning it was skipped twice in one
+day — a 293-line module reached hand-off at 33 per cent narrative comment lines
+with every check green. The owner's rule is that a clear function carries no
+comment, so a violation blocks like any other.
 
 8b.1 A comment earns its line by saying something the code cannot: a
 non-obvious invariant, a unit that is not in the name, a reason the obvious
@@ -615,11 +627,21 @@ and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not.
 
+8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
+properties) carry no explanatory comments; the entry says what it does. At most
+one short line per variable in `.env.example`.
+
+Evidence: a 121-line compose file with 45 comment lines (PR #34).
+
 ---
 
 ## 8c. Names match
 
-**Severity: warning.**
+**Severity: critical. Blocking.**
+
+Raised from warning on 2026-09-13: one declaration per file is the owner's
+explicit rule, and as a warning it was passed on a module holding five types,
+two schemas and three functions the day after the rule was written.
 
 8c.1 A name says what the thing is. A file and its main export carry the same
 word, and when the two disagree, fix whichever is wrong rather than whichever is
@@ -745,6 +767,18 @@ its own pull request, not in an issue to be dealt with later.
 
 12.4 Dependencies: prefer the standard library, then something already
 installed. A new dependency for a few lines of code is a finding.
+
+12.5 Startup validation checks only what would otherwise fail late and
+quietly (a URL that connects to the wrong database, two components sharing one
+Redis database, a lease shorter than its budget). One zod `parse` with a refine
+per such invariant; everything else fails on first use by itself.
+
+Evidence: a 149-line validator plus 296 test lines replaced by 37 lines (PR #34).
+
+12.6 Complexity per function stays at 10 or below: ESLint `complexity`
+(cyclomatic, gates `npm run lint`) and Sonar S3776 (cognitive, on the PR). Above
+it, Extract Function or Replace Nested Conditional with Guard Clauses — never a
+disable comment.
 
 ---
 
