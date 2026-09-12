@@ -211,6 +211,29 @@ rewritten.
   update — a smaller and more findable class of defect, but not a free one, as
   the next entry records.
 
+### 2026-09-12 — Three owner rulings closed the precedence round (PR #35, `beba163`)
+
+- Strategy: the round was run as three separate questions rather than one
+  "fix the docs" pass — what the seeded precedence policy is, whether a test
+  may assert it, and what the 60 s rule cache does on a policy edit. Each was
+  put to the owner with the passages that would have to change, so the ruling
+  arrived as a decision rather than as an edit to review.
+- Human refinement: the owner ruled the lower effective price, in the
+  customer's favour, with a higher-priority rule overriding — the reverse of
+  the product-level default the branch had carried and the reverse of the
+  correction made in the previous documentation pass. REVIEW.md 7.4 was
+  amended to match and "precedence by larger discount" left ADR-0004's
+  rejected alternatives, since it is the default under another name.
+  Product-level precedence took its place there, with the reason. The owner
+  also ruled the capped-discount bullet out of scope and corrected the
+  required-check set in CONTRIBUTING and the infrastructure spec to the live
+  one (`ci` and `claude-review`; `local-gates` runs and is read at hand-off
+  but does not block; the title job is gone); README.md was brought to the
+  same set in this pass.
+- The 60 s rule cache has no invalidation. Recorded in ADR-0004 as a known gap
+  with its window, what is re-resolved and the two things that would fix it,
+  and deliberately not built.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -356,7 +379,63 @@ rewritten.
   verified against one tree is not verified against a tree that moved, and the
   check that counts is the one run last — after the final merge, not before it.
 
+### 2026-09-12 — The right method on the wrong premise (PR #35, `beba163`)
+
+- Challenge: the previous pass changed the seeded default to product-level
+  precedence, and the argument for it was a good one — REVIEW.md 7.4 and
+  section 3 of the domain spec both said product level wins, the ADR said
+  something else, and three documents against one is normally the answer.
+  Citing the rulebook and the spec against the ADR is the correct method.
+  It was applied to a premise nobody had checked: whether the rulebook was
+  current. It was not. The owner's ruling reversed it and amended REVIEW.md,
+  which is what an out-of-date rule is supposed to trigger.
+- Verification: precedence had by then been stated three ways in one section
+  (REVIEW.md 8c.6 records this as its evidence), so agreement between
+  documents was never proof — the documents had been edited from each other.
+  What settled it was the owner, not a further reading.
+- Resolution, reusable: a rule cited as authority is only authority while it
+  is current, and "three documents agree" is worth nothing when the three were
+  copied from one another. When the documents disagree about a policy, the
+  question goes to the owner as a decision, not to the documents as a vote.
+
+### 2026-09-12 — A test that would have frozen a policy stored as data (PR #35, `beba163`)
+
+- Challenge: the `architecture-critic` run objected that the rule layer earned
+  nothing — if precedence is fixed and a test pins it, `json-rules-engine`,
+  the `pricing_rules` table and the 60 s cache are ceremony around a constant,
+  and the honest move is to delete the layer and hard-code the precedence.
+  The objection was sound about the state it found; the planned suite did
+  assert the seeded production default.
+- Verification: the objection was tested by asking what a red build would mean
+  after a production policy edit. Before: a test asserts that a product-level
+  promotion beats a larger category one — so editing the seeded row turns CI
+  red, and the policy cannot change without a code change. After: the test
+  inserts the rule row it asserts against and checks the mechanism — given
+  this rule, the engine selects this candidate — and no test in the suite
+  names the seeded default. The seeded row is then editable in production,
+  which is the property the layer exists for.
+- Resolution: the layer stayed and the test changed. The principle is the
+  sharper of the two from this round — a test that pins a policy stored as
+  data is asserting configuration, not behaviour, and it removes exactly the
+  freedom the data storage was bought for. It also decides which of the two
+  the critic's objection was: not "the abstraction is unjustified" but "the
+  test was cancelling the justification". Recorded in ADR-0004, REVIEW.md 7.4
+  and section 4 of the domain spec.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
 - Key takeaway: pending.
+
+### 2026-09-12 — Running estimate after the precedence round (PR #35, `beba163`)
+
+- Share, documents only: prose is close to fully AI-drafted, but every
+  decision in it is the owner's, and three of this round's four substantive
+  changes (the precedence reversal, the no-test-on-the-default ruling, the
+  capped-discount scope cut) originated with the owner against AI-written text
+  that read as settled. The share that matters is not who typed the sentence
+  but who owns the premise, and on this branch that was the human every time.
+- Blind spot noticed: AI-written prose defends whatever it last wrote, so a
+  reversal leaves sentences whose behaviour is corrected and whose "because"
+  clause still argues the replaced policy. Two passes on this branch both
+  found that class of defect after a merge, never before one.

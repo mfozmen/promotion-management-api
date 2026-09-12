@@ -458,8 +458,10 @@ _Promotions and inheritance_
   asserts against: a test that pinned the seeded production default would be
   asserting a configuration value, and a policy that lives in a row is not a
   policy a test may freeze.
-- Cancelling the category promotion restores base price for every product
-  that had no promotion of its own, and leaves the others untouched.
+- Cancelling the category promotion restores base price for every product that
+  had no promotion of its own, and its own effective price for the rest — under
+  lowest-price precedence the category promotion may have been the one applied,
+  so "leaves the others untouched" would pin the retired policy.
 
 _Concurrency_
 

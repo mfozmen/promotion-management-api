@@ -196,8 +196,23 @@ create table ingestion_chunks (
   (owner decision). Whichever candidate prices the product lower is applied, so
   a 50 % category sale also covers an accessory carrying its own 5 % promotion,
   which is what a shopper expects a sale to mean. Ties break on the lower
-  promotion id. A higher-priority rule overrides the default for a product
-  whose price must not fall further.
+  promotion id. A higher-priority rule overrides the default by naming the
+  other candidate — which is how a product whose own price was set deliberately
+  keeps it inside a category sale. It cannot select _nothing_: the event
+  vocabulary is `product | category`, so a product with no promotion of its own
+  cannot be held out of a category sale without a `level: 'none'` the design
+  does not have. Say so rather than promise the general case.
+- **The promotion rules are cached for 60 seconds and nothing invalidates
+  them.** After a policy edit, workers hold two policies for up to a minute,
+  and thereafter only products that receive an event are re-resolved directly.
+  The reconciler's sampled sweep does heal the rest — it compares a sample per
+  category against PostgreSQL and enqueues a rebuild on a mismatch — so the
+  exposure is probabilistic over several runs rather than indefinite, which is
+  a weaker guarantee than it sounds and is why it is written down. Closing it
+  properly needs a version to compare (`pricing_rules.updated_at` is the
+  obvious carrier; there is no version column today) and a write path to hang
+  the trigger on (there is no `pricing_rules` endpoint in section 10). Neither
+  is built here.
 - **No test asserts that default.** A test pinning it would be asserting a
   configuration value, and the row would then be unchangeable without turning
   CI red — a policy that cannot change is not data. Tests insert the rule row
@@ -220,10 +235,10 @@ create table ingestion_chunks (
   ignored rather than thrown, so a bad rule cannot take the storefront down.
 - The rule the case calls "at most one active promotion per product" is
   implemented as **at most one applied promotion**. A product-level and a
-  category-level promotion may both exist; the product-level one wins even
-  when the category discount is larger, so a 50 % category sale skips an
-  accessory that carries its own 5 % promotion. That consequence is stated to
-  admins deliberately. The storefront response names the promotion that was
+  category-level promotion may both exist; the seeded rule applies whichever
+  prices the product lower, so a 50 % category sale also covers an accessory
+  carrying its own 5 % promotion, and nothing stacks. The storefront response
+  names the promotion that was
   applied, so an admin can always tell which of the two won and why.
 - Same-level overlap (two active product promotions on one product, or two on
   one category, overlapping in time) is still rejected with `409` by the
@@ -541,8 +556,7 @@ src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
-    promotion/   promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
-    promotion/   promotion.ts (the Promotion row as a type), effective-price.ts (applyPromotion, pure), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, scheduling.ts
+    promotion/   promotion.ts (the Promotion row as a type), effective-price.ts (applyPromotion, pure), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
     pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
@@ -568,6 +582,11 @@ Dockerfile           one image, command per service
   first read, a budget release leaving `failures` untouched while an
   error increments it, and a reconciler catch-up after an outage longer than
   its period (watermark sweep re-emits the missed boundary).
+- Named case: the **seeded** rule set selects a winner for a two-candidate
+  product. It asserts that a winner exists, never which one — so a seed whose
+  condition matches nothing cannot ship green, while the policy stays editable.
+  Without it, a typo in a fact name means no rule fires, the base price stands
+  and a flash sale sells at full price with every test passing.
 - Named case, required by REVIEW.md 7.4: two candidates active on one product,
   the lower effective price is applied, and a higher-priority rule overrides
   it. The test inserts both rule rows itself; none of the suite asserts the
