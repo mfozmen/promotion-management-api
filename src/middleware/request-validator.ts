@@ -21,9 +21,17 @@ const PARTS = ['body', 'query', 'params'] as const;
  * `z.record` part would put the caller's own key into `path`, reopening this.
  * A union's detail is also only as good as its top-level message today.
  */
+/** `body.items[3].sku`: the part it was found in, then the way in. */
+const formatPath = (part: string, path: PropertyKey[]): string =>
+  path.reduce<string>(
+    (acc, segment) =>
+      typeof segment === 'number' ? `${acc}[${segment}]` : `${acc}.${String(segment)}`,
+    part,
+  );
+
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
   return error.issues.map((issue) => ({
-    path: issue.path.length > 0 ? issue.path.join('.') : part,
+    path: formatPath(part, issue.path),
     message:
       issue.code === 'unrecognized_keys'
         ? `Unrecognized fields are not accepted here: ${issue.keys.length}`
@@ -56,9 +64,10 @@ export function validate(schemas: RequestSchemas): RequestHandler {
         if (keys.length > 0) {
           // `warn`, not `debug`: the default level is `info`, so a debug line
           // would be the mitigation that never fires. Names, never values, and
-          // bounded, because the count is the client's to choose.
+          // bounded in count and in length, because both are the client's to
+          // choose and this line is written on an unauthenticated path.
           (req.log ?? logger).warn(
-            { part, keys: keys.slice(0, 20), count: keys.length },
+            { part, keys: keys.slice(0, 20).map((key) => key.slice(0, 64)), count: keys.length },
             'unrecognized fields rejected',
           );
         }

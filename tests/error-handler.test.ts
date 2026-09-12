@@ -87,12 +87,17 @@ describe('HttpError mapping', () => {
     expect(res.text).not.toContain('10.0.0.5');
   });
 
-  it('falls back to the generic message for a 5xx code with no public wording', async () => {
+  it.each([
+    ['a 5xx code we wrote no public words for', 502, 'INTERNAL' as const],
+    ['a client code wearing a server status', 503, 'CONFLICT' as const],
+  ])('keeps the status but not the words for %s', async (_name, status, code) => {
+    // The status is what an operator needs — 502 is not 500 — while a client
+    // branching on CONFLICT must never see it on a read-model outage.
     const res = await request(
-      appThrowing(new HttpError(502, 'INTERNAL', 'upstream 10.0.0.5 refused', { sql: 'select 1' })),
+      appThrowing(new HttpError(status, code, 'upstream 10.0.0.5 refused', { sql: 'select 1' })),
     ).get('/boom');
 
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(status);
     expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     expect(res.text).not.toContain('10.0.0.5');
     expect(res.text).not.toContain('select 1');

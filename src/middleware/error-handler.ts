@@ -61,17 +61,17 @@ function raisedError(err: HttpError): ErrorMapping {
   if (isClientStatus(err.status)) {
     return err;
   }
-  // A code without a status that matches it is worse than no code: a client
-  // branching on `CONFLICT` would never retry a server fault.
   if (!isServerStatus(err.status)) {
     return SERVER_FAULT;
   }
+  // The status survives — `502` and `504` are what an operator needs — but the
+  // code and the words cross only where we wrote public ones for that code. A
+  // client branching on `CONFLICT` must never see it on a read-model outage.
+  const message = SERVER_MESSAGES.get(err.code);
 
-  return {
-    status: err.status,
-    code: err.code,
-    message: SERVER_MESSAGES.get(err.code) ?? SERVER_FAULT.message,
-  };
+  return message
+    ? { status: err.status, code: err.code, message }
+    : { ...SERVER_FAULT, status: err.status };
 }
 
 export const notFoundHandler: RequestHandler = (_req, _res, next) => {

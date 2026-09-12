@@ -74,11 +74,36 @@ describe('validate: body', () => {
     const captured = captureLogger('info');
     await request(appLogging('/products', captured, validate({ body: createProduct })))
       .post('/products')
+      .set('x-request-id', 'trace-validate')
       .send({ sku: 'SKU-1', basePriceCents: 1999, basePrice: 19.99 });
 
     expect(captured.lines).toContainEqual(
-      expect.objectContaining({ keys: ['basePrice'], msg: 'unrecognized fields rejected' }),
+      expect.objectContaining({
+        keys: ['basePrice'],
+        reqId: 'trace-validate',
+        msg: 'unrecognized fields rejected',
+      }),
     );
+  });
+
+  it('caps what one request can write to the log, in count and in length', async () => {
+    // Both are the client's to choose, and this line is written on an
+    // unauthenticated path.
+    const captured = captureLogger();
+    const unknown = Object.fromEntries(
+      Array.from({ length: 25 }, (_, i) => [`field${i}`.padEnd(200, 'x'), 1]),
+    );
+    await request(appLogging('/products', captured, validate({ body: createProduct })))
+      .post('/products')
+      .send({ sku: 'SKU-1', basePriceCents: 1, ...unknown });
+
+    const line = captured.lines.find((l) => l.msg === 'unrecognized fields rejected') as {
+      keys: string[];
+      count: number;
+    };
+    expect(line.keys).toHaveLength(20);
+    expect(line.count).toBe(25);
+    expect(Math.max(...line.keys.map((key) => key.length))).toBe(64);
   });
 
   it('counts every unknown field, and logs them all', async () => {
@@ -102,7 +127,7 @@ describe('validate: body', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.details).toContainEqual({
-      path: 'basePriceCents',
+      path: 'body.basePriceCents',
       message: expect.any(String),
     });
   });
@@ -118,7 +143,10 @@ describe('validate: body', () => {
     const res = await request(app).post('/products').send({ sku: '', basePriceCents: 1999 });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.details).toContainEqual({ path: 'sku', message: expect.any(String) });
+    expect(res.body.error.details).toContainEqual({
+      path: 'body.sku',
+      message: expect.any(String),
+    });
   });
 
   it('accepts a Turkish name unchanged', async () => {
@@ -149,13 +177,37 @@ describe('validate: body', () => {
       .send({ name: 'x'.repeat(5_000) });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.details).toContainEqual({ path: 'name', message: expect.any(String) });
+    expect(res.body.error.details).toContainEqual({
+      path: 'body.name',
+      message: expect.any(String),
+    });
   });
 
   it('keeps zod messages free of internal detail', async () => {
     const res = await request(app).post('/products').send({ sku: 1 });
 
     expect(res.text).not.toMatch(/at Object|node_modules|\.ts:/);
+  });
+});
+
+describe('validate: where the problem is', () => {
+  it('points into an array by index, the way the docs promise', async () => {
+    const app = appWith(
+      '/imports',
+      validate({
+        body: z.object({ items: z.array(z.strictObject({ sku: z.string() })) }),
+      }),
+    );
+
+    const res = await request(app)
+      .post('/imports')
+      .send({ items: [{ sku: 'a' }, { sku: 'b' }, { sku: 'c' }, { sku: 42 }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.details).toContainEqual({
+      path: 'body.items[3].sku',
+      message: expect.any(String),
+    });
   });
 });
 
@@ -267,7 +319,7 @@ describe('validate: nested objects', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.details).toContainEqual({
-      path: 'window',
+      path: 'body.window',
       message: 'Unrecognized fields are not accepted here: 1',
     });
     expect(res.text).not.toContain('endAt');
