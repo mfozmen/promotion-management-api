@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isUniqueViolation } from '../../src/shared/db/unique-violation.js';
+import { isUniqueViolation } from '../../../../src/shared/db/unique-violation.js';
 
 describe('isUniqueViolation', () => {
   it('recognises the driver error itself', () => {

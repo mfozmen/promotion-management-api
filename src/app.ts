@@ -1,25 +1,11 @@
 import express, { type Express } from 'express';
-import type { Logger } from 'pino';
+import type { AppDependencies } from './app-dependencies.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { productRoutes } from './modules/product/product-routes.js';
-import type { Db } from './shared/db/client.js';
-import type { Enqueue } from './shared/enqueue.js';
 import { httpLogger, logger as rootLogger } from './shared/logger.js';
 
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0008).
 const BODY_LIMIT = '100kb';
-
-/**
- * What the app needs from outside itself. `db` and `enqueue` are optional
- * because the health probe needs neither: a process that cannot reach
- * PostgreSQL still has to answer its liveness check, and the routes that do
- * need them are simply not mounted without them.
- */
-export interface AppDependencies {
-  logger?: Logger;
-  db?: Db;
-  enqueue?: Enqueue;
-}
 
 export function createApp({ logger = rootLogger, db, enqueue }: AppDependencies = {}): Express {
   const app = express();
