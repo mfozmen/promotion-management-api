@@ -1056,6 +1056,62 @@ gone, which a file of 249 identical bullets passes.
   reversal has to be swept across every ADR that cites the reversed one, because
   the contradiction lands in the ADRs the diff did not touch.
 
+### 2026-09-13 — Two branches made the same correction, and the reconciliation was to drop this one's (issue #8, PR #29, PR #35, merge `50a350b`)
+
+- Challenge: `origin/docs/promotion-rule-engine` had advanced thirteen commits
+  and had performed the same lower-price precedence flip independently, in more
+  depth, while this branch was flipping it in `8001eb8` and finishing it in
+  `b415ccc`. Two agents corrected one policy in two documents at once. The merge
+  took the base's `ADR.md`, `REVIEW.md` and design spec as they stand rather than
+  replaying this branch's wording over them, so most of the prose those two
+  commits wrote is superseded by the base's version of the same decisions. One
+  ADR-0004 trade-off the base does not cover was kept: the credited campaign
+  moves with `base_price_cents`.
+- The substantive disagreement, and the base won it on the argument: this branch
+  added a resolver-side tiebreak on the lower promotion id for an exact price
+  tie. The base rejects it, because the exclusion constraints already guarantee
+  at most one active candidate per level, so the tie is between a product
+  candidate and a category candidate and the `<=` in the seeded
+  `lower-price-product` rule decides it — a tiebreak in code would be a branch
+  no test could reach. The branch that wrote the tiebreak had the same
+  constraints in the same ADR and did not join them up.
+- Pointers for the two entries above, which record decisions that still hold but
+  quote wording the base has since rewritten. Neither entry is edited, for the
+  same reason the 13.6-to-8c.2 number kept its old form in the sentence:
+  - The `b415ccc` entry says ADR-0004's decision reads "ties breaking on the
+    lower promotion id" and that REVIEW.md 7.4 gained a tie-breaker. Both are
+    gone as of `50a350b`, deliberately, per the paragraph above. What survives
+    from that entry is the half-applied-reversal finding itself and the two
+    decisions it records.
+  - The `8001eb8` entry records correcting ADR-0004's cross-reference to the
+    design spec from section 3 to section 4. The base rewrote both paragraphs
+    and the cross-reference no longer exists on either side, so there is nothing
+    left to point at.
+  - The same entry says the promotion write store "has not landed on this
+    branch". Still true of this branch's code, but ADR-0004 now names
+    `src/shared/db/migrations/0000_write_store.sql` on PR #50 (`e48dee9`) as the
+    half that makes the retired shape unstorable, so the ADR's claim is about
+    two open pull requests rather than about `main`.
+- One finding fixed here rather than routed, because `ADR.md` is this agent's
+  file: ADR-0004's rejected alternatives lost the product-level-precedence
+  entry. The base's own appendix entry for `beba163` states that
+  "precedence by larger discount" left that list because it is the seeded
+  default under another name and that product-level precedence took its place —
+  the first half landed on the base and the second did not, so the list named no
+  alternative to the policy the ADR spends three paragraphs choosing. Restored
+  as one line with the owner's reason. The wider point is that the base's
+  appendix and the base's ADR disagreed about the base's own edit, and this
+  merge is what made the two readable side by side.
+- Lesson about parallel AI work, which is the reusable part: two agents given
+  the same corrected policy and the same documents produced two defensible and
+  incompatible texts, and the cost of reconciling them was larger than the cost
+  of either edit. Nothing was wrong with the work on this branch except that it
+  was done twice; the branch that owned the design document was the one whose
+  version should stand, and this branch should have waited for it rather than
+  correcting the same sentences in parallel. Merging a document is not merging
+  code: there is no test that fails when two correct versions of a paragraph
+  collide.
+
 ## Overall reflection
 
 - Estimated ratio: pending.

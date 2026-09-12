@@ -129,6 +129,7 @@ The rule "at most one active promotion per product" is implemented as **at most 
 
 - `product_promotions(product_id unique)` join table: not time-aware (blocks scheduling a future promotion), does not cover category promotions, and materialising category assignments means 50 000 inserts per flash sale.
 - Encoding the promotions themselves as `json-rules-engine` rules (rather than the policy that selects between them): that would duplicate the source of truth, since a promotion's type, value, window and target are already structured columns that the constraints and the scheduler operate on. The rules decide precedence; the rows stay the promotions.
+- Unconditional product-level precedence, where a product's own promotion always beats its category's: rejected by the owner (2026-09-12) in favour of the lower effective price, because it shows a customer a worse price than the category campaign advertises; a deliberately set product price is protected by a higher-priority rule instead.
 
 ---
 
