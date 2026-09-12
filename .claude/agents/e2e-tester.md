@@ -58,7 +58,7 @@ unless you created them.
 
 ### Exception until issue #19 lands (dated 2026-09-12)
 
-`ponytail:` there is no `api` service and no `Dockerfile` yet — the compose
+There is no `api` service and no `Dockerfile` yet — the compose
 file carries the database and Redis only, and both belong to issue #19. Until
 #19 lands, run the host-launch path below, which has been executed and
 verified on this machine; the load numbers it produced stay valid. **Delete
