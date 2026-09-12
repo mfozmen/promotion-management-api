@@ -149,15 +149,34 @@ create table ingestion_chunks (
   lower promotion id so the result is deterministic. The rules are data, so
   the precedence policy changes without a deploy.
 - Facts given to the engine, per candidate: `level` (`product` or `category`),
-  `discountType`, `valueBasisPointsOrCents`, `basePriceCents`,
-  `computedDiscountCents`, `stockQuantity`, `category`, `startsAt`, `endsAt`.
-  The engine chooses; it never computes money itself. The arithmetic stays in
-  the one pure function below, which the winning rule's action calls, so there
-  is still exactly one implementation of the formula (REVIEW.md rule 1.3).
-- The seeded default rule reproduces the case's requirement: a product-level
-  candidate outranks a category-level one. It is a row, not an `if`, so
-  "largest discount wins" or "category wins during a flash sale" is a rule
-  edit rather than a code change.
+  `discountType`, `value`, `basePriceCents`, `stockQuantity`, `category`,
+  `startsAt`, `endsAt`.
+- **The formula comes from the rule, not from the code.** A matching rule's
+  event is `{ type, params }` in the same vocabulary the ingestion rules use:
+  `adjustPercentBps` with `params.value` in basis points, `adjustCents` with
+  `params.value` in minor units. The rule row therefore carries both the
+  condition and the arithmetic to apply, and a promotion whose discount works
+  differently is a new rule row, not a new branch in a resolver.
+- What stays in code is the instruction set, not the policy: one strategy per
+  event type behind a single `Adjustment` interface
+  (`apply(cents: bigint, params): bigint`), registered by type name. A new kind
+  of discount is a new strategy class plus rules that emit it; no existing
+  function grows a branch. An event naming an unregistered type is a defect,
+  logged and skipped, never a crash and never a silently wrong price.
+- `applyPromotions(basePriceCents, event)` looks the strategy up by
+  `event.type` and applies it. Both layers share the registry, so the
+  percentage and fixed arithmetic has exactly one implementation
+  (REVIEW.md rule 1.3): ingestion runs several matched rules in priority order
+  to build a base price, promotion applies the single winning rule to it.
+- The seeded default rules reproduce the case's requirement: a product-level
+  candidate outranks a category-level one, and each emits the adjustment its
+  promotion describes. They are rows, not an `if`, so "largest discount wins"
+  or "category wins during a flash sale" is a rule edit rather than a code
+  change.
+- Exactly one rule applies per product. Rules are evaluated in priority order
+  and the highest-priority match wins, which is what keeps the case's "at most
+  one active promotion" true at the applied level. Letting several stack would
+  be a change to that one selection step, not to the strategies.
 - If no rule fires, no promotion is applied and the base price stands. A rule
   that names a candidate which is not in the fact set is a defect, logged and
   ignored rather than thrown, so a bad rule cannot take the storefront down.
