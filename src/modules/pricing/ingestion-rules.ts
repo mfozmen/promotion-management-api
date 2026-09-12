@@ -38,6 +38,11 @@ export type VendorRowFacts = {
 
 export type CompiledRuleSet = {
   engine: Engine;
+  /** The rules that were compiled, in evaluation order. A rule the admin
+   *  seeded but that carries the wrong `type` is filtered out silently and
+   *  the file is priced without it, so the caller logs these once per job and
+   *  a missing rule is visible in the log rather than only in the prices. */
+  ruleIds: readonly number[];
   /** Max `updated_at` of the active ingestion rules, in epoch seconds. */
   pricingRulesVersion: number;
 };
@@ -144,7 +149,11 @@ export async function compileRules(rows: readonly PricingRuleRow[]): Promise<Com
   }
 
   const newest = active.reduce((max, row) => Math.max(max, row.updatedAt.getTime()), 0);
-  return { engine, pricingRulesVersion: Math.floor(newest / 1000) };
+  return {
+    engine,
+    ruleIds: active.map((row) => row.id),
+    pricingRulesVersion: Math.floor(newest / 1000),
+  };
 }
 
 const applied = (cents: bigint, event: AdjustmentEvent): bigint =>
@@ -162,7 +171,10 @@ const applied = (cents: bigint, event: AdjustmentEvent): bigint =>
  *  with no trace in the result. Exported so the chunk processor's row schema
  *  composes these three fields rather than growing a second set of bounds. */
 export const vendorRowFacts = z.object({
-  category: z.string().min(1),
+  // Trimmed before it is matched: a padded category is the same category, and
+  // comparing it untrimmed would quietly price the row as if it were another
+  // one. A category of nothing but spaces is unusable and rejected.
+  category: z.string().trim().min(1),
   vendorPriceCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   stockQuantity: z.number().int().min(0),
 });
@@ -188,8 +200,10 @@ const runSerialised = (engine: Engine, facts: VendorRowFacts) => {
   const run = state.queue.then(() =>
     state.spentBy ? Promise.reject(state.spentBy) : engine.run(facts),
   );
-  state.queue = run.catch((error: Error) => {
-    state.spentBy = error;
+  state.queue = run.catch((error: unknown) => {
+    // Normalised, because a rejection that is not an Error would leave the
+    // engine unspent and throw out of a function that promises not to.
+    state.spentBy = error instanceof Error ? error : new Error(String(error));
   });
   return run;
 };
@@ -215,7 +229,8 @@ export async function priceRow(
   try {
     ({ results } = await runSerialised(rules.engine, facts.data));
   } catch (error) {
-    return { ok: false, fault: 'rules', rejectedBy: null, reason: (error as Error).message };
+    const reason = error instanceof Error ? error.message : String(error);
+    return { ok: false, fault: 'rules', rejectedBy: null, reason };
   }
 
   // Results arrive in rank order: compileRules gives every rule its own

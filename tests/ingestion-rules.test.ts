@@ -77,6 +77,17 @@ describe('compileRules', () => {
     ).rejects.toThrowError(/no active ingestion pricing rules/);
   });
 
+  it('names the rules it compiled, so a rule the caller expected cannot go missing quietly', async () => {
+    const compiled = await compileRules([
+      ruleRow({ id: 7, name: 'commission', priority: 10, conditions: always, event: percent(500) }),
+      ruleRow({ id: 4, name: 'markup', priority: 30, conditions: always, event: percent(1500) }),
+      ruleRow({ id: 9, name: 'retired', conditions: always, event: percent(100), active: false }),
+    ]);
+
+    // Evaluation order, so a log of these ids says what priced the file.
+    expect(compiled.ruleIds).toEqual([4, 7]);
+  });
+
   it('ignores a promotion-layer rule, which this engine cannot price', async () => {
     const compiled = await compileRules([
       ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
@@ -337,6 +348,32 @@ describe('priceRow', () => {
     expect(outcome.ok === false && outcome.reason).toMatch(/vendorPriceCents/);
   });
 
+  it('matches a padded category, rather than pricing it as if it were another one', async () => {
+    const rules = await compileRules([
+      ruleRow({
+        id: 1,
+        name: 'markup',
+        conditions: categoryIs('Electronics'),
+        event: percent(1500),
+      }),
+    ]);
+
+    await expect(
+      priceRow(rules, vendorRow({ category: '  Electronics  ' })),
+    ).resolves.toMatchObject({ basePriceCents: 92_000 });
+  });
+
+  it('rejects a category of nothing but spaces', async () => {
+    const rules = await compileRules([
+      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
+    ]);
+
+    const outcome = await priceRow(rules, vendorRow({ category: '   ' }));
+
+    expect(outcome).toMatchObject({ ok: false, fault: 'row', rejectedBy: null });
+    expect(outcome.ok === false && outcome.reason).toMatch(/category/);
+  });
+
   it('rejects an empty category rather than matching a rule against nothing', async () => {
     const rules = await compileRules([
       ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
@@ -495,6 +532,30 @@ describe('priceRow', () => {
     expect(
       outcomes.map((outcome) => (outcome.ok ? outcome.basePriceCents : outcome.fault)),
     ).toEqual(['rules', 'rules', 'rules']);
+  });
+
+  it('reports an engine that fails with a non-error without throwing itself', async () => {
+    const rules = await compileRules([
+      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
+    ]);
+    rules.engine.addFact('rude', () => Promise.reject('just a string'));
+    rules.engine.addRule({
+      name: 'rude',
+      priority: 1000,
+      conditions: { all: [{ fact: 'rude', operator: 'equal', value: 1 }] },
+      event: cents(0),
+    });
+
+    await expect(priceRow(rules, vendorRow())).resolves.toMatchObject({
+      ok: false,
+      fault: 'rules',
+      reason: 'just a string',
+    });
+    // The engine is spent by that failure too, or the next row prices short.
+    await expect(priceRow(rules, vendorRow())).resolves.toMatchObject({
+      ok: false,
+      fault: 'rules',
+    });
   });
 
   it('turns an engine failure into a rejection rather than letting it escape', async () => {
