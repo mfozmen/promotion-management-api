@@ -47,7 +47,7 @@ describe('validate: body', () => {
     expect(res.body.body).toEqual({ sku: 'SKU-1', basePriceCents: 1999 });
   });
 
-  it('rejects an unknown field without quoting it back, and logs it instead', async () => {
+  it('names the key the client got wrong, because they cannot fix it otherwise', async () => {
     const captured = captureLogger();
     const res = await request(appLogging('/products', captured, validate({ body: createProduct })))
       .post('/products')
@@ -55,13 +55,12 @@ describe('validate: body', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    // Where, not what: the path is ours and the client needs it; the key is
-    // theirs and does not come back.
+    // A key they typed is an identifier they can act on; a value they sent is
+    // not (REVIEW.md 8.3b).
     expect(res.body.error.details).toContainEqual({
       path: 'body',
-      message: 'Unrecognized fields are not accepted here: 1',
+      message: 'Unrecognized keys (1): "basePrice"',
     });
-    expect(res.text).not.toContain('basePrice');
 
     expect(captured.lines).toContainEqual(
       expect.objectContaining({ keys: ['basePrice'], msg: 'unrecognized fields rejected' }),
@@ -84,6 +83,20 @@ describe('validate: body', () => {
         msg: 'unrecognized fields rejected',
       }),
     );
+  });
+
+  it('truncates a long key rather than omitting it, in the response too', async () => {
+    const long = `vendor${'x'.repeat(200)}`;
+    const res = await request(appWith('/products', validate({ body: createProduct })))
+      .post('/products')
+      .send({ sku: 'SKU-1', basePriceCents: 1, [long]: 1 });
+
+    const details = res.body.error.details as { message: string }[];
+    // Truncated, not omitted: 64 characters, quoted.
+    expect(details).toContainEqual({
+      path: 'body',
+      message: `Unrecognized keys (1): "${long.slice(0, 64)}"`,
+    });
   });
 
   it('caps what one request can write to the log, in count and in length', async () => {
@@ -114,9 +127,8 @@ describe('validate: body', () => {
 
     expect(res.body.error.details).toContainEqual({
       path: 'body',
-      message: 'Unrecognized fields are not accepted here: 2',
+      message: 'Unrecognized keys (2): "basePrice", "vendorSecret"',
     });
-    expect(res.text).not.toContain('vendorSecret');
     expect(captured.lines).toContainEqual(
       expect.objectContaining({ keys: ['basePrice', 'vendorSecret'] }),
     );
@@ -242,7 +254,7 @@ describe('validate: mounted without the http logger', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    expect(res.text).not.toContain('oops');
+    expect(res.body.error.details[0].message).toContain('oops');
   });
 });
 
@@ -336,9 +348,8 @@ describe('validate: nested objects', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.details).toContainEqual({
       path: 'body.window',
-      message: 'Unrecognized fields are not accepted here: 1',
+      message: 'Unrecognized keys (1): "endAt"',
     });
-    expect(res.text).not.toContain('endAt');
   });
 });
 

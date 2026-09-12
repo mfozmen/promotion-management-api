@@ -1,5 +1,10 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
-import { HttpError, type ErrorCode } from '../shared/http-error.js';
+import {
+  CLIENT_ERRORS,
+  HttpError,
+  OTHER_CLIENT_ERROR,
+  type ErrorCode,
+} from '../shared/http-error.js';
 import { logger, serializeError } from '../shared/logger.js';
 
 interface ErrorMapping {
@@ -8,18 +13,6 @@ interface ErrorMapping {
   message: string;
   details?: unknown;
 }
-
-/** Messages are ours, not body-parser's: body-parser's quote the input back. */
-const CLIENT_ERRORS = new Map<number, { code: ErrorCode; message: string }>([
-  [400, { code: 'VALIDATION_ERROR', message: 'Request body could not be read' }],
-  [413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' }],
-  [415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Request body encoding is not supported' }],
-]);
-
-const OTHER_CLIENT_ERROR = {
-  code: 'BAD_REQUEST',
-  message: 'Request could not be processed',
-} as const;
 
 const MAX_DETAILS = 20;
 

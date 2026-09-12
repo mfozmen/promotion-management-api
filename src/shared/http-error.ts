@@ -54,3 +54,15 @@ export class HttpError extends Error {
     this.status = STATUS[code];
   }
 }
+
+/** Messages are ours, not body-parser's: body-parser's quote the input back. */
+export const CLIENT_ERRORS = new Map<number, { code: ErrorCode; message: string }>([
+  [400, { code: 'VALIDATION_ERROR', message: 'Request body could not be read' }],
+  [413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' }],
+  [415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Request body encoding is not supported' }],
+]);
+
+export const OTHER_CLIENT_ERROR = {
+  code: 'BAD_REQUEST',
+  message: 'Request could not be processed',
+} as const;

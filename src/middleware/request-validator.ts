@@ -23,24 +23,33 @@ const formatPath = (part: string, path: PropertyKey[]): string =>
   );
 
 /**
- * A rejection names where the problem is, never what the client sent: the path
- * is ours and they need it, the key and the value are theirs. zod quotes the
- * offending key in its message, so that issue is reworded and the key is logged
- * instead.
+ * A rejection names where the problem is and which of the caller's own keys it
+ * concerns, never a stored value and never a free-form value they sent
+ * (REVIEW.md 8.3b). The distinction is that a key they typed is an identifier
+ * they can act on — without it they cannot fix the request — while a value
+ * handed back is just their own input returned to them. Keys are truncated
+ * rather than omitted at 64 characters (8.3c) and the list is capped, because
+ * how many they send is their choice and this runs unauthenticated.
  *
  * The path is ours only while no schema has client-controlled keys: a
- * `z.record` part would put the caller's own key into `path`, reopening this.
- * A union's detail is also only as good as its top-level message today.
+ * `z.record` part would put the caller's own key into `path`, which the same
+ * rule permits but the length bound would not reach.
  */
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
   return error.issues.map((issue) => ({
     path: formatPath(part, issue.path),
     message:
       issue.code === 'unrecognized_keys'
-        ? `Unrecognized fields are not accepted here: ${issue.keys.length}`
+        ? `Unrecognized keys (${issue.keys.length}): ${shownKeys(issue.keys)}`
         : issue.message,
   }));
 }
+
+const shownKeys = (keys: readonly string[]): string =>
+  keys
+    .slice(0, MAX_LOGGED_KEYS)
+    .map((key) => JSON.stringify(key.slice(0, MAX_KEY_LENGTH)))
+    .join(', ');
 
 const rejectedKeys = (error: ZodError): string[] =>
   error.issues.flatMap((issue) => (issue.code === 'unrecognized_keys' ? issue.keys : []));
