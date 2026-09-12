@@ -99,6 +99,8 @@ services:
       - promotion
 
   redis-commander:
+    # Unpinned because the publisher ships no version tags: the repository has
+    # only `latest` and a few branch tags. Dev-only, behind the profile.
     image: rediscommander/redis-commander:latest
     profiles: [tools]
     environment:

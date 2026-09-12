@@ -6,6 +6,15 @@ const validEnv = {
   REDIS_URL: 'redis://localhost:6379',
 };
 
+const getError = (attempt: () => unknown): unknown => {
+  try {
+    attempt();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('expected a throw');
+};
+
 describe('loadConfig', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -45,11 +54,29 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ REDIS_URL: validEnv.REDIS_URL })).toThrow('DATABASE_URL');
   });
 
-  // The three failures that would otherwise surface late and quietly.
   it('throws naming DATABASE_URL when it carries no database name', () => {
     expect(() => loadConfig({ ...validEnv, DATABASE_URL: 'postgres://promo@localhost' })).toThrow(
       'DATABASE_URL',
     );
+  });
+
+  it('throws naming DATABASE_URL without echoing the value when the URL is malformed', () => {
+    // A connection string carries a password and this error reaches a startup
+    // log, so the value must not travel with it.
+    const attempt = () => loadConfig({ ...validEnv, DATABASE_URL: 'not a url s3cretpassw0rd' });
+
+    expect(attempt).toThrow('DATABASE_URL');
+    expect(JSON.stringify(getError(attempt))).not.toContain('s3cretpassw0rd');
+  });
+
+  it('accepts a lease equal to the budget', () => {
+    const config = loadConfig({
+      ...validEnv,
+      INGESTION_BUDGET_MS: '60000',
+      INGESTION_LEASE_MS: '60000',
+    });
+
+    expect(config.INGESTION_LEASE_MS).toBe(60_000);
   });
 
   it('throws naming REDIS_QUEUE_DB when the read model and the queue share a database', () => {
