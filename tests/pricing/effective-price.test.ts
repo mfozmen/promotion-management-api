@@ -67,6 +67,39 @@ describe('applyPromotion', () => {
     expect(applyPromotion(4_171_863_899_102, promotion({ value: 7049 }))).toBe(1_231_117_036_626);
   });
 
+  it('clamps a percentage above 100 % to zero rather than rejecting it', () => {
+    // The `value <= 10000` check constraint is the gate; this pins what the
+    // module does when something gets past it, at a base where the bigint
+    // discount is far outside a double's exact range.
+    expect(applyPromotion(10_000, promotion({ value: 15_000 }))).toBe(0);
+    expect(applyPromotion(Number.MAX_SAFE_INTEGER, promotion({ value: 10_001 }))).toBe(0);
+  });
+
+  it('returns the base price for a discount of zero', () => {
+    expect(applyPromotion(10_000, promotion({ value: 0 }))).toBe(10_000);
+    expect(applyPromotion(10_000, promotion({ discountType: 'fixed', value: 0 }))).toBe(10_000);
+  });
+
+  it('rejects a base price that is not a whole number of minor units', () => {
+    for (const discountType of ['percentage', 'fixed'] as const) {
+      for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, 2 ** 53]) {
+        expect(() => applyPromotion(basePriceCents, promotion({ discountType }))).toThrow(
+          /basePriceCents must be a whole number of minor units/,
+        );
+      }
+    }
+  });
+
+  it('rejects a promotion value that is not a whole number of minor units', () => {
+    for (const discountType of ['percentage', 'fixed'] as const) {
+      for (const value of [2500.5, NaN, Infinity, 2 ** 53]) {
+        expect(() => applyPromotion(10_000, promotion({ discountType, value }))).toThrow(
+          /promotion value must be a whole number of minor units/,
+        );
+      }
+    }
+  });
+
   it('never returns more than the base price', () => {
     expect(applyPromotion(10_000, promotion({ value: -2500 }))).toBe(10_000);
     expect(applyPromotion(10_000, promotion({ discountType: 'fixed', value: -500 }))).toBe(10_000);
@@ -92,6 +125,17 @@ describe('isActive', () => {
 
   it('is inactive one millisecond after endsAt', () => {
     expect(isActive(promotion({ endsAt: new Date(NOW.getTime() - MS) }), NOW)).toBe(false);
+  });
+
+  it('is never active for a window that ends before it starts', () => {
+    const inverted = promotion({
+      startsAt: new Date(NOW.getTime() + MS),
+      endsAt: new Date(NOW.getTime() - MS),
+    });
+
+    expect(isActive(inverted, NOW)).toBe(false);
+    expect(isActive(inverted, new Date(NOW.getTime() - MS))).toBe(false);
+    expect(isActive(inverted, new Date(NOW.getTime() + MS))).toBe(false);
   });
 
   it('is never active for a draft', () => {
@@ -129,6 +173,16 @@ describe('resolveApplied', () => {
     const category = promotion();
 
     expect(resolveApplied(product, category, NOW)).toBe(category);
+  });
+
+  it('applies the product-level promotion when there is no category-level one', () => {
+    const product = promotion();
+
+    expect(resolveApplied(product, null, NOW)).toBe(product);
+  });
+
+  it('applies nothing when the product-level promotion is not active and there is no category-level one', () => {
+    expect(resolveApplied(promotion({ status: 'draft' }), null, NOW)).toBeNull();
   });
 
   it('applies nothing when the category-level promotion is not active either', () => {
