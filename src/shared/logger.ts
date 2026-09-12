@@ -58,7 +58,7 @@ export const logger = pino();
 /** An id carrying a newline forges log lines; one carrying CR injects a header. */
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._-]{1,128}$/;
 
-export function correlationId(req: IncomingMessage, res: ServerResponse): string {
+function correlationId(req: IncomingMessage, res: ServerResponse): string {
   const incoming = req.headers['x-request-id'];
   const id =
     typeof incoming === 'string' && SAFE_REQUEST_ID.test(incoming) ? incoming : randomUUID();

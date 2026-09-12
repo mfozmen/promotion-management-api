@@ -6,10 +6,10 @@ export interface CapturedLogger {
 }
 
 /** A pino logger that keeps every emitted line in memory, so tests can assert on them. */
-export function captureLogger(): CapturedLogger {
+export function captureLogger(level = 'trace'): CapturedLogger {
   const lines: Record<string, unknown>[] = [];
   const logger = pino(
-    { level: 'trace' },
+    { level },
     {
       write(line: string) {
         lines.push(JSON.parse(line) as Record<string, unknown>);

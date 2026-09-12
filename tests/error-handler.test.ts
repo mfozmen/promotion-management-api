@@ -65,16 +65,37 @@ describe('HttpError mapping', () => {
     expect(res.text).not.toContain('10.0.0.5');
   });
 
-  it('keeps a designed 5xx branchable by its code, without its prose', async () => {
+  it('answers a designed 5xx with our own message, not the operator prose', async () => {
     const res = await request(
       appThrowing(
-        new HttpError(503, 'READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5'),
+        new HttpError(503, 'READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', {
+          host: '10.0.0.5',
+        }),
       ),
     ).get('/boom');
 
     expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('READ_MODEL_NOT_READY');
+    expect(res.body).toEqual({
+      error: {
+        code: 'READ_MODEL_NOT_READY',
+        // Not "Internal server error": a 503 tells a human to retry.
+        message: 'The read model is not ready yet; retry shortly',
+      },
+    });
+    // `details` is a handler's, and a 5xx handler's words never cross.
+    expect(res.body.error).not.toHaveProperty('details');
     expect(res.text).not.toContain('10.0.0.5');
+  });
+
+  it('falls back to the generic message for a 5xx code with no public wording', async () => {
+    const res = await request(
+      appThrowing(new HttpError(502, 'INTERNAL', 'upstream 10.0.0.5 refused', { sql: 'select 1' })),
+    ).get('/boom');
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    expect(res.text).not.toContain('10.0.0.5');
+    expect(res.text).not.toContain('select 1');
   });
 
   it('logs a handler-raised 5xx as a server fault, with its message', async () => {
@@ -92,11 +113,14 @@ describe('HttpError mapping', () => {
     ['below any status', 42],
     ['above what Express accepts', 1000],
     ['not an integer', 404.5],
-  ])('masks a status %s rather than throwing inside the handler', async (_name, status) => {
+    ['a typo for a 4xx', 4004],
+  ])('drops the code with the status when the status is %s', async (_name, status) => {
     const res = await request(appThrowing(new HttpError(status, 'CONFLICT', 'nope'))).get('/boom');
 
+    // A code whose status does not match it is worse than no code: a client
+    // branching on CONFLICT would never retry what is actually a server fault.
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Internal server error' } });
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
   });
 
   it('includes details when the error carries them', async () => {

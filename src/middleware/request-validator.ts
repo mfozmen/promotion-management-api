@@ -16,6 +16,10 @@ const PARTS = ['body', 'query', 'params'] as const;
  * is ours and they need it, the key and the value are theirs. zod quotes the
  * offending key in its message, so that issue is reworded and the key is logged
  * instead.
+ *
+ * The path is ours only while no schema has client-controlled keys: a
+ * `z.record` part would put the caller's own key into `path`, reopening this.
+ * A union's detail is also only as good as its top-level message today.
  */
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
   return error.issues.map((issue) => ({
@@ -50,7 +54,13 @@ export function validate(schemas: RequestSchemas): RequestHandler {
       if (!result.success) {
         const keys = rejectedKeys(result.error);
         if (keys.length > 0) {
-          (req.log ?? logger).debug({ part, keys }, 'unrecognized fields rejected');
+          // `warn`, not `debug`: the default level is `info`, so a debug line
+          // would be the mitigation that never fires. Names, never values, and
+          // bounded, because the count is the client's to choose.
+          (req.log ?? logger).warn(
+            { part, keys: keys.slice(0, 20), count: keys.length },
+            'unrecognized fields rejected',
+          );
         }
         next(
           new HttpError(

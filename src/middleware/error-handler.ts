@@ -24,6 +24,15 @@ const OTHER_CLIENT_ERROR = {
 const SERVER_FAULT = { status: 500, code: 'INTERNAL', message: 'Internal server error' } as const;
 
 /**
+ * A 5xx a handler designed, so the prose is ours by construction rather than by
+ * trust: `503` tells a client to retry, and answering it with "Internal server
+ * error" tells the human reading the body the wrong thing.
+ */
+const SERVER_MESSAGES = new Map<ErrorCode, string>([
+  ['READ_MODEL_NOT_READY', 'The read model is not ready yet; retry shortly'],
+]);
+
+/**
  * Express 5 throws a `RangeError` for a status outside [100, 999], so an
  * unbounded one turns the error handler itself into the failure.
  */
@@ -52,11 +61,16 @@ function raisedError(err: HttpError): ErrorMapping {
   if (isClientStatus(err.status)) {
     return err;
   }
+  // A code without a status that matches it is worse than no code: a client
+  // branching on `CONFLICT` would never retry a server fault.
+  if (!isServerStatus(err.status)) {
+    return SERVER_FAULT;
+  }
 
   return {
-    ...SERVER_FAULT,
-    status: isServerStatus(err.status) ? err.status : SERVER_FAULT.status,
+    status: err.status,
     code: err.code,
+    message: SERVER_MESSAGES.get(err.code) ?? SERVER_FAULT.message,
   };
 }
 

@@ -68,6 +68,19 @@ describe('validate: body', () => {
     );
   });
 
+  it('logs the keys at the level the application actually runs at', async () => {
+    // The default pino level is `info`. A `debug` line here would be a
+    // mitigation that never fires in production while passing every test.
+    const captured = captureLogger('info');
+    await request(appLogging('/products', captured, validate({ body: createProduct })))
+      .post('/products')
+      .send({ sku: 'SKU-1', basePriceCents: 1999, basePrice: 19.99 });
+
+    expect(captured.lines).toContainEqual(
+      expect.objectContaining({ keys: ['basePrice'], msg: 'unrecognized fields rejected' }),
+    );
+  });
+
   it('counts every unknown field, and logs them all', async () => {
     const captured = captureLogger();
     const res = await request(appLogging('/products', captured, validate({ body: createProduct })))
