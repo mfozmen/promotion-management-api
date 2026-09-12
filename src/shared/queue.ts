@@ -21,9 +21,58 @@ export const defaultJobOptions = {
 
 export type Queues = Record<QueueName, Queue>;
 
+/**
+ * ioredis reconnects for ever and BullMQ's `add` waits for it, so an unreachable
+ * Redis hangs the request that already committed. The race cancels nothing, so a
+ * timed-out operation may still land: a fast failure, not a known outcome.
+ */
+export const QUEUE_OPERATION_TIMEOUT_MS = 2_000;
+
 export function createQueues(redisUrl: string): Queues {
-  const options = { connection: { url: redisUrl, db: QUEUE_DB }, defaultJobOptions };
-  return { events: new Queue('events', options), ingestion: new Queue('ingestion', options) };
+  const options = {
+    connection: { url: redisUrl, db: QUEUE_DB, connectTimeout: QUEUE_OPERATION_TIMEOUT_MS },
+    defaultJobOptions,
+  };
+  const queues = {
+    events: new Queue('events', options),
+    ingestion: new Queue('ingestion', options),
+  };
+  for (const queue of Object.values(queues)) {
+    // An `error` event with no listener is an uncaught exception: a Redis blip would kill the process.
+    queue.on('error', (error: Error) => console.error(`queue ${queue.name}:`, error.message));
+  }
+  return queues;
+}
+
+const bounded = async <T>(operation: string, work: Promise<T>): Promise<T> => {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `${operation} did not confirm within ${QUEUE_OPERATION_TIMEOUT_MS} ms; it may still land`,
+              ),
+            ),
+          QUEUE_OPERATION_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    // The loser still settles, and an unhandled rejection would take the process down.
+    work.catch(() => undefined);
+  }
+};
+
+/** Closing does not drain: an in-flight operation is rejected with the connection
+ *  under it, so `SIGTERM` stops the producers first. What it buys is the socket,
+ *  which otherwise holds the event loop open until the orchestrator sends KILL. */
+export async function closeQueues(queues: Queues): Promise<void> {
+  await Promise.all(Object.values(queues).map((queue) => queue.close()));
 }
 
 const transactionScope = new AsyncLocalStorage<true>();
@@ -52,7 +101,10 @@ export async function enqueue<N extends EventName>(
   options?: JobsOptions,
 ): Promise<Job> {
   assertOutsideTransaction(`enqueue("${name}")`);
-  return queues[queueOfEvent[name]].add(name, parseEvent(name, payload), options);
+  return bounded(
+    `enqueue("${name}")`,
+    queues[queueOfEvent[name]].add(name, parseEvent(name, payload), options),
+  );
 }
 
 export type PromotionBoundary = 'activate' | 'expire';
@@ -96,9 +148,12 @@ export async function removePromotionBoundaries(
   promotionId: number,
 ): Promise<Record<PromotionBoundary, number>> {
   assertOutsideTransaction(`removePromotionBoundaries(${promotionId})`);
-  const [activate, expire] = await Promise.all([
-    queues.events.remove(promotionBoundaryJobId(promotionId, 'activate')),
-    queues.events.remove(promotionBoundaryJobId(promotionId, 'expire')),
-  ]);
+  const [activate, expire] = await bounded(
+    `removePromotionBoundaries(${promotionId})`,
+    Promise.all([
+      queues.events.remove(promotionBoundaryJobId(promotionId, 'activate')),
+      queues.events.remove(promotionBoundaryJobId(promotionId, 'expire')),
+    ]),
+  );
   return { activate, expire };
 }

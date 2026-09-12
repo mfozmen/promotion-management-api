@@ -1,8 +1,10 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import {
   QUEUE_DB,
+  QUEUE_OPERATION_TIMEOUT_MS,
+  closeQueues,
   createQueues,
   defaultJobOptions,
   enqueue,
@@ -44,7 +46,7 @@ describe('queue contracts', () => {
   });
 
   afterAll(async () => {
-    await Promise.all([queues.events.close(), queues.ingestion.close()]);
+    await closeQueues(queues);
   });
 
   it('round-trips a valid payload from producer to consumer', async () => {
@@ -237,6 +239,51 @@ describe('queue contracts', () => {
       expect(await queueDb.exists('bull:ingestion:meta')).toBe(1);
     } finally {
       await Promise.all([readModel.quit(), queueDb.quit()]);
+    }
+  });
+  it('stops accepting jobs once the queues are closed, so SIGTERM can exit', async () => {
+    const closing = createQueues(redisUrl);
+    const queued = await enqueue(closing, 'promotion.changed', { promotionId: 77 });
+
+    await closeQueues(closing);
+
+    // What landed before the close is durable; what had not is not, which is why
+    // `src/server.ts` stops the HTTP server before it closes the queues.
+    expect(await queues.events.getJob(queued.id as string)).toBeDefined();
+    await expect(enqueue(closing, 'promotion.changed', { promotionId: 78 })).rejects.toThrow(
+      /Connection is closed/,
+    );
+    expect(await queues.events.getWaitingCount()).toBe(1);
+  });
+
+  it('fails an enqueue against an unavailable queue instead of hanging the caller', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // Port 1 is never listening, and ioredis reconnects for ever, so this is the
+    // "queue unavailable" case rather than a connection refused once.
+    const unreachable = createQueues('redis://127.0.0.1:1');
+    const startedAt = Date.now();
+    try {
+      await expect(enqueue(unreachable, 'promotion.changed', { promotionId: 1 })).rejects.toThrow(
+        /enqueue\("promotion.changed"\) did not confirm within 2000 ms/,
+      );
+      expect(Date.now() - startedAt).toBeLessThan(QUEUE_OPERATION_TIMEOUT_MS * 3);
+      expect(errors).toHaveBeenCalled();
+    } finally {
+      errors.mockRestore();
+      await closeQueues(unreachable).catch(() => undefined);
+    }
+  });
+
+  it('bounds boundary removal against an unavailable queue too', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const unreachable = createQueues('redis://127.0.0.1:1');
+    try {
+      await expect(removePromotionBoundaries(unreachable, 5)).rejects.toThrow(
+        /removePromotionBoundaries\(5\) did not confirm within 2000 ms/,
+      );
+    } finally {
+      errors.mockRestore();
+      await closeQueues(unreachable).catch(() => undefined);
     }
   });
 });
