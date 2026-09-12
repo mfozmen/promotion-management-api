@@ -802,6 +802,55 @@ text` and `params jsonb`" was false in both directions — no migration exists
   contradiction it left was invisible to lint, typecheck, 100 % coverage and the
   local agent set. It took a reviewer reading two documents against each other.
 
+### 2026-09-12 — Pricing core: the policy reversal was applied in four places and missed four more (issue #8, PR #29, commit `b415ccc`)
+
+- Challenge: the flip to lower-price-wins (`8001eb8`) changed the sentences that
+  name the policy and left the sentences that describe its mechanism. ADR-0004's
+  own decision paragraph still read "the product-level promotion if active, else
+  the category-level one", contradicting the rejected-alternatives list 24 lines
+  below it in the same file. REVIEW.md 7.4's cancel case said products with their
+  own promotion are "left untouched" when a category promotion is cancelled —
+  correct under product-level precedence, wrong now, because such a product was
+  showing the category price and has to fall back to its own. 7.4's precedence
+  case named no tie-breaker although the ADR breaks ties on the lower promotion
+  id. The design spec's cancel walkthrough still ended "base prices restored",
+  and its margin-floor bullet still called the default "the largest-discount
+  rule".
+- Verification: found by `architecture-critic`, the adversarial reviewer, in the
+  second review round after the flip — not by the agent that applied it and not
+  by this one. Worth recording why the docs pass missed it: the flip was checked
+  by grepping the documents for the policy's names ("precedence", "larger
+  discount", "product level wins"), and every one of the four survivors states
+  the policy as a mechanism instead of by name, so no search term reached them.
+  A grep for the old label cannot find the old behaviour described in different
+  words.
+- Resolution (`b415ccc`): ADR-0004's decision now reads "whichever active
+  candidate prices lower, ties breaking on the lower promotion id, else none";
+  REVIEW.md 7.4 gains the tie-breaker and states the cancel fallback as a return
+  to the product's own promotion; the spec's walkthrough step 5 and its
+  margin-floor bullet follow.
+- Two decisions recorded in the same commit, both consequences of the flip
+  rather than tidying:
+  - A new ADR-0004 trade-off: the winning campaign is now a function of
+    `base_price_cents`, so a vendor feed can change which promotion is credited
+    with no admin action and no promotion mutation — a product-level fixed
+    discount and a category percentage swap places once the base price moves far
+    enough. Product-level precedence was stable under base-price changes; the
+    lower price is not, which is what makes the margin-floor exception rule load-
+    bearing rather than decorative.
+  - ADR-0004 now names the database clock as the authority for which promotions
+    are candidates (the resolution query's `tstzrange(starts_at, ends_at) @>
+now()`), with `isActive` mirroring the same half-open window in TypeScript
+    for a caller that already holds a row rather than being a second source of
+    truth. The shipped `isActive` takes `now` as an argument, so the caller
+    supplies the clock and the function cannot disagree with the query on its
+    own.
+- Lesson: a policy reversal is not a one-line edit. The flip passed its own
+  consistency check, and the document it originated in still stated the rejected
+  rule in the paragraph that matters most. The generalisable rule is to re-read
+  the changed policy's mechanism, not its label — and that two documents agreeing
+  on a name is not evidence they agree on the behaviour.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
