@@ -65,7 +65,14 @@ Agent definitions are living documents: when an endpoint, job, cache or store la
 
 ## Review process
 
-Every PR receives an advisory Claude AI review. The PR is then labelled `needs-human-check` and the repository owner is mentioned; merge happens only after the owner says so. `main` is protected: no direct pushes.
+Every PR receives an advisory Claude AI review. When all required checks pass, no review thread is left unresolved and the applicable agent labels are on the PR, it is labelled `needs-human-check` and the repository owner is mentioned in a comment summarising what changed and how it was verified. Merge happens only after the owner posts their approval. `main` is protected: no direct pushes.
+
+Definition of done for a PR hand-off:
+
+1. `ci`, `pr-title`, `claude-review`, `SonarCloud Code Analysis` and `local-gates` are green on the final commit.
+2. Every review thread is answered and resolved.
+3. `e2e-verified`, `impact-verified`, `docs-verified` are present, plus `architecture-verified` for design or scenario PRs.
+4. `needs-human-check` is added and the owner is mentioned.
 
 ## Merge strategy
 
