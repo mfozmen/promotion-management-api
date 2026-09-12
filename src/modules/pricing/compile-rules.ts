@@ -75,6 +75,6 @@ export async function compileRules(rows: readonly PricingRuleRow[]): Promise<Com
   return {
     engine,
     ruleIds: active.map((row) => row.id),
-    pricingRulesVersion: Math.floor(newest / 1000),
+    pricingRulesVersion: newest,
   };
 }
