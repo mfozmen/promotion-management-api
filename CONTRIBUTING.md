@@ -27,7 +27,7 @@ No implementation code is written before its failing test exists.
 ## PR checklist
 
 - [ ] Tests written first and passing (`npm test`)
-- [ ] Coverage checked (`npm run test:cov`)
+- [ ] Coverage is 100 % (`npm run test:cov`; the pre-commit hook enforces the threshold, so a commit below 100 % is rejected)
 - [ ] Lint passes (`npm run lint`)
 - [ ] Commits follow Conventional Commits
 - [ ] Branch named `type/short-description`
