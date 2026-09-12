@@ -111,7 +111,7 @@ all-null case; otherwise test each column null on its own.
 
 ---
 
-## 2b. Data lives in the database
+## 2b. Business data lives in the database
 
 **Severity: critical. Blocking.**
 
@@ -139,6 +139,8 @@ Class names in a factory registry, zod schemas, enum members the database
 column already constrains, and physical limits such as PostgreSQL's bind
 parameter ceiling. If an operator would ever want to change it without a
 deploy, it is a row.
+
+---
 
 ## 3. Concurrency and ordering
 
@@ -547,6 +549,8 @@ and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not.
 
+---
+
 ## 8c. Names match
 
 **Severity: warning.**
@@ -569,6 +573,8 @@ indirection further away.
 8c.4 Names say what a thing is, not how it was built or when it arrived. No
 `utils`, `helpers`, `common`, `misc`, `manager`, `base` or `new` in a file or
 directory name: a bucket named after nothing collects everything.
+
+---
 
 ## 9. Failure handling and operations
 
@@ -690,6 +696,8 @@ candidate for deletion.
 is not scope creep (12.3): the preamble already says the design wins and the
 rule gets fixed in the same PR. Quote the amendment in the PR description so
 the change to the shared standard is reviewed, not just the code.
+
+---
 
 ## 14. Reviewer's quick pass
 
