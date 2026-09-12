@@ -116,7 +116,9 @@ export async function compileRules(rows: readonly PricingRuleRow[]): Promise<Com
   // Without a rule the wrapper would price 500 000 rows at the raw vendor
   // price, with no markup and no commission, and report the job completed.
   // Stopping is the only safe reading of an empty set.
-  if (active.length === 0) throw new Error('no active ingestion pricing rules');
+  if (active.length === 0) {
+    throw new Error('no active ingestion pricing rules (none seeded, or every rule deactivated)');
+  }
   const engine = new Engine();
 
   for (const [rank, row] of active.entries()) {

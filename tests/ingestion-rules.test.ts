@@ -66,7 +66,9 @@ describe('compileRules', () => {
   });
 
   it('refuses an empty rule set rather than pricing a catalogue at vendor cost', async () => {
-    await expect(compileRules([])).rejects.toThrowError(/no active ingestion pricing rules/);
+    await expect(compileRules([])).rejects.toThrowError(
+      /no active ingestion pricing rules \(none seeded, or every rule deactivated\)/,
+    );
   });
 
   it('refuses a rule set whose every row is inactive', async () => {
@@ -74,7 +76,9 @@ describe('compileRules', () => {
       compileRules([
         ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500), active: false }),
       ]),
-    ).rejects.toThrowError(/no active ingestion pricing rules/);
+    ).rejects.toThrowError(
+      /no active ingestion pricing rules \(none seeded, or every rule deactivated\)/,
+    );
   });
 
   it('names the rules it compiled, so a rule the caller expected cannot go missing quietly', async () => {
