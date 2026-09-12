@@ -1,15 +1,9 @@
-/**
- * Environment configuration, read and validated once at startup.
- *
- * `loadConfig` takes the environment as a parameter so tests inject a fixture
- * instead of mutating `process.env`. Validation is hand-written so that the
- * first module in the repository does not pull in a dependency for twenty
- * lines of parsing; the story that adds zod for request bodies may fold this
- * schema into it.
- */
+// `loadConfig` takes the environment as a parameter so tests inject a fixture
+// instead of mutating `process.env`. Validation is hand-written rather than zod:
+// the story that adds zod for request bodies may fold this schema into it.
 
 export interface IngestionConfig {
-  /** Target chunk size in bytes; boundaries move forward to the next 0x0A. */
+  /** A target, not exact: the boundary moves forward to the next 0x0A. */
   readonly chunkBytes: number;
   /** Rows per upsert transaction. */
   readonly batchSize: number;
@@ -26,10 +20,10 @@ export interface Config {
   readonly port: number;
   readonly databaseUrl: string;
   readonly uploadDir: string;
-  /** Base Redis URL; the logical databases below are derived from it. */
+  /** The two `*Url` fields below are derived from this one. */
   readonly redisUrl: string;
   readonly redisReadModelDb: number;
-  /** Logical database holding the BullMQ queues; never the read model's. */
+  /** Never equal to `redisReadModelDb`; the queue must not share it. */
   readonly redisQueueDb: number;
   readonly redisReadModelUrl: string;
   readonly redisQueueUrl: string;
