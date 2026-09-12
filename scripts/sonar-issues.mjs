@@ -25,7 +25,10 @@ const auth = `Basic ${Buffer.from(`${token}:`).toString('base64')}`;
 
 let payload;
 for (let attempt = 1; attempt <= 10; attempt += 1) {
-  const response = await fetch(url, { headers: { authorization: auth } });
+  const response = await fetch(url, {
+    headers: { authorization: auth },
+    signal: AbortSignal.timeout(20_000),
+  });
   if (response.ok) {
     payload = await response.json();
     break;
@@ -39,13 +42,15 @@ if (!payload) {
   process.exit(1);
 }
 
+// Only the first page is annotated. The verdict below reads the server-side
+// total instead, so a list longer than one page still fails the build.
 for (const issue of payload.issues ?? []) {
-  const file = issue.component.split(':').pop();
+  const file = issue.component?.split(':').pop() ?? project;
   console.log(
     `::error file=${file},line=${issue.line ?? 1}::[${issue.severity}] ${issue.rule} ${issue.message}`,
   );
 }
 
-const total = payload.total ?? 0;
+const total = payload.total ?? payload.paging?.total ?? payload.issues?.length ?? 0;
 console.log(`unresolved SonarCloud issues: ${total}`);
 process.exit(total === 0 ? 0 : 1);
