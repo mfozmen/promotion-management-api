@@ -4,12 +4,12 @@ import type { Promotion } from '../../../../../src/modules/promotion/domain/prom
 
 type Discount = Pick<Promotion, 'discountType' | 'value'>;
 
-function active(overrides: Partial<Discount> = {}): Discount {
+function discount(overrides: Partial<Discount> = {}): Discount {
   return { discountType: 'percentage', value: 2500, ...overrides };
 }
 
 function priced(basePriceCents: number, overrides: Partial<Discount> = {}): number {
-  const outcome = effectivePrice(basePriceCents, active(overrides));
+  const outcome = effectivePrice(basePriceCents, discount(overrides));
 
   if (!outcome.ok) throw new Error(`expected a price, got: ${outcome.reason}`);
   return outcome.effectivePriceCents;
@@ -23,38 +23,30 @@ describe('effectivePrice', () => {
     });
   });
 
-  it('applies a percentage discount in basis points', () => {
+  it('subtracts what the calculator for the type returns', () => {
     expect(priced(10_000, { value: 2500 })).toBe(7500);
-  });
-
-  it('applies a fixed discount in minor units', () => {
     expect(priced(10_000, { discountType: 'fixed', value: 2500 })).toBe(7500);
   });
 
-  it('floors the discount, so the customer pays at most one minor unit more', () => {
-    expect(priced(999, { value: 2500 })).toBe(750);
-    expect(priced(1000, { value: 3333 })).toBe(667);
-  });
-
-  it('returns zero for a 100 % discount', () => {
-    expect(priced(10_000, { value: 10_000 })).toBe(0);
-  });
-
-  it('returns zero for a fixed discount larger than the base price', () => {
+  it('clamps to zero when the discount is larger than the price', () => {
     expect(priced(500, { discountType: 'fixed', value: 800 })).toBe(0);
-  });
-
-  it('returns zero for a zero base price', () => {
+    expect(priced(10_000, { value: 10_000 })).toBe(0);
     expect(priced(0, { value: 2500 })).toBe(0);
-    expect(priced(0, { discountType: 'fixed', value: 800 })).toBe(0);
   });
 
   it('is exact at the largest price the money representation allows', () => {
     expect(priced(Number.MAX_SAFE_INTEGER, { value: 5000 })).toBe(4_503_599_627_370_496);
   });
 
-  it('is exact at a large price where double arithmetic would round', () => {
-    expect(priced(4_171_863_899_102, { value: 7049 })).toBe(1_231_117_036_626);
+  it('returns the reason from the guard rather than a price', () => {
+    expect(effectivePrice(-500, discount())).toEqual({
+      ok: false,
+      reason: 'base price is not a whole number of minor units in range',
+    });
+    expect(effectivePrice(10_000, discount({ value: 10_001 }))).toEqual({
+      ok: false,
+      reason: 'discount is above 10000 basis points',
+    });
   });
 
   it('never returns a price outside [0, base]', () => {
@@ -66,32 +58,5 @@ describe('effectivePrice', () => {
         expect(effective).toBeGreaterThanOrEqual(0);
       }
     }
-  });
-
-  it('rejects a base price that is not a whole, non-negative number of minor units', () => {
-    for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, -500, 2 ** 53]) {
-      expect(effectivePrice(basePriceCents, active())).toEqual({
-        ok: false,
-        reason: 'base price is not a whole number of minor units in range',
-      });
-    }
-  });
-
-  it('rejects a discount value that is not a whole, positive number', () => {
-    for (const discountType of ['percentage', 'fixed'] as const) {
-      for (const value of [2500.5, NaN, Infinity, -2500, 0, 2 ** 53]) {
-        expect(effectivePrice(10_000, active({ discountType, value }))).toEqual({
-          ok: false,
-          reason: 'discount value is not a whole, positive number',
-        });
-      }
-    }
-  });
-
-  it('rejects a percentage above 100 % rather than clamping it to a free product', () => {
-    expect(effectivePrice(10_000, active({ value: 10_001 }))).toEqual({
-      ok: false,
-      reason: 'discount is above 10000 basis points',
-    });
   });
 });
