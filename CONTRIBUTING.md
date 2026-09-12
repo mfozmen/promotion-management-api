@@ -44,6 +44,8 @@ All of these are required on `main`:
 - `SonarCloud Code Analysis` — quality gate
 - `local-gates` — passes only when the PR carries the labels of every applicable local agent: `e2e-verified`, `impact-verified` and `docs-verified` always, plus `architecture-verified` when the PR touches `ADR.md` or `docs/superpowers/specs/`, or carries the `scenario` label. Every new push strips all four, so the agents must be re-run and the labels re-applied
 
+If `local-gates` ever fails with a `403` on `gh pr diff`, GitHub has reclassified the pull-request file listing: add `contents: read` to the workflow's permissions. The job deliberately grants no `contents` scope today because it performs no checkout.
+
 Pre-push local gates: run the `e2e-tester`, `impact-analyzer` and `docs-scribe` agents (`.claude/agents/`) against the branch before pushing, and `architecture-critic` as well for design or scenario PRs. Push only when every verdict is PASS (or SOUND) and the docs changes are committed, then apply the labels.
 
 ## Local agents

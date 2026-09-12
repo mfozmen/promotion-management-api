@@ -31,7 +31,10 @@ jobs:
       # The labels must exist in the repository before they can be removed from
       # a PR: gh resolves each name against the repo's label set first. --force
       # makes this idempotent, so a fresh clone of this repo gates correctly.
+      # Only the strip step needs the labels to exist, so this runs on the
+      # events that precede it rather than on every label change.
       - name: Ensure the verification labels exist
+        if: contains(fromJSON('["opened", "synchronize"]'), github.event.action)
         run: |
           gh label create e2e-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "e2e-tester agent passed locally on the latest push"
           gh label create impact-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "impact-analyzer agent passed locally on the latest push"
