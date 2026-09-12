@@ -59,7 +59,7 @@ describe('the seeded rules through the engine wrapper', () => {
     const seeded = await loadSeededRules();
     const newest = Math.max(...seeded.map((rule) => rule.updatedAt.getTime()));
 
-    expect(compiled.pricingRulesVersion).toBe(Math.floor(newest / 1000));
+    expect(compiled.pricingRulesVersion).toBe(newest);
   });
 
   it('prices through the cached loader, the way a batch will', async () => {

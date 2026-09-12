@@ -58,9 +58,7 @@ describe('compileRules', () => {
       }),
     ]);
 
-    expect(compiled.pricingRulesVersion).toBe(
-      Math.floor(Date.parse('2026-09-02T00:00:10.000Z') / 1000),
-    );
+    expect(compiled.pricingRulesVersion).toBe(Date.parse('2026-09-02T00:00:10.000Z'));
   });
 
   it('refuses an empty rule set rather than pricing a catalogue at vendor cost', async () => {
