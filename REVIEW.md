@@ -619,6 +619,18 @@ indirection further away.
 `utils`, `helpers`, `common`, `misc`, `manager`, `base` or `new` in a file or
 directory name: a bucket named after nothing collects everything.
 
+8c.5 Prefer a type that cannot say the wrong thing over a rule asking nobody to
+say it. When a rule exists because an expression is legal but always wrong,
+look for the deletion that makes the expression unstateable: an argument that
+can disagree with another argument, a pair of fields only one combination of
+which is valid, a string where a closed set would do. A constructor that cannot
+be called incorrectly needs no reviewer to notice, and the rulebook gets shorter
+rather than longer.
+
+Evidence: a status argument sat beside an error code, and the pairing between
+them was wrong in three different directions across three commits before the
+argument itself was deleted and the status derived from the code.
+
 ---
 
 ## 9. Failure handling and operations
