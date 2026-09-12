@@ -1,7 +1,7 @@
 -- The three ingestion rules of the case study (issue #9), as json-rules-engine documents. They
 -- live in the database rather than in a TypeScript constant so they change without a deploy;
 -- higher priority runs first, so the markup lands before the bulk discount and the commission.
--- The event vocabulary is the one `src/modules/pricing/ingestion-rules.ts` compiles (#39): an
+-- These rows fix the event vocabulary the ingestion wrapper of #39 must compile: an
 -- `adjustPercentBps` event with a signed basis-point `value`, and facts drawn from the vendor
 -- row (`category`, `stockQuantity`, `vendorPriceCents`). A rule the wrapper cannot parse stops
 -- the whole job by design, so the two sides have to agree exactly.
