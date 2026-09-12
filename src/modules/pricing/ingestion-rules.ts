@@ -50,32 +50,6 @@ export type PricingOutcome =
    */
   | { ok: false; fault: 'row' | 'rules'; rejectedBy: string | null; reason: string };
 
-/** Data, not code: the migration seed consumes this same constant, so the
- *  seeded rules cannot drift from the ones the wrapper was tested against. */
-export const DEFAULT_PRICING_RULES: readonly Omit<PricingRuleRow, 'id' | 'updatedAt'>[] = [
-  {
-    name: 'electronics-markup',
-    conditions: { all: [{ fact: 'category', operator: 'equal', value: 'Electronics' }] },
-    event: { type: 'adjustPercentBps', params: { value: 1500 } },
-    priority: 100,
-    active: true,
-  },
-  {
-    name: 'bulk-stock-discount',
-    conditions: { all: [{ fact: 'stockQuantity', operator: 'greaterThan', value: 100 }] },
-    event: { type: 'adjustPercentBps', params: { value: -300 } },
-    priority: 50,
-    active: true,
-  },
-  {
-    name: 'vendor-commission',
-    conditions: { all: [{ fact: 'vendorPriceCents', operator: 'greaterThanInclusive', value: 0 }] },
-    event: { type: 'adjustPercentBps', params: { value: 500 } },
-    priority: 10,
-    active: true,
-  },
-];
-
 const BPS = 10_000n;
 const MAX_CENTS = BigInt(Number.MAX_SAFE_INTEGER);
 
@@ -138,7 +112,9 @@ export async function compileRules(rows: readonly PricingRuleRow[]): Promise<Com
       throw new Error(`${where} has a malformed event: ${event.error.issues[0]?.message}`);
     }
     const properties: RuleProperties = {
-      name: row.name,
+      // The engine reports a fired rule by name only, and names are not unique
+      // in the design, so the id travels inside the name and reaches `rejectedBy`.
+      name: where,
       // The rank, not the stored priority: one rule per engine priority set
       // makes the evaluation order total rather than "highest set first".
       priority: active.length - rank,
@@ -170,34 +146,58 @@ const applied = (cents: bigint, event: AdjustmentEvent): bigint =>
       // guard below before it is ever used as an operand again.
       (cents * (BPS + BigInt(event.params.value))) / BPS;
 
+/** The row schema in the chunk processor validates this too, but a wrapper
+ *  that promises never to throw cannot take that on trust: BigInt() throws on
+ *  a fractional or NaN price, and a missing or null fact makes the engine
+ *  either throw or, worse, evaluate the condition false and skip the rule
+ *  with no trace in the result. */
+const vendorRowFacts = z.object({
+  category: z.string(),
+  vendorPriceCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+  stockQuantity: z.number().int().min(0),
+});
+
+/** `Engine.run` keeps one status per engine, so a run that finishes while
+ *  another is in flight makes the other skip its remaining rules and return a
+ *  short result with no error. Runs on one engine are queued instead; a batch
+ *  prices its rows one at a time either way. */
+const runQueue = new WeakMap<Engine, Promise<unknown>>();
+const runSerialised = (engine: Engine, facts: VendorRowFacts) => {
+  const next = (runQueue.get(engine) ?? Promise.resolve()).then(() => engine.run(facts));
+  runQueue.set(
+    engine,
+    next.catch(() => undefined),
+  );
+  return next;
+};
+
 /** A bad row is a returned rejection, never a thrown exception, so one row
  *  cannot abort the batch around it. */
 export async function priceRow(
   rules: CompiledRuleSet,
   row: VendorRowFacts,
 ): Promise<PricingOutcome> {
-  // The row schema in the chunk processor validates this too, but a wrapper
-  // that promises never to throw cannot take that on trust: BigInt() throws a
-  // RangeError on a fractional, NaN or infinite value.
-  if (!Number.isSafeInteger(row.vendorPriceCents) || row.vendorPriceCents < 0) {
+  const facts = vendorRowFacts.safeParse(row);
+  if (!facts.success) {
+    const [issue] = facts.error.issues;
     return {
       ok: false,
       fault: 'row',
       rejectedBy: null,
-      reason: `vendor price ${row.vendorPriceCents} is not a whole number of cents in range`,
+      reason: `${issue?.path.join('.')}: ${issue?.message}`,
     };
   }
 
   let results;
   try {
-    ({ results } = await rules.engine.run(row));
+    ({ results } = await runSerialised(rules.engine, facts.data));
   } catch (error) {
     return { ok: false, fault: 'rules', rejectedBy: null, reason: (error as Error).message };
   }
 
   // Results arrive in rank order: compileRules gives every rule its own
   // priority and the engine evaluates one priority set at a time, in order.
-  let cents = BigInt(row.vendorPriceCents);
+  let cents = BigInt(facts.data.vendorPriceCents);
   for (const result of results) {
     const next = applied(cents, result.event as AdjustmentEvent);
     if (next < 0n) {

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  DEFAULT_PRICING_RULES,
   compileRules,
   createRuleSetLoader,
   priceRow,
@@ -270,7 +269,11 @@ describe('priceRow', () => {
 
     const outcome = await priceRow(rules, vendorRow({ vendorPriceCents: Number.MAX_SAFE_INTEGER }));
 
-    expect(outcome).toMatchObject({ ok: false, fault: 'row', rejectedBy: 'runaway-markup' });
+    expect(outcome).toMatchObject({
+      ok: false,
+      fault: 'row',
+      rejectedBy: 'pricing rule 1 ("runaway-markup")',
+    });
     expect(outcome.ok === false && outcome.reason).toMatch(/above the largest exact cent value/);
   });
 
@@ -295,7 +298,7 @@ describe('priceRow', () => {
     await expect(priceRow(rules, vendorRow())).resolves.toEqual({
       ok: false,
       fault: 'row',
-      rejectedBy: 'clearance-rebate',
+      rejectedBy: 'pricing rule 2 ("clearance-rebate")',
       reason: 'price -8000 is below zero',
     });
   });
@@ -313,7 +316,79 @@ describe('priceRow', () => {
     const outcome = await priceRow(rules, vendorRow({ vendorPriceCents }));
 
     expect(outcome).toMatchObject({ ok: false, fault: 'row', rejectedBy: null });
-    expect(outcome.ok === false && outcome.reason).toMatch(/not a whole number of cents in range/);
+    expect(outcome.ok === false && outcome.reason).toMatch(/vendorPriceCents/);
+  });
+
+  it("rejects a row missing a fact as the row's fault, not the rule set's", async () => {
+    const rules = await compileRules([
+      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
+    ]);
+    const partial = { category: 'Electronics', vendorPriceCents: 80_000 };
+
+    const outcome = await priceRow(rules, partial as VendorRowFacts);
+
+    expect(outcome).toMatchObject({ ok: false, fault: 'row', rejectedBy: null });
+    expect(outcome.ok === false && outcome.reason).toMatch(/stockQuantity/);
+  });
+
+  it('rejects a row whose fact is null instead of silently skipping the rule', async () => {
+    const rules = await compileRules([
+      ruleRow({
+        id: 1,
+        name: 'markup',
+        conditions: categoryIs('Electronics'),
+        event: percent(1500),
+      }),
+    ]);
+
+    const outcome = await priceRow(rules, vendorRow({ category: null as unknown as string }));
+
+    expect(outcome).toMatchObject({ ok: false, fault: 'row', rejectedBy: null });
+    expect(outcome.ok === false && outcome.reason).toMatch(/category/);
+  });
+
+  it('prices overlapping calls on one rule set without dropping a rule', async () => {
+    const rules = await compileRules([
+      ruleRow({
+        id: 1,
+        name: 'markup',
+        priority: 100,
+        conditions: categoryIs('Electronics'),
+        event: percent(1500),
+      }),
+      ruleRow({
+        id: 2,
+        name: 'bulk',
+        priority: 50,
+        conditions: stockAbove(100),
+        event: percent(-300),
+      }),
+      ruleRow({ id: 3, name: 'commission', priority: 10, conditions: always, event: percent(500) }),
+    ]);
+    // A fact whose first evaluation yields to the event loop, so a second run
+    // started meanwhile finishes first and the engine marks itself finished
+    // under the first run's feet.
+    let calls = 0;
+    rules.engine.addFact('slow', () =>
+      calls++ === 0
+        ? new Promise((resolve) => setImmediate(() => resolve(true)))
+        : Promise.resolve(true),
+    );
+    rules.engine.addRule({
+      name: 'slow',
+      priority: 1000,
+      conditions: { all: [{ fact: 'slow', operator: 'equal', value: true }] },
+      event: cents(0),
+    });
+
+    const outcomes = await Promise.all([
+      priceRow(rules, vendorRow()),
+      priceRow(rules, vendorRow()),
+    ]);
+
+    expect(outcomes.map((outcome) => outcome.ok && outcome.basePriceCents)).toEqual([
+      93_702, 93_702,
+    ]);
   });
 
   it('applies equal-priority rules in a total order, whatever the row order', async () => {
@@ -351,20 +426,44 @@ describe('priceRow', () => {
   });
 });
 
-describe('DEFAULT_PRICING_RULES', () => {
-  const defaults = () =>
-    compileRules(DEFAULT_PRICING_RULES.map((rule, index) => ruleRow({ ...rule, id: index + 1 })));
+describe('the seeded case-study rules', () => {
+  // Mirrors migration 0001: +15 % on Electronics, -3 % above 100 units, +5 % commission.
+  // The rows themselves are read from the database by the integration test.
+  const seeded = () =>
+    compileRules([
+      ruleRow({
+        id: 1,
+        name: 'electronics category markup',
+        priority: 30,
+        conditions: categoryIs('Electronics'),
+        event: percent(1500),
+      }),
+      ruleRow({
+        id: 2,
+        name: 'bulk stock discount',
+        priority: 20,
+        conditions: stockAbove(100),
+        event: percent(-300),
+      }),
+      ruleRow({
+        id: 3,
+        name: 'vendor commission',
+        priority: 10,
+        conditions: always,
+        event: percent(500),
+      }),
+    ]);
 
   it('marks up electronics, discounts bulk stock and adds the vendor commission', async () => {
     // 80000 +15 % = 92000, -3 % = 89240, +5 % commission = 93702.
-    await expect(priceRow(await defaults(), vendorRow())).resolves.toMatchObject({
+    await expect(priceRow(await seeded(), vendorRow())).resolves.toMatchObject({
       basePriceCents: 93_702,
     });
   });
 
   it('leaves a non-electronics row with low stock to the commission alone', async () => {
     await expect(
-      priceRow(await defaults(), vendorRow({ category: 'Apparel', stockQuantity: 10 })),
+      priceRow(await seeded(), vendorRow({ category: 'Apparel', stockQuantity: 10 })),
     ).resolves.toMatchObject({ basePriceCents: 84_000 });
   });
 });
