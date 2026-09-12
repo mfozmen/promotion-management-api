@@ -532,6 +532,21 @@ stated in the reply.
 explains a mechanism belongs in the design spec. A comment points at them; it
 does not reproduce them.
 
+8b.5 **The count is the cheap half.** A ratio cannot tell which lines were
+load-bearing, and a deleted comment leaves nothing behind to notice it went:
+the first trim of one module hit the target on every file and still removed two
+contracts. So a trimming pass is reviewed by reading what was cut, not by
+checking the new number, and a contract that only a comment was holding gets a
+test in the same PR, so the next deletion fails something instead of passing
+quietly.
+
+8b.6 A comment that states a claim about the code must not outlive it. When a
+fix changes behaviour, the `ADR.md` sentence and the design-spec paragraph that
+described the old behaviour change in the same commit; leaving the code right
+and the prose wrong is the same defect one indirection further away. A comment
+or an ADR may cite only what its own branch carries: a forward reference to a
+rule or a section that lands in another pull request reads as fact and is not.
+
 ## 9. Failure handling and operations
 
 **Severity: warning. Blocking when a failure path has no recovery.**
