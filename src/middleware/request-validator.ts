@@ -18,7 +18,9 @@ const MAX_KEY_LENGTH = 64;
 const formatPath = (part: string, path: PropertyKey[]): string =>
   path.reduce<string>(
     (acc, segment) =>
-      typeof segment === 'number' ? `${acc}[${segment}]` : `${acc}.${String(segment)}`,
+      typeof segment === 'number'
+        ? `${acc}[${segment}]`
+        : `${acc}.${String(segment).slice(0, MAX_KEY_LENGTH)}`,
     part,
   );
 
@@ -31,10 +33,6 @@ const formatPath = (part: string, path: PropertyKey[]): string =>
  * handed back is just their own input returned to them. Keys are truncated
  * rather than omitted at 64 characters and the list is capped, because
  * how many they send is their choice and this runs unauthenticated.
- *
- * The path is ours only while no schema has client-controlled keys: a
- * `z.record` part would put the caller's own key into `path`, which the same
- * rule permits but the length bound would not reach.
  */
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
   return error.issues.map((issue) => ({
@@ -75,10 +73,11 @@ export function validate(schemas: RequestSchemas): RequestHandler {
       if (!result.success) {
         const keys = rejectedKeys(result.error);
         if (keys.length > 0) {
-          // `warn`, not `debug`: the default level is `info`, so a debug line
-          // would be the mitigation that never fires. Names, never values, and
-          // bounded in count and in length, because both are the client's to
-          // choose and this line is written on an unauthenticated path.
+          // The client is told which keys it got wrong; this line is so a fleet
+          // of them misconfigured the same way is visible in one place. `warn`
+          // because the default level is `info` and a `debug` line would never
+          // be written. Two lines per rejected request on an unauthenticated
+          // path, bounded to roughly 1.4 kB by the same caps as the response.
           (req.log ?? logger).warn(
             {
               part,
