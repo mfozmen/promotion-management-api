@@ -15,8 +15,8 @@ name: promotion-management-api
 #
 # Host processes (`npm run dev`, the tests) reach the stores on localhost
 # through the published ports, bound to the loopback interface so a laptop on a
-# shared network does not expose PostgreSQL; containers on the `promotion` network use the
-# service names. .env.example carries both forms.
+# shared network does not expose PostgreSQL; containers on the `promotion`
+# network use the service names. .env.example carries both forms.
 #
 # Redis logical databases are separated by design: database 0 is the storefront
 # read model, database 1 is the BullMQ queue. One server holds both; see
