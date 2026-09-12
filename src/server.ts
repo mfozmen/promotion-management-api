@@ -3,7 +3,12 @@ import { createQueues } from './shared/queue.js';
 import { SHUTDOWN_TIMEOUT_MS, shutdown } from './shared/shutdown.js';
 
 const port = Number(process.env.PORT) || 3000;
-const shutdownTimeoutMs = Number(process.env.SHUTDOWN_TIMEOUT_MS) || SHUTDOWN_TIMEOUT_MS;
+const configuredTimeout = Number(process.env.SHUTDOWN_TIMEOUT_MS);
+// `|| SHUTDOWN_TIMEOUT_MS` would turn a deliberate 0 into the 10 s default, so a
+// knob set to force an immediate exit would appear to do nothing.
+const shutdownTimeoutMs = Number.isFinite(configuredTimeout)
+  ? configuredTimeout
+  : SHUTDOWN_TIMEOUT_MS;
 const app = createApp();
 const queues = createQueues(process.env.REDIS_URL ?? 'redis://127.0.0.1:6379');
 
@@ -15,8 +20,9 @@ const server = app.listen(port, () => {
 // drain them, so the HTTP server goes first and nothing is still producing when
 // the sockets close, which otherwise hold the loop open until SIGKILL.
 process.on('SIGTERM', () => {
+  const startedAt = Date.now();
   void shutdown(server, queues, shutdownTimeoutMs).then((path) => {
-    console.log(`Shutdown ${path} after ${path === 'forced' ? shutdownTimeoutMs : 0} ms wait`);
+    console.log(`Shutdown ${path} after ${Date.now() - startedAt} ms`);
     process.exit(0);
   });
 });
