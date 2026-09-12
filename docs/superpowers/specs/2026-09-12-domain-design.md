@@ -183,16 +183,15 @@ create table ingestion_chunks (
   them is what this design tried and the owner reversed — the two look alike
   only at the level of "something changes a number".
 
-- **The seeded default is product-level precedence.** A product's own
-  promotion wins over its category's, even when the category discount is
-  larger. This is not a free choice: REVIEW.md 7.4 makes it a required edge
-  case and section 3 of this document states it with its consequence for
+- **The seeded default is the lower effective price.** Of the two candidates
+  the one that prices lower for the customer is applied, so a category flash
+  sale deeper than a product's own promotion wins (owner decision,
+  2026-09-12). This is not a free choice: REVIEW.md 7.4 makes it a required
+  edge case and section 3 of this document states it with its consequence for
   admins, so the rule that ships in the migration encodes it. The alternative
-  — whichever price is lower — is the same policy as "precedence by larger
-  discount", which ADR-0004 rejects as surprising to an admin who set a
-  product price deliberately. That two names for one policy sat in a rejected
-  list and a seeded default at the same time is how the contradiction survived
-  this long.
+  — unconditional product-level precedence — would show a customer a worse
+  price than the campaign advertises, which is why ADR-0004 now lists it as a
+  rejected alternative.
 
 - The commercial exception has a home without a code change: a product whose
   price must not fall further, because of a margin floor, a supplier agreement
@@ -529,8 +528,8 @@ src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
-    promotion/   promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
-    pricing/     effective-price.ts (pure), ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
+    promotion/   promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts, effective-price.ts (pure)
+    pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)

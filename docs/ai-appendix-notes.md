@@ -623,7 +623,7 @@ rewritten.
   (the file is 52 lines with 6 of comment, down from 199 with 74 — the
   narrative those comments carried is in this appendix already, which is
   exactly why it could be cut), and one declaration per file, added to REVIEW.md
-  as rule 13.6 because the owner asked for it as a rule rather than a review
+  as rule 8c.2 (then numbered 13.6) because the owner asked for it as a rule rather than a review
   comment.
 - Verification of the fix: 21 tests in the suite, 20 of them in
   `tests/promotion/effective-price.test.ts`, at 100 % statement, branch,

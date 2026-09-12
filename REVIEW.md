@@ -453,7 +453,8 @@ _Promotions and inheritance_
 - A product created in a category with an active promotion is discounted on
   its first read, with no extra event.
 - A product carrying both a product-level and a category-level promotion gets
-  the product-level price, even when the category discount is larger.
+  whichever of the two prices lower, so a deeper category discount wins over
+  the product's own.
 - Cancelling the category promotion restores base price for every product
   that had no promotion of its own, and leaves the others untouched.
 

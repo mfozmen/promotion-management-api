@@ -7,9 +7,9 @@ export type PricingOutcome =
 const BASIS_POINTS_PER_UNIT = 10_000n;
 
 export function applyPromotion(basePriceCents: number, promotion: Promotion): PricingOutcome {
-  // The zod boundary and the `promotions` check constraints are the real
-  // gates; `BigInt` throws on a fractional or `NaN` input, and one bad row
-  // must not take down the batch around it.
+  // `BigInt` throws on a fractional or `NaN` input, and one bad row must not
+  // take down the batch around it. The zod boundary and the `promotions` check
+  // constraints will back these guards up; neither has landed on this branch.
   if (!Number.isSafeInteger(basePriceCents) || basePriceCents < 0) {
     return {
       ok: false,
