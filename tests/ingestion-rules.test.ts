@@ -90,6 +90,27 @@ describe('compileRules', () => {
     ).rejects.toThrowError(/pricing rule 8 \("fractional"\)/);
   });
 
+  it('rejects a percentage adjustment that removes more than the whole price', async () => {
+    await expect(
+      compileRules([
+        ruleRow({
+          id: 13,
+          name: 'over-100-percent-off',
+          conditions: always,
+          event: percent(-10_001),
+        }),
+      ]),
+    ).rejects.toThrowError(/pricing rule 13 \("over-100-percent-off"\)/);
+  });
+
+  it('accepts a percentage adjustment that removes exactly the whole price', async () => {
+    const rules = await compileRules([
+      ruleRow({ id: 14, name: 'free', conditions: always, event: percent(-10_000) }),
+    ]);
+
+    await expect(priceRow(rules, vendorRow())).resolves.toMatchObject({ basePriceCents: 0 });
+  });
+
   it('rejects with a descriptive error for a rule naming a fact no vendor row has', async () => {
     await expect(
       compileRules([

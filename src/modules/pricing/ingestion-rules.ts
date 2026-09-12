@@ -82,11 +82,20 @@ const BPS = 10_000n;
 const MAX_CENTS = BigInt(Number.MAX_SAFE_INTEGER);
 
 /** Exported so a future rules-write endpoint validates against this schema
- *  rather than growing a second copy of it (REVIEW.md §1.3). */
-export const adjustmentEvent = z.strictObject({
-  type: z.enum(['adjustPercentBps', 'adjustCents']),
-  params: z.strictObject({ value: z.number().int() }),
-});
+ *  rather than growing a second copy of it (REVIEW.md §1.3). A percentage
+ *  adjustment stops at -10 000 basis points, which already makes the price
+ *  zero: anything beyond that can only ever produce a negative price, so it is
+ *  rejected at the boundary rather than row by row (REVIEW.md §1.5). */
+export const adjustmentEvent = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('adjustPercentBps'),
+    params: z.strictObject({ value: z.number().int().min(-10_000) }),
+  }),
+  z.strictObject({
+    type: z.literal('adjustCents'),
+    params: z.strictObject({ value: z.number().int() }),
+  }),
+]);
 
 type AdjustmentEvent = z.infer<typeof adjustmentEvent>;
 
