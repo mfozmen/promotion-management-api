@@ -464,6 +464,52 @@ rewritten.
   changed. The correction adopted is to diff section 4 against the module before
   every push, in the same commit, instead of after a review says so.
 
+### 2026-09-12 — Pricing core: the abstraction did not match the domain (issue #8, PR #29, commit `1e624f5`)
+
+- Supersedes every shape recorded above for this module, not the facts: the
+  earlier entries describe calculators, a registry and a factory that no longer
+  exist. They stay as written; they are dated history.
+- Challenge: the owner settled the domain question on PR #29 at
+  2026-09-12T16:48Z from the case text. A promotion is a domain row with a
+  closed vocabulary — discount type, value, validity window — that only ever
+  lowers a price and is bounded by `[0, base]`. Scenario A's dynamic pricing
+  rules are application-layer, open-ended, and raise as well as lower in a
+  chain. The shared calculator registry had merged the two, and the module's
+  own comments had begun contradicting themselves about it: a shared registry
+  with ingestion in one place, "a calculator can never raise a price" in
+  another. Both could not be true. Issue #45, the planned shared-registry
+  refactor, is void.
+- Resolution (commit `1e624f5`, a fresh commit rather than a force-push so the
+  review trail survives): `src/modules/promotion/promotion.ts` holds the
+  `Promotion` type, `src/modules/promotion/effective-price.ts` holds
+  `applyPromotion(basePriceCents, promotion)` and `isActive`. One pure function
+  over a typed promotion row, integer `bigint` arithmetic, the discount floored,
+  the result clamped into `[0, base]`, the `Number.isSafeInteger` guards, and
+  failure returned rather than thrown. No abstract base, no factory, no
+  registry, no `validate`: parameters are typed at the API boundary and by the
+  check constraints, so nothing reaches this function unvalidated.
+  `src/modules/pricing/` and `tests/pricing/` are deleted — that directory is
+  Scenario A's alone and PR #39 owns it. Neither module imports the other.
+- Two things the owner asked not to come back with the revert: comment density
+  (the file is 52 lines with 6 of comment, down from 199 with 74 — the
+  narrative those comments carried is in this appendix already, which is
+  exactly why it could be cut), and one declaration per file, added to REVIEW.md
+  as rule 13.6 because the owner asked for it as a rule rather than a review
+  comment.
+- Verification of the fix: 21 tests in the suite, 20 of them in
+  `tests/promotion/effective-price.test.ts`, at 100 % statement, branch,
+  function and line coverage; `npm run lint` and `npm run typecheck` are clean
+  and the local agents were re-run.
+- Honest lesson: four design shapes were built in one pull request, and the last
+  one is a revert to something close to the first. The three reshapes in between
+  each followed a design document that was itself still moving, and each was
+  validated green by the full agent set before the next change invalidated it.
+  What no automated gate caught, in any round, was the domain question the owner
+  settled from the case text in one paragraph — that a promotion and an
+  ingestion pricing rule are different things and should not share an
+  abstraction. Green checks measured internal consistency, not whether the
+  abstraction matched the domain.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
