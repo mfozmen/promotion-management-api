@@ -1,12 +1,11 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
-import { MAX_DETAILS, MAX_MESSAGE } from '../shared/error-bounds.js';
+import { CLIENT_ERRORS } from '../shared/client-errors.js';
+import type { ErrorCode } from '../shared/error-code.js';
+import { MAX_DETAILS } from '../shared/max-details.js';
+import { MAX_MESSAGE } from '../shared/max-message.js';
+import { OTHER_CLIENT_ERROR } from '../shared/other-client-error.js';
 import type { ErrorMapping } from './error-mapping.js';
-import {
-  CLIENT_ERRORS,
-  HttpError,
-  OTHER_CLIENT_ERROR,
-  type ErrorCode,
-} from '../shared/http-error.js';
+import { HttpError } from '../shared/http-error.js';
 import { logger, serializeError } from '../shared/logger.js';
 
 /** The two codes whose whole meaning is "come back later". Without a number a

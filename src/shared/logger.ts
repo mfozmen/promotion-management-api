@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { pino, type Logger } from 'pino';
-import { MAX_MESSAGE } from './error-bounds.js';
+import { MAX_MESSAGE } from './max-message.js';
 import { pinoHttp, type HttpLogger } from 'pino-http';
 
 /** The whole chain, not one step: a repository that interpolates a driver

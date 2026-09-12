@@ -1,4 +1,4 @@
-import type { ErrorCode } from '../shared/http-error.js';
+import type { ErrorCode } from '../shared/error-code.js';
 import type { ValidationDetail } from '../shared/validation-detail.js';
 
 export interface ErrorMapping {
