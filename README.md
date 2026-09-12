@@ -64,7 +64,7 @@ parallel. The template is named after the checkout and clones carry a timestamp,
 worktrees can share one server without dropping each other's databases. Run one integration
 suite per worktree at a time, though: the template is rebuilt at the start of each run, so two
 runs in the same checkout would pull it out from under each other. Regenerate the
-migrations with `npm run db:generate` after changing `src/shared/db/schema.ts`, and apply
+migrations with `npm run db:generate` after changing `src/shared/db/schema/`, and apply
 them to a running database with `DATABASE_URL=... npm run db:migrate` (drizzle-kit reads
 `DATABASE_URL`, not `TEST_DATABASE_URL`, and defaults to port 5432).
 
@@ -86,7 +86,9 @@ docs/   design specs (docs/superpowers/specs), end-to-end cases, one file per us
 
 ## Database schema
 
-The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three ingestion pricing rules. [`src/shared/db/schema.ts`](./src/shared/db/schema.ts) is the Drizzle mirror used by queries. Four of those objects have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them silently and the integration tests are what notices (ADR-0003, commit `489bc27`).
+The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, the single `reconciler_state` row, and the `active_promotions` view; `0001_seed_pricing_rules.sql` seeds the three ingestion pricing rules. [`src/shared/db/schema/`](./src/shared/db/schema) is the Drizzle mirror used by queries, one file per table and per enum with `index.ts` re-exporting (commit `1aaaffc`, PR #50). Four of those objects have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them silently and the integration tests are what notices (ADR-0003, commit `489bc27`).
+
+`active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver and the admin reads select from it instead of restating the predicate (ADR-0004, commit `1aaaffc`). It is not an endpoint; no route exposes it.
 
 ## API
 
