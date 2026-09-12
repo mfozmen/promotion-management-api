@@ -642,6 +642,32 @@ endpoint, job, cache or store.
 
 ---
 
+## 13b. The rulebook learns
+
+**Severity: warning.**
+
+13b.1 A review finding that would recur is a rule, not just a fix. When a
+finding names a class of mistake rather than one instance, the pull request
+that fixes it also adds or sharpens the rule here, in the same commit. The
+test is simple: would the same finding be worth making on someone else's PR
+next week? Then it belongs in the rulebook.
+
+13b.2 A rule that never fires is a bug in the rule. When a finding gets past
+review, ask which rule should have caught it and why it did not: usually the
+trigger is unreachable, the severity is too low to act on, or the reviewer was
+never told to measure it. Fix the rule the same way you would fix code, and
+say in the pull request what evidence made it necessary.
+
+13b.3 Rules carry their evidence. A rule states the failure that produced it,
+in one line, so a later reader can judge whether it still applies rather than
+obeying it out of habit. A rule nobody can trace to a real failure is a
+candidate for deletion.
+
+13b.4 Amending a rule in the pull request that discovered it is in scope and
+is not scope creep (12.3): the preamble already says the design wins and the
+rule gets fixed in the same PR. Quote the amendment in the PR description so
+the change to the shared standard is reviewed, not just the code.
+
 ## 14. Reviewer's quick pass
 
 Before reading line by line, answer these six. Each "no" is where the findings
