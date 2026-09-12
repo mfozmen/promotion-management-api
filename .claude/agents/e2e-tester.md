@@ -160,3 +160,9 @@ Findings: <bulleted, most severe first, with reproduction command>
 
 Be economical: do not re-run passing scenarios, do not test endpoints out of
 scope, quote logs only where they explain a failure.
+
+Never open a GitHub issue. A finding that this branch can fix is fixed here; a
+finding that belongs to another branch goes in your report as one line for the
+coordinator to route. Filing moves the work sideways and makes the pull request
+look cleaner than it is; thirty-nine open issues in one day came from exactly
+that.

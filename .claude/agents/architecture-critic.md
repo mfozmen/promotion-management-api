@@ -101,3 +101,9 @@ What to delete: <bullets or "nothing">
 
 REJECT if any Scenario A or B item is FAIL. REVISE if any item is RISK
 without a stated mitigation. Be specific, be short, and never soften a FAIL.
+
+Never open a GitHub issue. A finding that this branch can fix is fixed here; a
+finding that belongs to another branch goes in your report as one line for the
+coordinator to route. Filing moves the work sideways and makes the pull request
+look cleaner than it is; thirty-nine open issues in one day came from exactly
+that.
