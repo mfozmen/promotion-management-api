@@ -181,21 +181,19 @@ describe('unexpected errors', () => {
 
   it('logs which code answered a 5xx, so a log line joins to the response', async () => {
     const captured = captureLogger();
-    await request(
-      appThrowing(
-        new HttpError('READ_MODEL_NOT_READY', 'rebuild running', {
-          cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
-        }),
-        captured,
-      ),
-    ).get('/boom');
+    const raised = new HttpError('READ_MODEL_NOT_READY', 'rebuild running');
+    // The real `Error.cause`, not the third constructor argument, which is
+    // `details`: `serializeError` reads `err.cause` and would never see it there.
+    raised.cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
 
-    // serializeError reports the cause's code, so without these fields the
-    // line names the driver's failure and never the 503 the client read.
-    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      code: 'READ_MODEL_NOT_READY',
-      status: 503,
-    });
+    await request(appThrowing(raised, captured)).get('/boom');
+
+    // The serialized error reports the cause's code, so without the two
+    // top-level fields the line names the driver's failure and never the 503
+    // the client read.
+    const logged = captured.lines.find((line) => line.level === 50);
+    expect(logged).toMatchObject({ code: 'READ_MODEL_NOT_READY', status: 503 });
+    expect((logged as { error: { code: string } }).error.code).toBe('ECONNREFUSED');
   });
 
   it('bounds a 4xx message, so a handler cannot mirror a long id back', async () => {

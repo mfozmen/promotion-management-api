@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express';
 import type { ZodError, ZodObject } from 'zod';
 import { HttpError } from '../shared/http-error.js';
+import { MAX_DETAILS } from '../shared/limits.js';
 import { logger } from '../shared/logger.js';
 
 export interface RequestSchemas {
@@ -12,8 +13,6 @@ export interface RequestSchemas {
 const PARTS = ['body', 'query', 'params'] as const;
 
 const MAX_SHOWN_KEYS = 20;
-/** Matches the envelope's cap in `error-handler.ts`, which bounds the response. */
-const MAX_DETAILS = 20;
 const MAX_KEY_LENGTH = 64;
 
 /**

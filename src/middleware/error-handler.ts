@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
+import { MAX_DETAILS } from '../shared/limits.js';
 import {
   CLIENT_ERRORS,
   HttpError,
@@ -14,7 +15,6 @@ interface ErrorMapping {
   details?: unknown;
 }
 
-const MAX_DETAILS = 20;
 /** A 4xx message crosses verbatim, so the bound belongs here rather than in
  *  every handler that writes one. Matches the bound on the log side. */
 const MAX_MESSAGE = 200;
