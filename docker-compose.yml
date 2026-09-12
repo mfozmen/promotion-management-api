@@ -1,41 +1,9 @@
 name: promotion-management-api
 
-# Local infrastructure: the two stores, plus the `tools` profile with a browser
-# for each (`docker compose --profile tools up -d`). Issue #19 adds the
-# application services (api, event-handler, ingestion-worker with its 256 MiB /
-# 0.5 CPU limits, reconciler) and the "monitoring" profile on top of this file.
-# The `api` service that issue #19 adds must publish the fixed host port
-# 3000 and answer `/api/health`: that is the contract .claude/agents/e2e-tester.md
-# measures against, and the port is fixed so two runs cannot measure the same
-# machine at once. Until then no application port is published here.
-# They slot in without a rewrite because:
-#   - both stores sit on the named network `promotion` and are reachable there
-#     by service name (`postgres`, `redis`);
-#   - both carry a healthcheck, so an application service can wait on
-#     `depends_on: { condition: service_healthy }`;
-#   - every tunable lives in the .env file next to this one, so a container will
-#     read the same variables a host process does once an application service
-#     exists to read them. The defaults below only keep
-#     `docker compose up -d --wait` working on a clean checkout, before
-#     .env.example has been copied.
-#
-# Host processes (`npm run dev`, the tests) reach the stores on localhost
-# through the published ports, bound to the loopback interface so a laptop on a
-# shared network does not expose PostgreSQL; containers on the `promotion`
-# network use the service names. .env.example carries both forms.
-#
-# Redis logical databases are separated by design: database 0 is the storefront
-# read model, database 1 is the BullMQ queue. One server holds both; see
-# REDIS_READ_MODEL_DB / REDIS_QUEUE_DB in .env.example.
-
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
-    # Lock waits are logged and the deadlock detector fires at 200ms, so the
-    # deadlock scenario in .claude/agents/e2e-tester.md measures a stack that
-    # can actually show one; the defaults (off, 1s) would report "no deadlock"
-    # from a run that never looked.
     command: ['postgres', '-c', 'log_lock_waits=on', '-c', 'deadlock_timeout=200ms']
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-promo}
@@ -48,12 +16,6 @@ services:
     networks:
       - promotion
     healthcheck:
-      # A real query, not pg_isready: that only sends a startup packet, so it
-      # reports healthy for a database that does not exist. This catches a database
-      # name or role that no longer matches an initialised volume. It cannot catch a
-      # changed password, because the image's generated pg_hba.conf trusts local
-      # connections; that one surfaces at the application's first connect (ADR-0003).
-      # No password is passed here, so nothing secret reaches the process list.
       test:
         [
           'CMD-SHELL',
@@ -67,10 +29,6 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    # Append-only persistence: the queue database holds jobs that must survive a
-    # restart of this container. No `maxmemory` is set, so the default
-    # `noeviction` policy holds: the read model has no TTL by design
-    # and must never be silently evicted.
     command: ['redis-server', '--appendonly', 'yes']
     ports:
       - '127.0.0.1:6379:6379'
@@ -85,8 +43,6 @@ services:
       retries: 12
       start_period: 5s
 
-  # Database browsers, started only with `--profile tools`. Adminer rather than
-  # pgAdmin: one container, no setup. Both bind to loopback like the stores.
   adminer:
     image: adminer:4
     profiles: [tools]
@@ -99,8 +55,6 @@ services:
       - promotion
 
   redis-commander:
-    # Unpinned because the publisher ships no version tags: the repository has
-    # only `latest` and a few branch tags. Dev-only, behind the profile.
     image: rediscommander/redis-commander:latest
     profiles: [tools]
     environment:
