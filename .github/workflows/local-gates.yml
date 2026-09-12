@@ -36,12 +36,15 @@ jobs:
       - name: Ensure the verification labels exist
         if: contains(fromJSON('["opened", "synchronize"]'), github.event.action)
         run: |
-          gh label create e2e-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "e2e-tester agent passed locally on the latest push"
-          gh label create impact-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "impact-analyzer agent passed locally on the latest push"
-          gh label create docs-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "docs-scribe agent updated the docs for the latest push"
-          gh label create architecture-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "architecture-critic agent returned SOUND on the latest push"
-          gh label create scenario --repo "$GITHUB_REPOSITORY" --force             --color 5319E7 --description "Implements Scenario A or B; architecture-critic required"
-
+          create() { gh label create "$1" --repo "$GITHUB_REPOSITORY" --force --color "$2" --description "$3"; }
+          create e2e-verified 0E8A16 "e2e-tester agent passed locally on the latest push"
+          create impact-verified 0E8A16 "impact-analyzer agent passed locally on the latest push"
+          create docs-verified 0E8A16 "docs-scribe agent updated the docs for the latest push"
+          create architecture-verified 0E8A16 "architecture-critic agent returned SOUND on the latest push"
+          create scenario 5319E7 "Implements Scenario A or B; architecture-critic required"
+      # Label writes (this step and the create step above) are what fail with 403 on a fork PR, where
+      # GITHUB_TOKEN is read-only regardless of the permissions block. Fork PRs cannot pass this gate;
+      # open the branch in this repository instead.
       - name: Strip verification labels on new commits
         if: github.event.action == 'synchronize'
         run: |
@@ -52,9 +55,8 @@ jobs:
           exit 1
 
       - name: Require the applicable verification labels
-        # gh pr diff --name-only is served by the pull-requests permission; no checkout, no contents scope needed.
-        # A 403 here means the PR comes from a fork, where GITHUB_TOKEN is read-only regardless of this
-        # permissions block. Fork PRs cannot pass this gate; open the branch in this repository instead.
+        # gh pr view and gh pr diff --name-only are reads served by the pull-requests permission; no
+        # checkout, no contents scope needed, and they succeed even with a read-only token.
         run: |
           labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')
           files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
