@@ -16,13 +16,8 @@ const applied = (cents: bigint, event: AdjustmentEvent): bigint =>
       // guard below before it is ever used as an operand again.
       (cents * (BPS + BigInt(event.params.value))) / BPS;
 
-/** `Engine.run` keeps one status per engine, so a run finishing while another
- *  is in flight makes the other skip its remaining rules and return a short
- *  result with no error. Runs on one engine are queued instead.
- *
- *  A failed run marks the engine finished under the next run's feet, so the
- *  engine is spent once a run fails. That costs nothing, because a
- *  `fault: 'rules'` already tells the caller to stop the job. */
+/** One engine, one run at a time: concurrent runs clobber each other’s status
+ *  and return short results. A failed run spends the engine (ADR-0005). */
 const runState = new WeakMap<Engine, { queue: Promise<unknown>; spentBy?: Error }>();
 
 const runSerialised = (engine: Engine, facts: VendorRowFacts) => {

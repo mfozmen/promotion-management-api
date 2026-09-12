@@ -60,7 +60,7 @@ use `gh pr diff <n>`.
      rules depends on `type = 'ingestion'`, `active` and `priority`. The seeded
      events are `adjustPercentBps` with a signed basis-point `value`, over the
      facts `category`, `stockQuantity` and `vendorPriceCents`; the wrapper in
-     `src/modules/pricing/ingestion-rules.ts` throws on anything else.
+     `src/modules/pricing/domain/compile-rules.ts` throws on anything else.
    - `ingestion_jobs` — `file_sha256` unique (same file twice is a `409`) and
      `ingestion_jobs_one_running_per_vendor` partial unique index.
    - `ingestion_chunks` — `(job_id, chunk_index)` primary key, `next_offset`
