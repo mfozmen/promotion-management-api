@@ -1,11 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  compileRules,
-  createRuleSetLoader,
-  priceRow,
-  type PricingRuleRow,
-  type VendorRowFacts,
-} from '../src/modules/pricing/ingestion-rules.js';
+import { compileRules } from '../src/modules/pricing/compile-rules.js';
+import { priceRow } from '../src/modules/pricing/price-row.js';
+import type { PricingRuleRow } from '../src/modules/pricing/pricing-rule-row.js';
+import { createRuleSetLoader } from '../src/modules/pricing/rule-set-loader.js';
+import type { VendorRowFacts } from '../src/modules/pricing/vendor-row-facts.js';
 
 const at = (iso: string) => new Date(iso);
 
