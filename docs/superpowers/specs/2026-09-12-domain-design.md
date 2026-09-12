@@ -209,7 +209,8 @@ where p.id = any($1);
 
 - `GET /api/products/:id` = `HGETALL product:{id}` (zero PostgreSQL reads).
 - `GET /api/products` = `ZRANGE <zset> -inf +inf BYSCORE LIMIT offset size`
-  (`REV` for descending) → pipeline `HGETALL` per id; `total` = `ZCARD`.
+  ascending, `ZRANGE <zset> +inf -inf BYSCORE REV LIMIT offset size`
+  descending (with `REV` Redis expects the maximum first) → pipeline `HGETALL` per id; `total` = `ZCARD`.
   Members with equal scores order by member string, which is deterministic
   but not numeric (`"10"` before `"9"`); zero-pad ids if numeric tie order
   ever matters.
