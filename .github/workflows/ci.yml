@@ -42,6 +42,13 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+      - name: Fail on any SonarCloud issue
+        if: github.event_name == 'pull_request'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: node scripts/sonar-issues.mjs
+
   pr-title:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
