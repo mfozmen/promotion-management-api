@@ -40,7 +40,6 @@ No implementation code is written before its failing test exists.
 All of these are required on `main`:
 
 - `ci` — lint, typecheck, tests with 100 % coverage thresholds, and the SonarCloud scan, which waits for the quality gate (`sonar.qualitygate.wait`), so a gate failure fails `ci`
-- `pr-title` — Conventional Commit PR title
 - `claude-review` — advisory AI review
 - `local-gates` — passes only when the PR carries the labels of every applicable local agent: `docs-verified` always and `impact-verified` for the behaviour or judgement group below (`e2e-verified` is never required; the run happens on request), plus `architecture-verified` when the PR touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules (`src/modules/vendor/`, `src/modules/promotion/`, `src/modules/pricing/`) or `src/workers/`, or carries the `scenario` label. The job prints the set it computed. Every new push strips all four, so the applicable agents must be re-run and their labels re-applied
 
@@ -101,7 +100,7 @@ Every PR receives an advisory Claude AI review. When all required checks pass, n
 
 Definition of done for a PR hand-off:
 
-1. `ci`, `pr-title`, `claude-review` and `local-gates` are green on the final commit.
+1. `ci` and `claude-review` are green on the final commit.
 2. Every review thread is answered and resolved.
 3. `docs-verified` and, where the paths call for it, `impact-verified` and `architecture-verified` are present. `e2e-verified` appears only after a run the owner asked for.
 4. `needs-human-check` is added and the owner is mentioned.
