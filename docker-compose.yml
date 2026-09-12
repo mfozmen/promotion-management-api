@@ -3,7 +3,11 @@ name: promotion-management-api
 # Local infrastructure: the two stores only. Issue #19 adds the application
 # services (api, event-handler, ingestion-worker with its 256 MiB / 0.5 CPU
 # limits, reconciler) and the "monitoring" and "tools" profiles on top of this
-# file. They slot in without a rewrite because:
+# file. The `api` service that issue #19 adds must publish the fixed host port
+# 3000 and answer `/api/health`: that is the contract .claude/agents/e2e-tester.md
+# measures against, and the port is fixed so two runs cannot measure the same
+# machine at once. Until then no application port is published here.
+# They slot in without a rewrite because:
 #   - both stores sit on the named network `promotion` and are reachable there
 #     by service name (`postgres`, `redis`);
 #   - both carry a healthcheck, so an application service can wait on
