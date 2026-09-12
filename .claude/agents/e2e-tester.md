@@ -81,8 +81,8 @@ routes under `src/`.
 Always tear down at the end, and verify it: `kill` the shell job, then confirm
 nothing listens on the port any more with the same command from step 4. If the
 port is still held, kill the listener PID that check printed — it is yours, you
-proved that in step 6 — with `taskkill //PID <pid> //F //T` on Windows, and
-check the port once more. A teardown you did not verify is how the next run
+proved that in step 6 — with `taskkill //PID <pid> //F //T` on Windows or
+`kill -9 <pid>` elsewhere, and check the port once more. A teardown you did not verify is how the next run
 inherits an orphan. Leave docker services up unless you started them. Delete
 `e2e-server.log` after quoting what matters.
 
