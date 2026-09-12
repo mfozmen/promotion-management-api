@@ -68,9 +68,9 @@ describe('HttpError mapping', () => {
   it('answers a designed 5xx with our own message, not the operator prose', async () => {
     const res = await request(
       appThrowing(
-        new HttpError('READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', {
-          host: '10.0.0.5',
-        }),
+        new HttpError('READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', [
+          { path: 'host', message: '10.0.0.5' },
+        ]),
       ),
     ).get('/boom');
 
@@ -89,7 +89,11 @@ describe('HttpError mapping', () => {
 
   it('gives a 5xx code with no public wording nothing to say', async () => {
     const res = await request(
-      appThrowing(new HttpError('INTERNAL', 'upstream 10.0.0.5 refused', { sql: 'select 1' })),
+      appThrowing(
+        new HttpError('INTERNAL', 'upstream 10.0.0.5 refused', [
+          { path: 'sql', message: 'select 1' },
+        ]),
+      ),
     ).get('/boom');
 
     expect(res.status).toBe(500);
@@ -107,15 +111,6 @@ describe('HttpError mapping', () => {
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
       error: { message: 'rebuild running' },
     });
-  });
-
-  it('passes details through untouched when they are not a list', async () => {
-    const details = { conflictsWith: 'promotion-1' };
-    const res = await request(appThrowing(new HttpError('CONFLICT', 'Overlap', details))).get(
-      '/boom',
-    );
-
-    expect(res.body.error.details).toEqual(details);
   });
 
   it('cannot be given a status that disagrees with its code', () => {
@@ -218,6 +213,29 @@ describe('unexpected errors', () => {
     const res = await request(appThrowing(new HttpError('NOT_FOUND', 'nope'))).get('/boom');
 
     expect(res.headers['retry-after']).toBeUndefined();
+  });
+
+  it('does not log a statement a wrapper quoted two levels down', async () => {
+    const captured = captureLogger();
+    const driverError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+      query: 'insert into products (sku) values ($1)',
+      params: ['SKU-1'],
+    });
+    // A repository that interpolates the driver's message into its own, then a
+    // handler that wraps that: the statement is two causes down, and a walk
+    // that takes one step reads the wrapper, which has no query field to spot.
+    const wrapped = new Error(
+      `upsert failed: ${driverError.message} [${driverError.query}] [${driverError.params[0]}]`,
+      { cause: driverError },
+    );
+    const raised = new HttpError('READ_MODEL_NOT_READY', 'rebuild running');
+    raised.cause = wrapped;
+
+    await request(appThrowing(raised, captured)).get('/boom');
+
+    const logged = JSON.stringify(captured.lines);
+    expect(logged).not.toContain('insert into products');
+    expect(logged).not.toContain('SKU-1');
   });
 
   it('masks a thrown non-error value and still logs its type', async () => {

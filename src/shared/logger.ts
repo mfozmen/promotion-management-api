@@ -4,8 +4,16 @@ import { pino, type Logger } from 'pino';
 import { MAX_MESSAGE } from './error-bounds.js';
 import { pinoHttp, type HttpLogger } from 'pino-http';
 
-function rootCause(err: Error): Error {
-  return err.cause instanceof Error ? err.cause : err;
+/** The whole chain, not one step: a repository that interpolates a driver
+ *  message into its own sits between the handler's error and the statement,
+ *  and a single step lands on that wrapper, which carries no `query` field to
+ *  recognise it by. */
+function causeChain(err: Error): Error[] {
+  const chain = [err];
+  for (let current = err.cause; current instanceof Error; current = current.cause) {
+    chain.push(current);
+  }
+  return chain;
 }
 
 /** Anchored so a bound value carrying a newline and `at ` cannot pose as a frame. */
@@ -20,15 +28,27 @@ function stackFrames(err: Error): string {
     .join('\n');
 }
 
-function safeMessage(err: Error): string {
-  // One carrying a statement composed its message from it; others quote values.
-  // Ceiling: a bare pg error quotes them in forms this misses (#41).
-  const { query, params } = err as Error & { query?: unknown; params?: unknown };
-  if (query !== undefined || params !== undefined) {
-    return 'database query failed';
-  }
+/** The statement text and bound values any level of the chain is holding. A
+ *  driver error carries them on its own fields; a repository that wraps it
+ *  often interpolates them into its message, where no field marks them.
+ *  Ceiling: a bare pg error quotes them in forms no field carries (#41). */
+function secrets(chain: readonly Error[]): string[] {
+  return chain.flatMap((err) => {
+    const { query, params } = err as Error & { query?: unknown; params?: unknown };
+    return [query, ...(Array.isArray(params) ? params : [params])].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    );
+  });
+}
 
-  return err.message.split(': "')[0]!.slice(0, MAX_MESSAGE);
+function safeMessage(err: Error, held: readonly string[]): string {
+  // Cut at the first quoted value: a driver quotes what the caller sent.
+  const message = err.message.split(': "')[0]!.slice(0, MAX_MESSAGE);
+
+  // A message that repeats a statement or a bound value is the wrapper's own
+  // work, and no part of it can be trusted; the constraint name a driver's own
+  // message carries is what diagnoses the failure, so it survives.
+  return held.some((secret) => message.includes(secret)) ? 'database query failed' : message;
 }
 
 /**
@@ -43,12 +63,13 @@ export function serializeError(err: unknown): Record<string, unknown> {
     return { type: typeof err };
   }
 
-  const root = rootCause(err);
+  const chain = causeChain(err);
+  const root = chain[chain.length - 1]!;
   const { code } = root as Error & { code?: unknown };
 
   return {
     type: root.name,
-    message: safeMessage(root),
+    message: safeMessage(root, secrets(chain)),
     stack: stackFrames(err),
     code: typeof code === 'string' ? code : undefined,
   };

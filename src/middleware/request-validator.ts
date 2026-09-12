@@ -26,13 +26,10 @@ const formatPath = (part: string, path: PropertyKey[]): string =>
   );
 
 /**
- * A rejection names where the problem is and which of the caller's own keys it
- * concerns, never a stored value and never a free-form value they sent
- * (REVIEW.md 8.3b). The distinction is that a key they typed is an identifier
- * they can act on — without it they cannot fix the request — while a value
- * handed back is just their own input returned to them. Keys are truncated
- * rather than omitted at 64 characters (8.3c) and the list is capped, because
- * how many they send is their choice and this runs unauthenticated.
+ * Names the caller's own keys and never the values they sent: a key they typed
+ * is what they need to fix the request, a value handed back is their own input
+ * returned. Keys are truncated rather than omitted, and the list capped,
+ * because how many they send is their choice and this runs unauthenticated.
  */
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
   // Cut before the map, not after: a 100 kB body of failing array items is

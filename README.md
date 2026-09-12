@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/mfozmen/promotion-management-api/actions/workflows/ci.yml/badge.svg)](https://github.com/mfozmen/promotion-management-api/actions/workflows/ci.yml) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=coverage)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api)
 
-A REST API for managing products and time-bound promotions for ModaCo, an e-commerce platform. It supports listing and filtering products with category-aware, paginated, effective-price-sorted queries, and creating, cancelling and assigning percentage or fixed-value promotions to a product or an entire category, enforcing at most one active promotion per product.
+A REST API for managing products and time-bound promotions for ModaCo, an e-commerce platform. It supports listing and filtering products with category-aware, paginated, effective-price-sorted queries, and creating, cancelling and assigning percentage or fixed-value promotions to a product or an entire category, enforcing at most one applied promotion per product.
 
 ## Tech stack
 
@@ -37,7 +37,7 @@ npm run lint
 
 ```
 src/             app.ts (the Express app and the /api router), server.ts (the process entry point)
-src/middleware/  error handler (the one JSON error envelope), request validator (zod at the boundary)
+src/middleware/  error handler (the one JSON error envelope), request validator (zod at the boundary); each exported interface has its own file named after it — error-mapping.ts, request-schemas.ts (REVIEW.md 8c.2)
 src/shared/      cross-cutting modules: logger.ts, http-error.ts, error-bounds.ts (bounds with more than one enforcement point)
 tests/unit/      unit tests; tests/ itself holds helpers both kinds import (capture-logger.ts)
 docs/            design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)

@@ -707,12 +707,19 @@ rewritten.
 - Strategy: `main` had moved four times under this branch (PR #56's SonarCloud scan gating and the deletion of its issue-gate script, PR #46's path-computed agent labels and rulebook rules, PR #44's e2e-tester rewrite, PR #61's scope-creep rule), so the branch was merged rather than left to diverge further. Four files conflicted: `README.md`, `REVIEW.md` and two separate seams in this file. Each conflict was resolved by asking which side's statement is true of the merged tree, not by preferring a side.
 - Human refinement, and the one rule both branches edited: `REVIEW.md` 8.4. `main` carries the short form ("no internal detail escapes … in a response or a log line"); this branch amended it, in the PR that hit the leak, to separate the client-facing response from the log line, to allow the stack a 500 diagnosis needs, and to require `serializeError` under an `error` key. The amendment was kept and every other rule `main` added was taken as written (12.3 scope creep, 13.6 SonarCloud findings), because the short form forbids the logging issue #6 requires and was written before the `DrizzleQueryError` findings recorded above. No other rule was touched on both sides.
 - Scope of the other three: the two seams in this file were additive on both sides — this branch's HTTP-skeleton review rounds and `main`'s PR #56/#46/#44 entries — so both were kept, each side's internal order preserved, nothing merged into a single entry and nothing dropped; the tool manifest keeps this branch's filled effectiveness column over `main`'s `pending`. `README.md`'s merge bullet takes `main`'s accurate SonarCloud wording (the scan runs inside `ci` and is skipped when the PR touches nothing analysable, which is why SonarCloud's own check is not required) and this branch's hand-off wording, and deliberately drops `main`'s closing "at least one human reviewer has approved": CONTRIBUTING.md's hand-off section says merge follows the owner's own approval comment on a `needs-human-check` PR, and the owner cannot approve their own pull request, so the dropped clause described a gate that cannot exist here.
-- Caught by the merge and closed in the same commit: `.claude/agents/e2e-tester.md` resolved to `main`'s rewrite, which restored the pre-`/api` load targets (`GET /products/:id`, `GET /products?category=…`) that this branch had corrected. Every route is mounted under `/api` (ADR-0008), so those two steps and the matching pass criterion would have 404ed on the first run. The three prefixes were corrected and nothing else from the branch's retired copy came back. It is the shape of blind spot (28) in reverse: taking a file wholesale is right for the parts that were rewritten and wrong for the parts that were already correct, and only reading the file says which is which.
+- Caught by the merge and closed in the same commit: `.claude/agents/e2e-tester.md` resolved to `main`'s rewrite, which restored the pre-`/api` load targets (`GET /products/:id`, `GET /products?category=…`) that this branch had corrected. Every route is mounted under `/api` (ADR-0008), so those two steps and the matching pass criterion would have 404ed on the first run. The three prefixes were corrected and nothing else from the branch's retired copy came back. That sentence was then false for several hours: the second merge of `main` took the same file wholesale again and restored all three, and this entry still claimed they were fixed. The `impact-analyzer` caught it by opening the file the sentence describes rather than reading the sentence, which is blind spot (30) working as intended. Taking a file wholesale is not a one-time decision; it repeats every time that file conflicts, so a correction applied inside a wholesale take has to be re-applied or moved upstream. It is the shape of blind spot (28) in reverse: taking a file wholesale is right for the parts that were rewritten and wrong for the parts that were already correct, and only reading the file says which is which.
 
 ### 2026-09-13 — after the inert-cause round (PR #30, commit `acc81ae`)
 
 - Estimated ratio: unchanged at roughly 85 % AI-generated to 15 % human-crafted. The round's defect was found by the advisory review and fixed by the AI; the human share was the instruction to delete the fix and watch the test go red before calling it verified, and the instruction to check the commit order behind the appendix's own claim about when the rule arrived — which is what caught the overclaim corrected above.
 - Blind spots added to the list: (31) the AI writes a self-critical note that flatters the narrative — "we broke the rule we had just written" is a better story than "we broke a rule from another pull request whose evidence we had widened", and the better story was the one written without checking `git log`; a claim about the project's own history is as checkable as a claim about a library, and gets checked less often.
+
+## Judgement, challenges and verification (continued, from `main`)
+
+_Section header added 2026-09-13 during the PR #30 merge round. The merge of
+`origin/main` left `main`'s judgement entries below the branch's "Overall
+reflection" header; no entry was moved or reworded, only this label inserted so
+the Form 5 sections map cleanly._
 
 ### 2026-09-12 — A reversal verified against a tree that had already moved (PR #35, `9cfdf12`, `c769001`)
 
@@ -903,6 +910,14 @@ rewritten.
   The counter is scraped but no alert rule in section 12 reads it, so nothing
   fires when it moves. Flagged, not decided here.
 
+### 2026-09-13 — Second merge of `main` into the HTTP skeleton, and one file taken wholesale twice (issue #6, PR #30)
+
+- Strategy: `main` had moved again under the branch — the promotion-precedence decision (PR #35), the `test-case-generator` agent and the rewrite of `docs/e2e-cases/` around user journeys (PR #64), and a CI change making the advisory review report defects rather than prose — so the branch was merged rather than left to diverge. Three files conflicted: `.claude/agents/e2e-tester.md`, `README.md` and this file. Each conflict was resolved by asking which side is true of the merged tree.
+- How each was decided. (1) `README.md`: the merge-process bullets were taken from `main`, because `main`'s describe the process that exists — `ci` and `claude-review` are the required checks and `local-gates` is informational — while the branch's older bullet still described a single "CI is green" gate; everything the branch had added about the HTTP skeleton (error envelope, validation, correlation id, project structure) was kept. Verified this round against `CONTRIBUTING.md` at the merged head, which lists the same two required checks and the same informational `local-gates`. (2) This file: both seams were additive, so both were kept in full with each side's internal order intact, and the tool manifest kept the branch's filled effectiveness column over `main`'s `pending`. (3) `.claude/agents/e2e-tester.md` was resolved wholly to `main`'s copy.
+- The mistake, and it is the same one the previous merge caught: resolving `e2e-tester.md` to `main` wholesale re-introduced the un-prefixed load targets `GET /products/:id` and `GET /products?category=…` (and the matching p99 pass criterion) that the branch had corrected during the previous merge for exactly this reason. Every route is mounted under `/api` (ADR-0008), so those steps would 404 on the first run. Verification: read the resolved file against the ADR and the README route table rather than against the conflict markers — `/api/health` in the start-up probe is prefixed, the three load lines are not, which is what a wholesale resolution looks like from the outside. Before: a merge conflict on an agent definition resolved by side. After: resolved by reading the file, since "take `main`" is right for the parts `main` rewrote and wrong for the parts the branch had already fixed. The correction itself belongs to whoever owns `.claude/agents/` on this branch and is reported, not made here.
+- The structural round that followed (`0847de4`): `ErrorMapping` and `RequestSchemas` each shared a file with the function that used it; REVIEW.md 8c.2 asks for one exported declaration per file, named after it, so each moved into `src/middleware/error-mapping.ts` and `src/middleware/request-schemas.ts`. In the same span `MAX_MESSAGE` joined `MAX_DETAILS` in `src/shared/error-bounds.ts` — the module that holds a bound with more than one enforcement point — and the file the documents had called `limits.ts` no longer exists under that name. Both renames were verified by re-deriving every file and constant named in `ADR.md` and `README.md` from the tree, not from the previous pass's memory.
+- Lesson: a rename lands in code in one commit and in the documents in another, and only the first one is enforced by the compiler. The check that works is mechanical — extract every backticked path and identifier from the documents and test each one against the tree — and it is the second time on this branch that prose outlived a rename.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
@@ -932,3 +947,18 @@ rewritten.
   the resulting file. Both failures this round — the contradiction left in an
   untouched bullet, and the 249-bullet file that passed its own absence check —
   were invisible to a diff review and obvious to anyone who opened the document.
+
+### 2026-09-13 — Running estimate after the second merge round (issue #6, PR #30)
+
+- Share, documents only: unchanged at roughly 85 % AI-drafted to 15 % human, but
+  the human 15 % this round was entirely conflict adjudication and rename
+  chasing — which side of a merge is true, and which named file still exists.
+  Neither is drafting, and neither is visible in the diff as human work.
+- Blind spot noticed: (32) a merge resolution is treated as a decision about
+  sides rather than about sentences. Taking one side wholesale is the fastest
+  resolution and it silently reverts every fix the other side made to the parts
+  that side did not rewrite; this branch has now done it twice to the same file.
+- Blind spot noticed: (33) documents are verified against the previous pass
+  rather than the tree. Two renames landed between passes, and both would have
+  read as correct to anyone checking the last version of the document instead of
+  opening the directory.

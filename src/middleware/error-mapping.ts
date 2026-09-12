@@ -1,10 +1,12 @@
 import type { ErrorCode } from '../shared/http-error.js';
+import type { ValidationDetail } from '../shared/validation-detail.js';
 
-/** What the envelope needs to answer one error: the status to send, the code
- *  the client reads, the message it sees, and anything the producer attached. */
 export interface ErrorMapping {
   status: number;
   code: ErrorCode;
   message: string;
-  details?: unknown;
+  /** Closed, not `unknown`: a value `res.json` cannot serialise — a `bigint`
+   *  price, a cycle — threw inside the envelope and fell through to Express's
+   *  HTML error page with the status intact. */
+  details?: readonly ValidationDetail[];
 }

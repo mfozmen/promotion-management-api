@@ -1,3 +1,5 @@
+import type { ValidationDetail } from './validation-detail.js';
+
 /**
  * Every code the API can answer with. One home, so a handler cannot invent a
  * tenth spelling and a client can branch on a closed set (ADR-0008).
@@ -48,7 +50,7 @@ export class HttpError extends Error {
   constructor(
     readonly code: ErrorCode,
     message: string,
-    readonly details?: unknown,
+    readonly details?: readonly ValidationDetail[],
   ) {
     super(message);
     this.name = 'HttpError';

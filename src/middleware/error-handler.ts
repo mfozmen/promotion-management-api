@@ -9,8 +9,6 @@ import {
 } from '../shared/http-error.js';
 import { logger, serializeError } from '../shared/logger.js';
 
-/** A 4xx message crosses verbatim, so the bound belongs here rather than in
- *  every handler that writes one. */
 /** The two codes whose whole meaning is "come back later". Without a number a
  *  client retries as fast as it can, which amplifies the outage it met. */
 const RETRY_AFTER_SECONDS = '5';
@@ -63,9 +61,8 @@ function raisedError(err: HttpError): ErrorMapping {
 }
 
 export const notFoundHandler: RequestHandler = (_req, _res, next) => {
-  // The path is not echoed back. Not because it is untrusted — so is a rejected
-  // key, and that one is returned — but because there is nothing to fix by
-  // seeing it again (REVIEW.md 8.3b).
+  // The path is withheld while a rejected key is returned: a key is something
+  // the caller can fix, a path they already have is not.
   next(new HttpError('NOT_FOUND', 'Route not found'));
 };
 
@@ -106,15 +103,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       res.set('Retry-After', RETRY_AFTER_SECONDS);
     }
     if (known.details !== undefined) {
-      // Bounded at the envelope every producer crosses, not at one of them: a
-      // 100kb body of array items is thousands of zod issues, and an
-      // unauthenticated request must not amplify into the response.
-      // ponytail: truncated, not counted — the client fixes what it is shown,
-      // and several round trips on a large batch is the accepted cost. An object
-      // passes whole: the only producer of a list today is the validator.
-      body.error.details = Array.isArray(known.details)
-        ? known.details.slice(0, MAX_DETAILS)
-        : known.details;
+      body.error.details = known.details.slice(0, MAX_DETAILS);
     }
     res.status(known.status).json(body);
 
