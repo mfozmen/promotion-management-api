@@ -47,4 +47,4 @@ Documented as endpoints land.
 - A PR merges only once CI is green, the SonarCloud quality gate passes, the advisory Claude AI review has run, and at least one human reviewer has approved.
 - Merges to `main` are squash merges.
 
-See [ADR.md](./ADR.md) for architectural decisions, [AI_APPENDIX.md](./AI_APPENDIX.md) for AI usage documentation, and [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution process.
+See [ADR.md](./ADR.md) for architectural decisions, [Form 5 — AI Appendix](./Form%205_AI%20Appendix.docx) for AI usage documentation, and [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution process.

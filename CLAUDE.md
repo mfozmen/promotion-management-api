@@ -22,4 +22,4 @@ Node.js 22, Express 5, TypeScript (strict), Vitest + Supertest, ESLint + Prettie
 - **Never push to `main`.** All work happens on `type/short-description` branches through pull requests.
 - Keep it simple: no speculative abstractions, no unused configuration, no code for requirements that don't exist yet.
 - Before opening a PR: run lint, typecheck, and the full test suite; all must pass.
-- See `README.md`, `ADR.md`, `CONTRIBUTING.md` and `AI_APPENDIX.md` for project context and process. Update `AI_APPENDIX.md` as you go, not at the end.
+- See `README.md`, `ADR.md`, `CONTRIBUTING.md` and `Form 5_AI Appendix.docx` for project context and process. Update `Form 5_AI Appendix.docx` as you go, not at the end.
