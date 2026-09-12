@@ -83,6 +83,35 @@ rewritten.
   commit, instead of reacting mid-run, which also closes the uncommitted-fix
   and mid-review-push gaps.
 
+### 2026-09-12 — Rulebook expansion from review findings (PR #46, `docs/comment-density`)
+
+- Strategy: five review findings this session were classes of mistake rather
+  than one-off fixes, so each became a `REVIEW.md` rule in the same PR
+  instead of a silent code fix, per the new 13b policy this PR also adds.
+- Human refinement: none needed — each rule states its own failure.
+  - 2b (business data lives in the database, commit `15116a6`): a story
+    written before its table invented a `DEFAULT_PRICING_RULES` constant to
+    stand in for rows, which then had to be removed, re-tested and
+    re-documented once the table existed.
+  - 8b (comments, commits `8fe3efe`, `a2aeef3`): the old comment rule (12.3)
+    never fired — it triggered only when comments outweighed code, sat in a
+    suggestion-severity section, and the review prompt never asked anyone to
+    measure — while four files in flight sat between 34% and 67% comment
+    lines; then a trimming pass hit the new ratio on every file and still
+    deleted two load-bearing contracts, and twice in one round a fix landed
+    in the code while the identical claim stood unchanged in the ADR.
+  - 8c (names match, commit `ef1d8e5`): `src/shared/http-error.ts` exported
+    one class, `AppError`; a reader who saw the name in a stack trace grepped
+    for `app-error` and found nothing.
+  - 8.3b (never echo what the client sent, commit `b30574a`): the
+    don't-echo-client-input rule was applied in two places out of three — a
+    404 withheld the path and body-parser messages were replaced, but zod
+    quoted the rejected key back and a test asserted it.
+  - 13b (the rulebook learns, commit `2a2f479`): each of the findings above
+    became a rule only because someone happened to notice; 13b makes turning
+    a recurring finding into a rule (and fixing a rule that never fires) the
+    expected step instead of a good habit.
+
 ### 2026-09-12 — CLAUDE.md trimmed to derivable content (branch `docs/trim-claude-md`)
 
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
