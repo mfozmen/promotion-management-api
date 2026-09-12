@@ -139,9 +139,13 @@ file read inside a transaction. Long transactions hold locks and exhaust the
 pool. `SELECT FOR UPDATE` without `SKIP LOCKED` on a work-queue table is a
 finding.
 
-3.9 **Redis atomicity.** A read-then-write across two Redis commands is a race.
-Use a single command, a pipeline that does not depend on intermediate reads,
-`SET NX`, or a Lua script. `WATCH`/`MULTI` without a retry loop is a finding.
+3.9 **Redis atomicity.** A read-then-write across two Redis commands is a race
+unless one of the §3.1 mechanisms serialises the writers; the read-model writer
+is safe only because a single event-handler instance runs at concurrency 1,
+and a change that adds a second consumer must add a lock or a Lua script in the
+same PR. Elsewhere use a single command, a pipeline that does not depend on
+intermediate reads, `SET NX`, or a Lua script. `WATCH`/`MULTI` without a retry
+loop is a finding.
 
 3.10 **Timers are not schedulers.** Nothing relies on `setTimeout`,
 `setInterval` or in-process state to make something happen later; the process
@@ -212,7 +216,13 @@ rows within one version.
 
 5.6 A cache entry whose freshness depends on another key states how the two are
 kept consistent. A key that can be written without its index (`HSET` without the
-matching `ZADD`) is a finding.
+\1
+
+5.7 The read model has no TTL and no database fallback by design; freshness
+comes from events and the reconciler. A PR that introduces a TTL, a lazy
+fill-on-miss, or any read-through path reintroduces stampedes and the
+cancel-then-read race, and must bring the stampede lock and the ordering
+argument with it.
 
 ---
 
@@ -386,6 +396,15 @@ _Files_
 - Empty file; header only; no trailing newline; CRLF; a UTF-8 BOM; a blank line
   in the middle; a quoted field containing a comma; a row with too few or too
   many columns; a duplicate SKU inside one batch and across two chunks.
+
+_Promotions and inheritance_
+
+- A product created in a category with an active promotion is discounted on
+  its first read, with no extra event.
+- A product carrying both a product-level and a category-level promotion gets
+  the product-level price, even when the category discount is larger.
+- Cancelling the category promotion restores base price for every product
+  that had no promotion of its own, and leaves the others untouched.
 
 _Concurrency_
 
