@@ -525,6 +525,27 @@ root, no per-module top-level directories.
 Evidence: `tests/promotion/`, `tests/unit/` and a root-level test file on three
 open branches at once (PRs #29, #39).
 
+7.8 **A test imports its subject through the `@src/*` alias, production code
+never does.** `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'`
+in a test; a relative specifier in `src/`. The alias is `paths` in
+`tsconfig.json` plus `resolve.alias` in `vitest.config.ts`, and an ESLint
+`no-restricted-imports` rule scoped to `src/**` enforces the second half,
+because a convention nothing checks is not one.
+
+The asymmetry is not taste. `tsc` does not rewrite a path alias on emit, so
+`@src/...` inside `src/` compiles, builds, passes every unit test and then
+throws `ERR_MODULE_NOT_FOUND` at container start — the one place nothing is
+watching. Tests are excluded from `tsconfig.build.json` and never emitted, so
+the alias cannot reach a running process through them.
+
+A vitest workspace project does not inherit the root config's `resolve` block.
+Declare the alias once and spread it into every project, or the aliased imports
+resolve in `npm test` and fail in whichever project forgot it.
+
+Evidence: five levels of `../` in a test that had moved four times in one
+evening (PR #29); then eleven test files red at once when the alias met a
+workspace whose projects did not carry it (PR #50).
+
 ---
 
 ## 8. Boundaries, errors and API shape
