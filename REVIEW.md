@@ -764,6 +764,21 @@ qualifier and an enum value in DDL: SQL has no constant to declare for either
 
 ---
 
+13.7 A scripted edit asserts its anchor matches exactly once before replacing
+it. Presence is not enough: assert the count, not that the text is in the file.
+Both failure modes are silent at the moment they happen and only surface when
+something downstream reads the document.
+
+Evidence, both from one day on this repository: a slice whose end index came
+from a heading that appears in several ADRs matched the wrong one, produced an
+empty string, and `str.replace("", new)` inserted the replacement between every
+character — all seven ADRs became 249 copies of one bullet, and it was pushed,
+because the check afterwards looked for the absence of the old text, which a
+file of 249 identical bullets passes. The quiet version of the same bug is a
+replace that matches nothing, reports success, and ships a document saying the
+opposite of what its commit message claims; that one shipped twice before it
+was noticed.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
