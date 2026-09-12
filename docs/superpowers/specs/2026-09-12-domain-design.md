@@ -47,7 +47,7 @@ create table products (
 create index products_category_id_idx on products (category, id);   -- keyset scans per category
 
 create type discount_type    as enum ('percentage', 'fixed');
-create type promotion_status as enum ('active', 'cancelled');
+create type promotion_status as enum ('draft', 'active', 'cancelled');
 
 create table promotions (
   id             bigint generated always as identity primary key,
@@ -58,12 +58,13 @@ create table promotions (
   ends_at        timestamptz not null,
   product_id     bigint references products (id),
   category       text,
-  status         promotion_status not null default 'active',
+  status         promotion_status not null,                    -- 'draft' until assigned, then 'active'
   created_at     timestamptz not null default now(),
   cancelled_at   timestamptz,
   check (ends_at > starts_at),
   check (discount_type <> 'percentage' or value <= 10000),
-  check ((product_id is null) <> (category is null)),           -- exactly one target
+  check (status = 'draft' or (product_id is null) <> (category is null)), -- exactly one target once assigned
+  check (status <> 'draft' or (product_id is null and category is null)),
   -- At most one active product-level promotion per product per instant.
   exclude using gist (product_id with =, tstzrange(starts_at, ends_at) with &&)
     where (status = 'active' and product_id is not null),
@@ -148,15 +149,23 @@ create table ingestion_chunks (
 - Validation on create: `endsAt > startsAt`, `endsAt > now()` (a promotion
   that is already over is a `400`); `startsAt` in the past is allowed and
   means "now".
-- Promotions are immutable except for `status`. "Assign" is part of create:
-  `POST /api/promotions` requires exactly one of `productId` or `category`
-  and creates the promotion already assigned, atomically. Cancel sets
-  `status = 'cancelled'`, `cancelled_at = now()`. Nothing is deleted.
+- Create, assign and cancel are the three mutations (decision K1, owner):
+  - `POST /api/promotions` with `productId` or `category` creates the
+    promotion already assigned and `active`, atomically. Without a target it
+    creates a `draft`: no target, never applied, invisible to the read model.
+  - `POST /api/promotions/:id/assign` with exactly one of `productId` or
+    `category` moves a `draft` to `active` and sets the target in one
+    `UPDATE`; the exclusion constraints run at that moment, so overlap is a
+    `409` exactly as on create. Assigning a non-draft is a `409`.
+  - `POST /api/promotions/:id/cancel` sets `status = 'cancelled'`,
+    `cancelled_at = now()`; cancelling a draft is allowed. Nothing is deleted.
 - Storefront responses carry `basePriceCents`, `effectivePriceCents` and
   `promotion: { id, name } | null` so any price can be explained.
-- Promotion responses carry a derived `state`: `scheduled` (before
+- Promotion responses carry a derived `state`: `draft`, `scheduled` (before
   `startsAt`), `live`, `expired` (after `endsAt`) or `cancelled`. `status`
-  stays a two-value column; time is never written back into the row.
+  stays a three-value column; time is never written back into the row.
+- `GET /api/promotions` and `GET /api/promotions/:id` read PostgreSQL
+  (admin path, decision K2): filters `status`, `category`, `productId`.
 
 Resolution query (used by the event handler and reconciler, batched by id):
 
@@ -207,7 +216,7 @@ dead-letter queue, visible in Bull Board and the admin endpoints).
 
 | Queue       | Job name            | Payload                              | Producer                                            | Handler effect                                                                                                        |
 | ----------- | ------------------- | ------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `events`    | `product.upserted`  | `{ productIds: number[] }` (≤ 1 000) | `POST/PUT /api/products` (one id); ingestion batch  | recompute those products, write read model                                                                            |
+| `events`    | `product.upserted`  | `{ productIds: number[] }` (≤ 1 000) | `POST /api/products` (one id); ingestion batch      | recompute those products, write read model                                                                            |
 | `events`    | `promotion.changed` | `{ promotionId }`                    | create, cancel, delayed activate/expire, reconciler | product target: recompute 1; category target: keyset-scan the category by id in batches of 1 000, recompute, pipeline |
 | `events`    | `readmodel.rebuild` | `{ category?: string }`              | cold start, admin, reconciler                       | `SCAN`+`UNLINK` the scope, stream products from PostgreSQL, rebuild; full rebuild sets `readmodel:ready`              |
 | `events`    | `reconcile.run`     | `{}` (repeatable, every 5 min)       | reconciler worker schedule                          | see section 9                                                                                                         |
@@ -270,8 +279,13 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    partial tail, strip a trailing `0x0D`. Offsets advance by byte length. A
    line never contains a split code point because `0x0A` cannot occur inside
    a UTF-8 multi-byte sequence, so `line.toString('utf8')` is safe. File
-   contract: RFC 4180 quoting within a line is supported; embedded newlines
-   are not.
+   contract (decision K3): header
+   `sku,name,category,vendor_price,stock_quantity`; `vendor_price` is a
+   decimal with at most two fraction places (`799.90`) parsed to integer
+   cents without floating point (`"799.90"` → `79990`), more places or a
+   non-numeric value rejects the row; UTF-8, optional BOM, LF or CRLF; RFC
+   4180 quoting within a line is supported, embedded newlines are not. A
+   sample lives at `fixtures/vendor-sample.csv`.
 3. **Batch** 1 000 lines: parse, validate (zod), **dedupe by SKU in a `Map`
    (last row wins)**, run each row through the ingestion rules
    (`json-rules-engine`, rules loaded from `pricing_rules` and cached for
@@ -367,8 +381,8 @@ served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 | GET    | `/api/products`                                | Redis    | `category?`, `sort=effectivePrice`, `order=asc\|desc`, `page`, `pageSize` (≤ 100); `{ items, page, pageSize, total }` |
 | GET    | `/api/products/:id`                            | Redis    | hottest endpoint; `404` if the hash is missing                                                                        |
 | POST   | `/api/products`                                | PG+event | `sku, name, category, basePriceCents, stockQuantity`; `409` on duplicate SKU                                          |
-| PUT    | `/api/products/:id`                            | PG+event | `name, category, basePriceCents, stockQuantity`                                                                       |
-| POST   | `/api/promotions`                              | PG+event | `name, discountType, value, startsAt, endsAt, productId \| category`; `409` on overlap                                |
+| POST   | `/api/promotions`                              | PG+event | `name, discountType, value, startsAt, endsAt, productId? \| category?`; no target = `draft`; `409` on overlap         |
+| POST   | `/api/promotions/:id/assign`                   | PG+event | `productId \| category`; draft → active; `409` on overlap or non-draft                                                |
 | POST   | `/api/promotions/:id/cancel`                   | PG+event | idempotent                                                                                                            |
 | GET    | `/api/promotions`, `/api/promotions/:id`       | PG       | `status?`, `category?`, `productId?`                                                                                  |
 | POST   | `/api/vendor/imports`                          | PG+queue | multipart `file`, field `vendor`; `202`                                                                               |
@@ -422,7 +436,8 @@ Dockerfile           one image, command per service
 ## 13. Out of scope
 
 Authentication, alarm delivery (webhook/Slack), multi-currency, promotion
-stacking, product deletion, a categories table (text column is enough),
+stacking, product update and deletion (decision K4: the vendor feed is the
+only channel that changes product data after creation), a categories table (text column is enough),
 pre-signed direct-to-blob uploads (documented as the production path), atomic
 listing swap during a category recompute, per-category handler parallelism.
 `pgadmin` and `redis-commander` ship only under the `tools` compose profile.
