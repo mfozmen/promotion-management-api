@@ -16,7 +16,7 @@ async function onAdmin(statement: string): Promise<void> {
 // Cloning the migrated template per file is what keeps files isolated under parallel runs.
 export function useTestDatabase(): () => Db {
   const name = cloneName();
-  let pool: Pool;
+  let pool: Pool | undefined;
   let db: Db;
 
   beforeAll(async () => {
@@ -26,7 +26,9 @@ export function useTestDatabase(): () => Db {
   });
 
   afterAll(async () => {
-    await pool.end();
+    // `pool` is unset if beforeAll failed; ending it unguarded would replace that failure
+    // with a TypeError and bury the reason.
+    await pool?.end();
     await onAdmin(`drop database if exists "${name}" with (force)`);
   });
 
