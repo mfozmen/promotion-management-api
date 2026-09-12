@@ -41,6 +41,7 @@ create table products (
   base_price_cents       bigint not null check (base_price_cents >= 0),
   stock_quantity         integer not null check (stock_quantity >= 0),
   pricing_rules_version  integer,                -- set by ingestion, null for manual creates
+  ingest_source_offset   bigint,                 -- byte offset of the vendor row that last wrote this product
   created_at             timestamptz not null default now(),
   updated_at             timestamptz not null default now()
 );
@@ -224,8 +225,8 @@ where p.id = any($1);
 - Redis unreachable: storefront routes answer `503`; admin writes still
   commit to PostgreSQL, their enqueue fails and is logged, and the reconciler
   repairs the read model once Redis is back.
-  <!-- ponytail: single serialised handler; per-category locks if one
-       instance cannot keep up with write volume -->
+  The handler runs as a single serialised instance; per-category locks are
+  the upgrade if one instance cannot keep up with write volume.
 
 ## 6. Events (BullMQ, Redis DB 1)
 
@@ -349,8 +350,14 @@ status = 'pending', lease_until = null`), so a slow chunk may hand off
 Memory: one batch of parsed rows plus the stream buffers. No whole-file reads,
 no `Promise.all` across the file, no per-row events. Parallelism: chunks are
 independent, `--scale ingestion-worker=N` processes N chunks concurrently;
-rows for the same SKU in different chunks resolve as last-commit-wins, which
-matches "the newest vendor row wins".
+rows for the same SKU in different chunks resolve by **file position, not
+commit order**: `products.ingest_source_offset` stores the byte offset of the
+row that last wrote the product, and the upsert carries
+`where excluded.ingest_source_offset > products.ingest_source_offset`. The
+later row in the file therefore wins no matter which worker commits first, so
+`--scale ingestion-worker=N` is safe. Rows from an older file cannot clobber a
+newer one either, because a new job resets the column through the same
+comparison against its own offsets.
 
 ## 8. Scenario B: flash sales
 
@@ -361,7 +368,7 @@ on its first read; expiry and scheduled starts happen on time.
 1. `POST /api/promotions { category: "Accessories", percentage 5000, ... }`
    → one `INSERT` (exclusion constraint checked) → `promotion.changed` job.
 2. Event handler scans the category by keyset (`where category = $1 and id > $last order by id limit 1000`), recomputes each product with the section 4 query, and pipelines the read-model writes. 50 000 products take a few seconds; during that window pages mix old and new prices. The listing is consistent once the scan completes.
-   <!-- ponytail: progressive writes; build category:{c}:new and RENAME for an atomic listing switch if the mixed window matters -->
+   Writes are progressive by design; building `category:{c}:new` and switching with `RENAME` is the upgrade if the mixed window ever matters.
 3. Storefront reads are pure Redis: `ZRANGE ... BYSCORE` for listings, `HGETALL` for detail. PostgreSQL load during the sale is the handler's scan only.
 4. New product in the category: `POST /api/products` → `product.upserted` → recompute finds the active category promotion → discounted entry written before the product is visible at all (a product exists in the storefront only once its hash exists).
 5. Cancel: `status = 'cancelled'` → delayed jobs removed → immediate `promotion.changed` → category rescanned → base prices restored.
