@@ -83,6 +83,11 @@ rewritten.
   commit, instead of reacting mid-run, which also closes the uncommitted-fix
   and mid-review-push gaps.
 
+### 2026-09-12 — CLAUDE.md trimmed to derivable content (branch `docs/trim-claude-md`)
+
+- Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
+- Human refinement: none needed — `impact-analyzer` confirmed no doc or config referenced the removed sections and every named script (`dev`, `test`, `test:cov`, `lint`) still exists in `package.json`.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
