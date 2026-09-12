@@ -31,7 +31,9 @@ function promotion(overrides: Partial<Promotion> = {}): Promotion {
 function priced(basePriceCents: number, event: DiscountEvent | null): number {
   const outcome = applyPromotions(basePriceCents, event);
 
-  expect(outcome.ok).toBe(true);
+  // The union forces this branch, which is the point of it: a caller cannot
+  // read a price out of a failure by accident.
+  if (!outcome.ok) throw new Error(`expected a price, got: ${outcome.reason}`);
   return outcome.effectivePriceCents;
 }
 
@@ -50,8 +52,10 @@ describe('CalculatorFactory', () => {
     // a vendor price, promotions run the winning rule's over a base price.
     const percent = CalculatorFactory.create('PercentageDiscount');
 
-    expect(percent?.validate({ valueBasisPoints: 2500 })).toBeNull();
-    expect(percent?.calculate(10_000n, { valueBasisPoints: 2500 })).toBe(7500n);
+    const params = { calculator: 'PercentageDiscount', valueBasisPoints: 2500 };
+
+    expect(percent?.validate(params)).toBeNull();
+    expect(percent?.calculate(10_000n, params)).toBe(7500n);
   });
 
   it('applies no discount when asked to price parameters it rejects', () => {
@@ -59,7 +63,9 @@ describe('CalculatorFactory', () => {
     // the safe answer rather than a guess.
     const percent = CalculatorFactory.create('PercentageDiscount');
 
-    expect(percent?.calculate(10_000n, { valueBasisPoints: -1 })).toBe(10_000n);
+    expect(
+      percent?.calculate(10_000n, { calculator: 'PercentageDiscount', valueBasisPoints: -1 }),
+    ).toBe(10_000n);
     expect(percent?.calculate(10_000n, null)).toBe(10_000n);
   });
 });
@@ -113,11 +119,7 @@ describe('applyPromotions', () => {
         type: 'applyDiscount',
         params: { calculator: 'TieredDiscount', valueBasisPoints: 2500 },
       }),
-    ).toEqual({
-      ok: false,
-      effectivePriceCents: 10_000,
-      reason: 'unknown calculator "TieredDiscount"',
-    });
+    ).toEqual({ ok: false, reason: 'unknown calculator "TieredDiscount"' });
   });
 
   it('reports an event that names no calculator at all', () => {
@@ -129,7 +131,6 @@ describe('applyPromotions', () => {
     ]) {
       expect(applyPromotions(10_000, event)).toEqual({
         ok: false,
-        effectivePriceCents: 10_000,
         reason: 'event names no calculator',
       });
     }
@@ -142,8 +143,6 @@ describe('applyPromotions', () => {
 
       expect(percentOutcome.ok).toBe(false);
       expect(fixedOutcome.ok).toBe(false);
-      expect(percentOutcome.effectivePriceCents).toBe(10_000);
-      expect(fixedOutcome.effectivePriceCents).toBe(10_000);
     }
 
     // A percentage above 100 % can only be a mistake, so it is rejected rather
@@ -165,7 +164,6 @@ describe('applyPromotions', () => {
       for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, -500, 2 ** 53]) {
         expect(applyPromotions(basePriceCents, event)).toEqual({
           ok: false,
-          effectivePriceCents: 0,
           reason: `base price ${basePriceCents} is not a whole number of minor units in range`,
         });
       }
@@ -175,12 +173,23 @@ describe('applyPromotions', () => {
   it('never returns a price outside [0, base] for anything it accepts', () => {
     for (const value of [1, 2500, 10_000]) {
       for (const event of [percentage, fixed]) {
-        const outcome = applyPromotions(10_000, event(value));
+        const effective = priced(10_000, event(value));
 
-        expect(outcome.effectivePriceCents).toBeLessThanOrEqual(10_000);
-        expect(outcome.effectivePriceCents).toBeGreaterThanOrEqual(0);
+        expect(effective).toBeLessThanOrEqual(10_000);
+        expect(effective).toBeGreaterThanOrEqual(0);
       }
     }
+  });
+
+  it('rejects a rule row carrying a key its calculator does not know', () => {
+    // A typo beside a valid key is the one mistake nothing else would catch:
+    // rule rows are admin-authored and never code-reviewed.
+    const outcome = applyPromotions(10_000, {
+      type: 'applyDiscount',
+      params: { calculator: 'PercentageDiscount', valueBasisPoints: 2500, valueBasisPoint: 9999 },
+    });
+
+    expect(outcome.ok).toBe(false);
   });
 });
 

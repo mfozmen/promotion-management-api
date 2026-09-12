@@ -29,17 +29,15 @@ export interface DiscountEvent {
 }
 
 /**
- * Both outcomes carry a price, so a caller always has something safe to write:
- * on failure it is the untouched base price, or zero when the base price is
- * itself what is unusable. `ok: false` is the caller's cue to log and count —
- * a bad rule row must not crash a 50 000-product recompute, and must not pass
- * for a priced product either. The storefront path keeps the base price; the
+ * A failure carries no price on purpose. Both variants used to carry one, and
+ * a caller that read the field without checking `ok` would have published a
+ * product free the moment its base price was unusable. The union forces the
+ * branch instead: the storefront keeps the base price it already holds, the
  * ingestion path treats the same outcome as a `rules` fault and stops the job
- * rather than mispricing 500 000 rows.
+ * rather than mispricing 500 000 rows, and either way the reason is logged.
  */
 export type PricingOutcome =
-  | { ok: true; effectivePriceCents: number }
-  | { ok: false; effectivePriceCents: number; reason: string };
+  { ok: true; effectivePriceCents: number } | { ok: false; reason: string };
 
 export interface DiscountCalculator {
   /** Names what is wrong with these parameters, or `null` when it can price them. */
@@ -88,10 +86,14 @@ abstract class ValidatedDiscount<P> implements DiscountCalculator {
   }
 }
 
+// Strict, because a rule row is admin-authored data that no code review sees:
+// `valueBasisPoint` beside a valid `valueBasisPoints` would otherwise be
+// dropped in silence and the old discount would keep applying (REVIEW.md 8.1).
 // A discount of zero is a rule that does nothing, and one above 100 % can only
 // ever mean a mistake; both are rejected rather than clamped, so the rule row
 // gets fixed instead of quietly pricing at zero.
-const percentageParams = z.object({
+const percentageParams = z.strictObject({
+  calculator: z.literal('PercentageDiscount'),
   valueBasisPoints: z.number().int().positive().max(10_000),
 });
 
@@ -106,7 +108,10 @@ class PercentageDiscount extends ValidatedDiscount<z.infer<typeof percentagePara
   }
 }
 
-const fixedParams = z.object({ valueCents: z.number().int().positive() });
+const fixedParams = z.strictObject({
+  calculator: z.literal('FixedDiscount'),
+  valueCents: z.number().int().positive(),
+});
 
 class FixedDiscount extends ValidatedDiscount<z.infer<typeof fixedParams>> {
   protected readonly name = 'FixedDiscount';
@@ -159,17 +164,12 @@ export function applyPromotions(
   if (!Number.isSafeInteger(basePriceCents) || basePriceCents < 0) {
     return {
       ok: false,
-      effectivePriceCents: 0,
       reason: `base price ${basePriceCents} is not a whole number of minor units in range`,
     };
   }
   if (event === null) return { ok: true, effectivePriceCents: basePriceCents };
 
-  const rejected = (reason: string): PricingOutcome => ({
-    ok: false,
-    effectivePriceCents: basePriceCents,
-    reason,
-  });
+  const rejected = (reason: string): PricingOutcome => ({ ok: false, reason });
 
   const name: unknown = (event.params as { calculator?: unknown } | null | undefined)?.calculator;
   if (typeof name !== 'string') return rejected('event names no calculator');

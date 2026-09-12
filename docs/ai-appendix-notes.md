@@ -354,6 +354,54 @@ rewritten.
   `docs/promotion-rule-engine`, so the code can only reach `main` together with
   the ADR text that documents it.
 
+### 2026-09-12 — Pricing core: the design moved again, so the module was reshaped again (issue #8, PR #29, PR #35, commit `c0c2701`)
+
+- Supersedes the entry above in shape, not in fact: the `Adjustment` interface,
+  `PercentBpsAdjustment`, `CentsAdjustment` and the event-typed registry behind
+  `adjustmentFor(type)` no longer exist. Everything those entries record about
+  the defects found along the way still happened and stays as written.
+- Challenge: the advisory review raised a Critical REVIEW.md 13.5 finding — the
+  module implemented an event-typed strategy registry while ADR-0004 and section
+  4 of the design spec, on the branch this PR now targets (`docs/promotion-rule-engine`,
+  PR #35), had moved on again to a named calculator resolved by a factory. A rule
+  row now reads
+  `{ type: 'applyDiscount', params: { calculator: 'PercentageDiscount', valueBasisPoints: 5000 } }`:
+  the rule names the calculator, and the code no longer keys anything off the
+  event type.
+- Verification: the mismatch was found by reading the module against the design
+  text on the base branch, not by any test — the module was internally consistent
+  and fully covered while it was implementing the previous revision of the design.
+- Resolution (commit `c0c2701`): `DiscountCalculator` is the interface
+  (`validate`, `calculate`); `ValidatedDiscount` is the abstract base that holds
+  what every calculator must not get wrong — parameters checked against the
+  subclass's own schema, `bigint` arithmetic, the discount floored, the result
+  bounded into `[0, baseCents]` — so a new calculator cannot reintroduce a
+  rounding or clamping defect already fixed once on this branch, and cannot raise
+  a price. `PercentageDiscount` (`valueBasisPoints`) and `FixedDiscount`
+  (`valueCents`) are the two subclasses the case names, `CalculatorFactory.create(name)`
+  resolves a name against the registry, and `applyPromotions(baseCents, event)` is
+  the whole call site. Every failure — no calculator named, an unknown name,
+  parameters the calculator rejects, an unusable base price — is a returned
+  outcome carrying the base price and a reason, never a throw.
+- Verification of the fix: the suite is 28 tests in total — 27 in
+  `tests/pricing/effective-price.test.ts` and 1 in `tests/health.test.ts` — all
+  passing at 100 % statement, branch, function and line coverage; `npm run lint`
+  and `npm run typecheck` are clean and the local agents were re-run.
+- Note on an earlier count, without rewriting it: the entry for commit `2719dd2`
+  says "30 tests pass". That number is the suite total and includes
+  `tests/health.test.ts`; the pricing file held 29 at that commit. The entry
+  stands as written; counts from here on state both numbers, as this one does.
+- Honest lesson: this is the second time in one pull request that the AI-written
+  module was internally consistent, fully tested and approved by every local
+  agent while being the wrong shape, and both times the correction came from a
+  human reading the code against the design rather than from any automated gate.
+  The first reshape replaced a `discountType` branch; this one replaced the
+  registry that replaced it, because the design itself moved while the branch was
+  open. A branch racing a design document is a process cost, not an accident:
+  each revision of the text bought a full reshape of green, covered code. The
+  mitigation used was to retarget PR #29's base onto PR #35's branch, so the code
+  cannot reach `main` ahead of the text that documents it.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
