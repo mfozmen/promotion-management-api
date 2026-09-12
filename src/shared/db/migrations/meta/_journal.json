@@ -5,14 +5,14 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1789229521983,
+      "when": 1789234282516,
       "tag": "0000_write_store",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1789229523767,
+      "when": 1789234305237,
       "tag": "0001_seed_pricing_rules",
       "breakpoints": true
     }

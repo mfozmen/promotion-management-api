@@ -59,11 +59,7 @@ declares its direction.
 
 1.5 Effective price is never negative and never above base price. A fixed
 discount larger than the base clamps to zero; a percentage above 10 000 basis
-points is rejected at the boundary, not clamped silently. Since promotions carry
-`calculator` and `params` rather than a typed discount column (ADR-0004), that
-boundary is the calculator's zod schema, validated before the formula runs. A
-calculator that accepts an out-of-range parameter, or a formula that clamps
-instead of rejecting one, is still the finding.
+points is rejected at the boundary, not clamped silently.
 
 1.6 Timestamps are `timestamptz` and compared in UTC. Validity windows are
 half-open `[startsAt, endsAt)`. A `<=` on `endsAt`, a `Date` compared with a
@@ -96,11 +92,7 @@ update and a finding.
 2.4 Every constraint the design names exists in a migration: `NOT NULL`,
 `CHECK`, `UNIQUE`, foreign keys, the partial unique index for one running job
 per vendor. A rule enforced only in zod is a finding when the same rule protects
-an invariant. The one exception is `promotions.params`, whose shape the database
-cannot know: each calculator's zod schema is the boundary, so a row edited
-straight in `psql` can carry a parameter no API request could. That is the price
-of policy in data (ADR-0004); the calculators clamp the result into `[0, baseCents]`, and the admin path is the
-only supported writer.
+an invariant.
 
 2.5 A concurrency claim in a comment or a PR description must have a test that
 runs the operations in parallel and asserts the invariant afterwards. "Should be

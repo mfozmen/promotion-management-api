@@ -1,7 +1,10 @@
+-- btree_gist is what lets the two promotion exclusion constraints below mix `=` on a scalar
+-- with `&&` on a range; drizzle-kit generates no extension statements.
 CREATE EXTENSION IF NOT EXISTS "btree_gist";--> statement-breakpoint
 CREATE TYPE "public"."chunk_status" AS ENUM('pending', 'running', 'done', 'failed');--> statement-breakpoint
 CREATE TYPE "public"."ingestion_status" AS ENUM('running', 'paused', 'completed', 'failed', 'aborted');--> statement-breakpoint
 CREATE TYPE "public"."pricing_rule_type" AS ENUM('ingestion', 'promotion');--> statement-breakpoint
+CREATE TYPE "public"."promotion_discount_type" AS ENUM('percentage', 'fixed');--> statement-breakpoint
 CREATE TYPE "public"."promotion_status" AS ENUM('draft', 'active', 'cancelled');--> statement-breakpoint
 CREATE TABLE "ingestion_chunks" (
 	"job_id" bigint NOT NULL,
@@ -70,8 +73,8 @@ CREATE TABLE "products" (
 CREATE TABLE "promotions" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "promotions_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"name" text NOT NULL,
-	"calculator" text NOT NULL,
-	"params" jsonb NOT NULL,
+	"discount_type" "promotion_discount_type" NOT NULL,
+	"value" integer NOT NULL,
 	"starts_at" timestamp with time zone NOT NULL,
 	"ends_at" timestamp with time zone NOT NULL,
 	"product_id" bigint,
@@ -80,6 +83,8 @@ CREATE TABLE "promotions" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"cancelled_at" timestamp with time zone,
 	CONSTRAINT "promotions_window_check" CHECK ("promotions"."ends_at" > "promotions"."starts_at"),
+	CONSTRAINT "promotions_value_check" CHECK ("promotions"."value" > 0),
+	CONSTRAINT "promotions_percentage_value_check" CHECK ("promotions"."discount_type" <> 'percentage' or "promotions"."value" <= 10000),
 	CONSTRAINT "promotions_active_target_check" CHECK ("promotions"."status" <> 'active' or ("promotions"."product_id" is null) <> ("promotions"."category" is null)),
 	CONSTRAINT "promotions_draft_target_check" CHECK ("promotions"."status" <> 'draft' or ("promotions"."product_id" is null and "promotions"."category" is null))
 );

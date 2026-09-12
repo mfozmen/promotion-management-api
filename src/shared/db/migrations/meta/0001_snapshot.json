@@ -1,6 +1,6 @@
 {
-  "id": "3631e14b-1302-4186-9d70-5ace7ac29ef0",
-  "prevId": "316d2bae-7167-49c3-a4d0-11e9c9881bac",
+  "id": "719269bf-305b-4e21-85d8-1252c6ab40d1",
+  "prevId": "9c321612-6370-4432-9219-bdc4d7b6419d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -514,15 +514,16 @@
           "primaryKey": false,
           "notNull": true
         },
-        "calculator": {
-          "name": "calculator",
-          "type": "text",
+        "discount_type": {
+          "name": "discount_type",
+          "type": "promotion_discount_type",
+          "typeSchema": "public",
           "primaryKey": false,
           "notNull": true
         },
-        "params": {
-          "name": "params",
-          "type": "jsonb",
+        "value": {
+          "name": "value",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -591,6 +592,14 @@
           "name": "promotions_window_check",
           "value": "\"promotions\".\"ends_at\" > \"promotions\".\"starts_at\""
         },
+        "promotions_value_check": {
+          "name": "promotions_value_check",
+          "value": "\"promotions\".\"value\" > 0"
+        },
+        "promotions_percentage_value_check": {
+          "name": "promotions_percentage_value_check",
+          "value": "\"promotions\".\"discount_type\" <> 'percentage' or \"promotions\".\"value\" <= 10000"
+        },
         "promotions_active_target_check": {
           "name": "promotions_active_target_check",
           "value": "\"promotions\".\"status\" <> 'active' or (\"promotions\".\"product_id\" is null) <> (\"promotions\".\"category\" is null)"
@@ -650,6 +659,11 @@
       "name": "pricing_rule_type",
       "schema": "public",
       "values": ["ingestion", "promotion"]
+    },
+    "public.promotion_discount_type": {
+      "name": "promotion_discount_type",
+      "schema": "public",
+      "values": ["percentage", "fixed"]
     },
     "public.promotion_status": {
       "name": "promotion_status",

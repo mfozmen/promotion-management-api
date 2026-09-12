@@ -18,6 +18,7 @@ import {
 // btree_gist extension live in migration 0000 only. Keep both sides in step (REVIEW.md 11.4).
 
 export const promotionStatus = pgEnum('promotion_status', ['draft', 'active', 'cancelled']);
+export const promotionDiscountType = pgEnum('promotion_discount_type', ['percentage', 'fixed']);
 export const pricingRuleType = pgEnum('pricing_rule_type', ['ingestion', 'promotion']);
 export const ingestionStatus = pgEnum('ingestion_status', [
   'running',
@@ -66,10 +67,9 @@ export const promotions = pgTable(
   {
     id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
     name: text('name').notNull(),
-    // The registry key of the class that prices this promotion, and that class's own
-    // configuration; its zod schema is what bounds the values, not a column check (spec 4).
-    calculator: text('calculator').notNull(),
-    params: jsonb('params').notNull(),
+    discountType: promotionDiscountType('discount_type').notNull(),
+    // Basis points for 'percentage', minor units for 'fixed'.
+    value: integer('value').notNull(),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
     productId: bigint('product_id', { mode: 'number' }).references(() => products.id),
@@ -80,6 +80,12 @@ export const promotions = pgTable(
   },
   (table) => [
     check('promotions_window_check', sql`${table.endsAt} > ${table.startsAt}`),
+    check('promotions_value_check', sql`${table.value} > 0`),
+    // 10 000 basis points is a free product; beyond it the price would go negative.
+    check(
+      'promotions_percentage_value_check',
+      sql`${table.discountType} <> 'percentage' or ${table.value} <= 10000`,
+    ),
     check(
       'promotions_active_target_check',
       sql`${table.status} <> 'active' or (${table.productId} is null) <> (${table.category} is null)`,

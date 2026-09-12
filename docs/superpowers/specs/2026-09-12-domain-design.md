@@ -50,13 +50,14 @@ create table products (
 );
 create index products_category_id_idx on products (category, id);   -- keyset scans per category
 
+create type promotion_discount_type as enum ('percentage', 'fixed');
 create type promotion_status as enum ('draft', 'active', 'cancelled');
 
 create table promotions (
   id             bigint generated always as identity primary key,
   name           text not null,
-  calculator     text not null,                                  -- registry key, e.g. 'PercentageDiscount'
-  params         jsonb not null,                                 -- validated by that calculator's schema
+  discount_type  promotion_discount_type not null,               -- 'percentage' | 'fixed'
+  value          integer not null,                               -- basis points, or minor units for 'fixed'
   starts_at      timestamptz not null,
   ends_at        timestamptz not null,
   product_id     bigint references products (id),
@@ -65,6 +66,8 @@ create table promotions (
   created_at     timestamptz not null default now(),
   cancelled_at   timestamptz,
   check (ends_at > starts_at),
+  check (value > 0),
+  check (discount_type <> 'percentage' or value <= 10000),       -- 10 000 bps is a free product
   check (status <> 'active' or (product_id is null) <> (category is null)), -- active = exactly one target
   check (status <> 'draft' or (product_id is null and category is null)),  -- draft = no target
   -- cancelled keeps whatever shape it had (a cancelled draft has no target)
@@ -149,7 +152,7 @@ create table ingestion_chunks (
   lower promotion id so the result is deterministic. The rules are data, so
   the precedence policy changes without a deploy.
 - Facts given to the engine, per candidate: `level` (`product` or `category`),
-  `calculator`, `params`, `basePriceCents`, `stockQuantity`, `category`,
+  `discountType`, `value`, `basePriceCents`, `stockQuantity`, `category`,
   `startsAt`, `endsAt`.
 - **The calculation comes from the rule, not from the code.** A matching
   rule's event carries the name of the calculator to run and everything that
@@ -544,7 +547,7 @@ served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 | GET    | `/api/products`                                | Redis    | `category?`, `sort=effectivePrice`, `order=asc\|desc`, `page`, `pageSize` (≤ 100); `{ items, page, pageSize, total }` |
 | GET    | `/api/products/:id`                            | Redis    | hottest endpoint; `404` if the hash is missing                                                                        |
 | POST   | `/api/products`                                | PG+event | `sku, name, category, basePriceCents, stockQuantity`; `409` on duplicate SKU                                          |
-| POST   | `/api/promotions`                              | PG+event | `name, calculator, params, startsAt, endsAt, productId? \| category?`; no target = `draft`; `409` on overlap          |
+| POST   | `/api/promotions`                              | PG+event | `name, discountType, value, startsAt, endsAt, productId? \| category?`; no target = `draft`; `409` on overlap         |
 | POST   | `/api/promotions/:id/assign`                   | PG+event | `productId \| category`; draft → active; `409` on overlap, non-draft, or an `endsAt` already passed                   |
 | POST   | `/api/promotions/:id/cancel`                   | PG+event | idempotent                                                                                                            |
 | GET    | `/api/promotions`, `/api/promotions/:id`       | PG       | `status?`, `category?`, `productId?`                                                                                  |

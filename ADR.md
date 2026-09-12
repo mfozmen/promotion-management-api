@@ -68,7 +68,7 @@ Money is stored as integer minor units, percentages as basis points, timestamps 
 - Every read-model write is a recompute from PostgreSQL, so handlers are idempotent and retry-safe; the event-handler runs with concurrency 1 to keep them ordered.
 - The read model is eventually consistent: a write is visible after the handler runs, typically well under a second for single products and a few seconds for a 50 000-product category.
 - Redis is a hard runtime dependency; an empty read model answers `503` until the cold-start rebuild completes.
-- Ingestion pricing rules are `pricing_rules` rows seeded by migration `0001`, not a TypeScript constant, so they change without a deploy. The `type` column separates them from the promotion-layer rules the resolver loads (ADR-0004), and `pricing_rules_active_idx (type, priority desc) where active` serves both loaders.
+- Ingestion pricing rules are `pricing_rules` rows seeded by migration `0001`, not a TypeScript constant, so they change without a deploy. The seed speaks the vocabulary the ingestion wrapper compiles (`adjustPercentBps` with a signed basis-point `value`, facts from the parsed vendor row); a rule the wrapper cannot parse stops the job rather than mispricing a row, so the two sides are pinned to each other by an integration test on each (issue #9, #39). The `type` column separates them from the promotion-layer rules the resolver loads (ADR-0004), and `pricing_rules_active_idx (type, priority desc) where active` serves both loaders.
 
 ### Trade-offs
 
@@ -121,7 +121,6 @@ The rule "at most one active promotion per product" is implemented as **at most 
 - The engine adds a per-resolution evaluation over at most two candidates. That cost lands on the event handler and the reconciler, never on a storefront read, because the read model stores the already-resolved price.
 - Cross-level coexistence is allowed rather than rejected. Rejecting it would require an application-side check that races; allowing it keeps the database the sole arbiter.
 - Percentage discounts round in the customer's disfavour by at most one cent (floor on the discount). Stated, deterministic, testable.
-- `promotions.params` is jsonb, so no column bounds a discount: `PercentageDiscount` with `{"valueBasisPoints": 999999}` is a row PostgreSQL accepts, and the calculator's clamp turns it into a free product rather than an error. The boundary is the calculator's zod schema on the admin path, and REVIEW.md 1.5 and 2.4 were amended to say so. A calculator-scoped `CHECK` was rejected because it would put the very knowledge in the DDL that this decision takes out of it: a new calculator would need a migration again.
 - Only the ingestion rules are seeded (migration `0001`). Until the promotion rules land (#36) `pricing_rules` holds no `type = 'promotion'` row, so the resolver has nothing to fire and no promotion is applied; the schema is ready before the policy is.
 - Reporting the conflicting promotion needs a second `SELECT` after SQLSTATE 23P01; acceptable on an admin path.
 
@@ -165,6 +164,7 @@ Weekly vendor files of 500 000+ rows must pass through application-layer pricing
 - Rows for one SKU appearing in different chunks resolve by `(ingest_job_id, ingest_source_offset)`, not commit order, so out-of-order commits from scaled workers cannot regress a later row and an older file cannot clobber a newer one; the cost is two columns and one row-value comparison per upsert.
 - The file must be immutable once registered and must not contain embedded newlines; both are stated as the file contract.
 - A crash between commit and enqueueing `product.upserted` delays the read-model update until the reconciler runs.
+- The seeded rules match a category by exact, case-sensitive equality (`Electronics`, issue #9's spelling). A vendor file that spells a category differently is a row edit, not a code change, but nothing warns that it stopped matching until the priced rows are looked at.
 - Locally the "serverless" unit is hosted by a BullMQ worker under Docker memory and CPU limits; the function body is the same, the trigger differs.
 
 ### Rejected alternatives
