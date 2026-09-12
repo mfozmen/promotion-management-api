@@ -156,11 +156,12 @@ create table ingestion_chunks (
   one and its category's), builds a fact object, and runs the promotion rules
   loaded from `pricing_rules` where `type = 'promotion'`. The rule that fires
   with the highest priority names the winning candidate; ties break on the
-  lower promotion id — applied by the **resolver, after the engine**, because
-  the event vocabulary is `level` alone and no rule can express "the lower id".
-  That one step is code, so it is the one piece of precedence a row edit cannot
-  change; without it two candidates that price identically would be decided by
-  whichever comparison the seed happens to use. The rules are data, so
+  `<=` in `lower-price-product`, which is a row like the rest of the policy.
+  There is no resolver-side id tiebreak: the exclusion constraints already
+  guarantee one candidate per level, so two candidates never share one, and an
+  equal price is decided by that `<=` before any id would be consulted. A
+  tiebreak in code would be a branch no test could reach. The rules are data,
+  so
   the precedence policy changes without a deploy.
 - **The rule decides which promotion wins; it does not decide how one is
   computed.** A matching rule's event names the winner and nothing else:
@@ -180,11 +181,10 @@ create table ingestion_chunks (
   than one that can hold anything.
 - **Selection compares candidates, so each is priced first.** The resolver
   runs `applyPromotion` for every candidate, then runs the engine once over a
-  single fact set — the only one, so a rule author has one list to read:
-  `basePriceCents`, `category`, `stockQuantity` and, per candidate, its `id`,
-  `level`, `discountType`, `value`, `startsAt`, `endsAt` and
-  `effectivePriceCents`. `id` is in it because ties break on the lower
-  promotion id, and a tiebreak cannot read a fact that is not there. A rule can therefore compare them, which
+  single fact set — the only one, so a rule author has one list to read, and it
+  is the flat shape given below. The candidates' windows are not in it: the
+  resolution query already filters to active promotions, so a window fact could
+  only ever describe an active one and no rule could learn anything from it. A rule can therefore compare them, which
   `json-rules-engine` supports by giving an operator a `{ fact: ... }` value
   rather than a literal. The resolver applies the outcome it already computed
   for the winning level, so each candidate is priced once.
@@ -226,11 +226,13 @@ create table ingestion_chunks (
   seed we meant, and the two change together. Everything else inserts the rule
   row it asserts against and checks the mechanism: given this rule, the engine
   selects this candidate.
-- The extra facts — `category`, `stockQuantity` and each candidate's window —
-  are not read by the seeded rule. They are there for the rules an operator
-  writes later: a margin floor keyed on category, a stock-based adjustment.
-  Trimming the fact set to what today's seed happens to use would make the
-  layer smaller than its reason for existing.
+- `category` and `stockQuantity` are product facts the seeded rules do not
+  read. They stay because they are already selected for the product row and are
+  what an operator's first two rules would key on — a margin floor by category,
+  a stock-based adjustment. The candidates' windows were in this list and are
+  not any more: the query filters to active promotions, so they carried no
+  information a rule could use, and the columns feeding them came back out of
+  the query with them.
 
 - Exactly one rule applies per product. Rules are evaluated in priority order
   and the highest-priority match wins, which is what keeps the case's "at most
@@ -252,17 +254,42 @@ create table ingestion_chunks (
   arity one explicitly — one candidate present means that candidate wins — and
   section 12 runs the seed over a one-candidate product for exactly this
   reason.
-- **The seeded rule set, as it ships.** Three rules at distinct priorities, so
-  no two ever land in one bucket: `product-only` (priority 30, category slot
-  `null` → `{ level: 'product' }`), `category-only` (priority 30 is taken, so
-  20, product slot `null` → `{ level: 'category' }`), and `lower-price`
-  (priority 10, both slots present, comparing the two `effectivePriceCents`
-  facts). Distinct priorities are the contract, not a convention:
-  `json-rules-engine` evaluates rules of equal priority concurrently and the
-  order of `results` is not guaranteed, so two seeded rules sharing a priority
-  make the winner depend on promise resolution order. The resolver takes the
-  first event in engine order and logs a priority collision at load, which is a
-  seed defect rather than a policy choice.
+- **The fact set is flat, and an absent candidate is JSON `null` in every one
+  of its keys.** `basePriceCents`, `category`, `stockQuantity`, then
+  `productDiscountType`, `productValue`, `productEffectivePriceCents` and the
+  same three under `category…`. Flat rather than nested because a rule tests an
+  absent candidate with `equal: null`, and `path: '$.id'` into a `null` object
+  yields `undefined`, which is not `null` under `json-rules-engine`'s `equal` —
+  a nested shape would make every arity-one rule silently never fire.
+- **The seeded rule set is four rules, not three**, because a rule carries one
+  event and "the lower price wins" is two outcomes. One rule comparing the
+  candidates could only ever name one level; the other comparison would match
+  nothing, no event would fire, and the product would publish its base price in
+  the middle of the sale.
+
+  | priority | rule                   | condition                                              | event                   |
+  | -------- | ---------------------- | ------------------------------------------------------ | ----------------------- |
+  | 30       | `product-only`         | product slot non-null **and** category slot `null`     | `{ level: 'product' }`  |
+  | 20       | `category-only`        | category slot non-null **and** product slot `null`     | `{ level: 'category' }` |
+  | 12       | `lower-price-product`  | both non-null, `productEffective <= categoryEffective` | `{ level: 'product' }`  |
+  | 11       | `lower-price-category` | both non-null, `categoryEffective < productEffective`  | `{ level: 'category' }` |
+
+  Each condition names **both** slots. A single-sided condition — "category
+  slot is null" alone — matches a product carrying no promotion at all, which
+  is most of the catalogue, and would emit an event naming a candidate that is
+  not there: one defect log per product, half a million of them per ingestion
+  recompute. With both slots named, arity zero matches nothing and the base
+  price stands, which is the intended path rather than a defect path.
+
+- **Priorities 10–30 are reserved for the seed; an operator override sits above 30.** The four seeded rules are mutually exclusive, so their order decides
+  nothing between themselves — the band matters against rules added later. An
+  override written at 25 to protect a deliberately set product price beats
+  `lower-price-*` but is shadowed by `product-only` at 30, so the same intent
+  would behave differently depending on whether a category sale happened to be
+  running. Distinct priorities are a contract rather than a convention:
+  `json-rules-engine` evaluates equal priorities concurrently and the order of
+  `results` is not guaranteed. The resolver takes the first event in engine
+  order and logs a priority collision at load, which is a seed defect.
 - If no rule fires, no promotion is applied and the base price stands. A rule
   that names a candidate which is not in the fact set is a defect, logged and
   ignored rather than thrown, so a bad rule cannot take the storefront down.
@@ -324,9 +351,8 @@ Resolution query (used by the event handler and reconciler, batched by id):
 
 ```sql
 select p.*, pp.id as pp_id, pp.name as pp_name, pp.discount_type as pp_discount_type, pp.value as pp_value,
-             pp.starts_at as pp_starts_at, pp.ends_at as pp_ends_at,
              cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_discount_type, cp.value as cp_value,
-             cp.starts_at as cp_starts_at, cp.ends_at as cp_ends_at
+
 from products p
 left join promotions pp on pp.product_id = p.id and pp.status = 'active'
                        and tstzrange(pp.starts_at, pp.ends_at) @> now()
@@ -583,6 +609,8 @@ served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 | POST   | `/api/vendor/imports/:id/pause\|resume\|abort` | PG+queue |                                                                                                                       |
 | GET    | `/api/health`                                  | —        | PostgreSQL, Redis, queue reachability; `readmodel:ready`                                                              |
 | *      | `/api/admin/...`                               | —        | section 9                                                                                                             |
+
+`GET /api/products` pages by offset over ZSET scores that a category rescan rewrites progressively, so a page taken while a sale is being applied can repeat a row or miss one until the scan finishes. Stated rather than claimed away (REVIEW.md 5.5); an exclusive `(score, id)` cursor is the upgrade.
 
 ## 11. Layout
 
