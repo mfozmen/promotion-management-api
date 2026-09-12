@@ -50,7 +50,7 @@ Further endpoints are documented as they land.
 - **TDD**: every change starts with a failing test (red-green-refactor).
 - **Conventional Commits** for all commit messages.
 - All changes land through pull requests — no direct pushes to `main`.
-- A PR merges only once CI is green, the SonarCloud quality gate passes, the advisory Claude AI review has run, and at least one human reviewer has approved.
+- A PR merges only once CI is green — which includes a step that fails on any unresolved SonarCloud issue, one silenced from the SonarCloud web interface, or an unreviewed security hotspot (see [CONTRIBUTING.md](./CONTRIBUTING.md)) — the SonarCloud quality gate passes, the advisory Claude AI review has run, and at least one human reviewer has approved.
 - Merges to `main` are squash merges.
 - Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check.
 
