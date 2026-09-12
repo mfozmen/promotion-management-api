@@ -71,8 +71,8 @@ assertions.
    that category, cancel while reading. Verify invariants afterwards by
    reading the state back. Exactly one winner where the rule says one.
 4. **Load** with `npx autocannon@8` (no global install):
-   - `GET /products/:id` (hottest endpoint) at `-c 100 -d 15`.
-   - `GET /products?category=...&sort=effectivePrice` at `-c 50 -d 15`.
+   - `GET /api/products/:id` (hottest endpoint) at `-c 100 -d 15`.
+   - `GET /api/products?category=...&sort=effectivePrice` at `-c 50 -d 15`.
    - Mixed read load while a promotion is created and cancelled in a loop.
      Record requests/s, p50/p99 latency, non-2xx count, and errors/timeouts.
 5. **Resource usage** during load. Sample the server process every 2 s:
@@ -139,7 +139,7 @@ first result is ambiguous, and say so.
 - Zero non-2xx responses under read load, zero timeouts.
 - No deadlock in the PostgreSQL log, no statement count that scales with page
   size, one rebuild per cache expiry, and heap returning to its baseline.
-- p99 latency for `GET /products/:id` under 100 ms locally.
+- p99 latency for `GET /api/products/:id` under 100 ms locally.
 - Peak RSS under 256 MB for the API, under 128 MB for an ingestion run.
 - Every invariant in section 2 holds after every race scenario in section 3.
 

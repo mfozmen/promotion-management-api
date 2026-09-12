@@ -197,6 +197,9 @@ describe('validate: body', () => {
       path: 'body.name',
       message: expect.any(String),
     });
+    // 8.3b held by a test rather than by zod's current defaults: a message
+    // built with the received value would sail past every other assertion.
+    expect(res.text).not.toContain('x'.repeat(50));
   });
 
   it('keeps zod messages free of internal detail', async () => {
