@@ -32,6 +32,36 @@ story uses and let it skip.
 - The issue's acceptance criteria, its Covers line, and any owner decision
   recorded in its comments. A decision in a comment outranks the original body.
 
+## Write for the person, not the endpoint
+
+A case says what someone was trying to do and whether they got it. This system
+has three people in it, and every case belongs to one of them:
+
+- **The vendor**, who uploads a weekly file and needs the catalogue to end up
+  priced correctly, whatever happened to the machine in between.
+- **The admin**, who starts a flash sale and needs it live when they said, on
+  the products they meant, and cancellable.
+- **The shopper**, who lists a category and opens a product, and needs the price
+  they see to be the price that applies.
+
+Prefer a case that follows one of them through a whole journey over several that
+poke at the parts of it. "The vendor uploads a file with a category markup rule
+active, and every row lands with the marked-up price" is worth more than a case
+per endpoint along that path, because the endpoints can each be correct while
+the journey is broken between them. That gap is exactly what an end-to-end run
+exists to find, and it is invisible to a case written per endpoint.
+
+So group a story's criteria by the person they serve, and where two criteria
+describe consecutive steps of one journey, write them as one case with the steps
+in order rather than two that start from nothing. Split them only when they can
+genuinely fail apart.
+
+A case with no person in it is a technical probe. Those are allowed, and a few
+are necessary — a health check, a migration applied — but they go last and they
+are never the bulk of a file. If a story's file is all probes, say so in your
+report: it usually means the story was written about a mechanism rather than
+about someone's need.
+
 ## What a case looks like
 
 Each acceptance criterion becomes exactly one case. Never merge two criteria
@@ -41,6 +71,7 @@ in both directions.
 ```
 ### 13-1
 
+- Actor: shopper browsing a category
 - Precondition: GET /api/products
 - Given: the read model holds 40 products in category Accessories
 - When: GET /api/products?category=Accessories&sort=effectivePrice&order=asc&page=2&pageSize=20
@@ -51,6 +82,9 @@ in both directions.
 - **Id** `<issue>-<n>`, numbered in the order the criteria appear. An id is
   permanent: it is how a run's report refers back to a criterion, so it survives
   rewording. Never renumber; a deleted criterion leaves its id retired.
+- **Actor** — which of the three people this serves, and what they are trying to
+  do. A case that cannot name one is a probe; mark it `Actor: none (probe)` and
+  put it at the end of the file.
 - **Precondition** — the route, job, table or worker the case needs. This is how
   `e2e-tester` tells a real skip from a failure. Without it every absent feature
   reads as a pass.
