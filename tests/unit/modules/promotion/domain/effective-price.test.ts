@@ -25,7 +25,7 @@ describe('effectivePrice', () => {
 
   it('subtracts what the calculator for the type returns', () => {
     expect(priced(10_000, { value: 2500 })).toBe(7500);
-    expect(priced(10_000, { discountType: 'fixed', value: 2500 })).toBe(7500);
+    expect(priced(10_000, { discountType: 'fixed', value: 800 })).toBe(9200);
   });
 
   it('clamps to zero when the discount is larger than the price', () => {
@@ -46,6 +46,15 @@ describe('effectivePrice', () => {
     expect(effectivePrice(10_000, discount({ value: 10_001 }))).toEqual({
       ok: false,
       reason: 'discount is above 10000 basis points',
+    });
+  });
+
+  it('reports an unknown discount type instead of throwing', () => {
+    expect(
+      effectivePrice(10_000, { discountType: 'tiered' as Discount['discountType'], value: 2500 }),
+    ).toEqual({
+      ok: false,
+      reason: 'unknown discount type',
     });
   });
 

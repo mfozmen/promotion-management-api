@@ -53,6 +53,8 @@ tests/  automated tests (unit, integration, e2e), each layer mirroring src/
 docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
 
+Inside a layer the tree mirrors `src/`, one test file per source file. Tests import their subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.config.ts` `resolve.alias`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+
 ## API
 
 | Method | Path      | Description                               |

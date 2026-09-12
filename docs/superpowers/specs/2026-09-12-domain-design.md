@@ -170,8 +170,9 @@ create table ingestion_chunks (
 - **The rule decides which promotion wins; it does not decide how one is
   computed.** A matching rule's event names the winner and nothing else:
   `{ type: 'selectCandidate', params: { level: 'product' | 'category' } }`.
-  The arithmetic is not in the rule, not in a registry and not in a parameter
-  bag — it is one pure function over a typed row.
+  The arithmetic is not in the rule, not in a registry the rule can name and
+  not in a parameter bag — it is a pure calculator per discount type behind one
+  pure entry point.
 - **One function, one vocabulary.** `effectivePrice(basePriceCents, promotion)`
   in `src/modules/promotion/domain/` takes
   `Pick<Promotion, 'discountType' | 'value'>` — `discountType` of
@@ -185,9 +186,16 @@ create table ingestion_chunks (
   the resolver has no columns to supply; the function body reads neither the
   window nor the status. Whether a candidate is active was decided by that
   query on the database clock before it reached the function. Percentage is
-  `base - floor(base * bps / 10000)`, fixed is `max(base - value, 0)`,
-  arithmetic in `bigint`, the result clamped to `[0, base]`. A third kind of
-  discount is a migration that widens the enum, and that is the right cost:
+  `base - floor(base * bps / 10000)` and fixed is `max(base - value, 0)`, each
+  in its own `DiscountCalculator` (`percentage-discount.ts`,
+  `fixed-discount.ts`) together with its own value check — the 10 000
+  basis-point ceiling belongs to percentage, not to the guard.
+  `effectivePrice` looks one up in `discountCalculators`, a
+  `Record<DiscountType, DiscountCalculator>`, instead of branching on the type;
+  arithmetic in `bigint`, the result clamped to `[0, base]` by
+  `effectivePrice`. A third kind of
+  discount is a migration that widens the enum plus a calculator file the
+  `Record` will not typecheck without, and that is the right cost:
   the case names two, and a vocabulary the reader can enumerate is worth more
   than one that can hold anything.
 - **Selection compares candidates, so each is priced first.** The resolver
@@ -203,7 +211,8 @@ create table ingestion_chunks (
   `src/modules/pricing/` holds the `json-rules-engine` rules that Scenario A's
   ingestion uses to adjust a vendor's base price. Neither module imports the
   other: a promotion is a row a human created with a window and a target, an
-  ingestion adjustment is a rule applied to a feed. Sharing a registry between
+  ingestion adjustment is a rule applied to a feed. Sharing a cross-module
+  registry between
   them is what this design tried and the owner reversed — the two look alike
   only at the level of "something changes a number".
 
@@ -661,13 +670,15 @@ served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 
 ## 11. Layout
 
+Target layout: a file appears here before it exists on disk, and lands with the PR that needs it.
+
 ```
 src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
     promotion/
-      domain/    promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), effective-price.ts (effectivePrice, pure), pricing-input-error.ts (pricingInputError, the guards), candidate-selection.ts (runs the engine over already-loaded rules, pure)
+      domain/    promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), effective-price.ts (effectivePrice, pure), pricing-input-error.ts (pricingInputError, the guards), discount-calculator.ts (the DiscountCalculator interface: valueError + discountCents), percentage-discount.ts and fixed-discount.ts (one calculator each, formula and value check together), discount-calculators.ts (Record<DiscountType, DiscountCalculator>, the only lookup), candidate-selection.ts (runs the engine over already-loaded rules, pure)
       db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
       jobs/      scheduling.ts
@@ -711,6 +722,13 @@ Dockerfile           one image, command per service
   it. That test inserts the rule rows it asserts against. No test reads the row
   a **running** database holds — the seed is code and is tested as code; the
   runtime row is data and an operator editing it must not turn CI red.
+- Test files import their subject through the `@src/*` alias (`tsconfig.json`
+  `paths` plus a matching `vitest` `resolve.alias`, `ee6aa9e`), so a test five
+  directories deep does not carry a relative path that breaks silently when a
+  file moves. Production code under `src/` keeps relative specifiers: `tsc`
+  does not rewrite path aliases on emit, so an alias in `src/` would compile to
+  an import Node cannot resolve. Tests are never emitted, so nothing reaches
+  the runtime through the alias.
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
 - Integration: real PostgreSQL and Redis from `docker compose`, database

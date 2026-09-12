@@ -1,42 +1,35 @@
 import { describe, expect, it } from 'vitest';
+import { fixedDiscount } from '@src/modules/promotion/domain/fixed-discount.js';
+import { percentageDiscount } from '@src/modules/promotion/domain/percentage-discount.js';
 import { pricingInputError } from '@src/modules/promotion/domain/pricing-input-error.js';
-import type { Promotion } from '@src/modules/promotion/domain/promotion.js';
-
-type Discount = Pick<Promotion, 'discountType' | 'value'>;
-
-function discount(overrides: Partial<Discount> = {}): Discount {
-  return { discountType: 'percentage', value: 2500, ...overrides };
-}
 
 describe('pricingInputError', () => {
   it('accepts a whole base price and a whole, positive value', () => {
-    expect(pricingInputError(10_000, discount())).toBeNull();
+    expect(pricingInputError(10_000, 2500, percentageDiscount)).toBeNull();
   });
 
   it('rejects a base price that is not a whole, non-negative number of minor units', () => {
     for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, -500, 2 ** 53]) {
-      expect(pricingInputError(basePriceCents, discount())).toBe(
+      expect(pricingInputError(basePriceCents, 2500, percentageDiscount)).toBe(
         'base price is not a whole number of minor units in range',
       );
     }
   });
 
-  it('rejects a value that is not a whole, positive number, whatever the type', () => {
-    for (const discountType of ['percentage', 'fixed'] as const) {
+  it('rejects a value that is not a whole, positive number, whatever the calculator', () => {
+    for (const calculator of [percentageDiscount, fixedDiscount]) {
       for (const value of [2500.5, NaN, Infinity, -2500, 0, 2 ** 53]) {
-        expect(pricingInputError(10_000, discount({ discountType, value }))).toBe(
+        expect(pricingInputError(10_000, value, calculator)).toBe(
           'discount value is not a whole, positive number',
         );
       }
     }
   });
 
-  it('defers the rest to the calculator for the type', () => {
-    expect(pricingInputError(10_000, discount({ value: 10_001 }))).toBe(
+  it('defers the rest to the calculator it was given', () => {
+    expect(pricingInputError(10_000, 10_001, percentageDiscount)).toBe(
       'discount is above 10000 basis points',
     );
-    expect(
-      pricingInputError(10_000, discount({ discountType: 'fixed', value: 10_001 })),
-    ).toBeNull();
+    expect(pricingInputError(10_000, 10_001, fixedDiscount)).toBeNull();
   });
 });
