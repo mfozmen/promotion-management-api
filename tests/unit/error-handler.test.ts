@@ -3,7 +3,7 @@ import express, { type Express } from 'express';
 import request from 'supertest';
 import { errorHandler } from '../../src/middleware/error-handler.js';
 import { httpLogger } from '../../src/shared/logger.js';
-import { HttpError } from '../../src/shared/http-error.js';
+import { HttpError, STATUS } from '../../src/shared/http-error.js';
 import { DrizzleQueryError } from 'drizzle-orm';
 import { captureLogger, type CapturedLogger } from '../capture-logger.js';
 
@@ -47,7 +47,7 @@ describe('HttpError mapping', () => {
     [409, 'CONFLICT' as const, 'An active promotion already covers this product'],
     [429, 'BACKPRESSURE' as const, 'Too many pending imports'],
   ])('answers %i with its code and message', async (status, code, message) => {
-    const res = await request(appThrowing(new HttpError(status, code, message))).get('/boom');
+    const res = await request(appThrowing(new HttpError(code, message))).get('/boom');
 
     expect(res.status).toBe(status);
     expect(res.type).toBe('application/json');
@@ -56,7 +56,7 @@ describe('HttpError mapping', () => {
 
   it('never returns the message of a 5xx a handler raised', async () => {
     // Written for an operator, and this one carries a credential and a host.
-    const leaky = new HttpError(500, 'INTERNAL', 'password hunter2 rejected by 10.0.0.5');
+    const leaky = new HttpError('INTERNAL', 'password hunter2 rejected by 10.0.0.5');
     const res = await request(appThrowing(leaky)).get('/boom');
 
     expect(res.status).toBe(500);
@@ -68,7 +68,7 @@ describe('HttpError mapping', () => {
   it('answers a designed 5xx with our own message, not the operator prose', async () => {
     const res = await request(
       appThrowing(
-        new HttpError(503, 'READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', {
+        new HttpError('READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', {
           host: '10.0.0.5',
         }),
       ),
@@ -87,18 +87,12 @@ describe('HttpError mapping', () => {
     expect(res.text).not.toContain('10.0.0.5');
   });
 
-  it.each([
-    ['a 5xx code we wrote no public words for', 502, 'INTERNAL' as const],
-    ['a client code wearing a server status', 503, 'CONFLICT' as const],
-    ['a real code under the wrong status', 500, 'READ_MODEL_NOT_READY' as const],
-  ])('keeps the status but not the words for %s', async (_name, status, code) => {
-    // The status is what an operator needs — 502 is not 500 — while a client
-    // branching on CONFLICT must never see it on a read-model outage.
+  it('gives a 5xx code with no public wording nothing to say', async () => {
     const res = await request(
-      appThrowing(new HttpError(status, code, 'upstream 10.0.0.5 refused', { sql: 'select 1' })),
+      appThrowing(new HttpError('INTERNAL', 'upstream 10.0.0.5 refused', { sql: 'select 1' })),
     ).get('/boom');
 
-    expect(res.status).toBe(status);
+    expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     expect(res.text).not.toContain('10.0.0.5');
     expect(res.text).not.toContain('select 1');
@@ -107,7 +101,7 @@ describe('HttpError mapping', () => {
   it('logs a handler-raised 5xx as a server fault, with its message', async () => {
     const captured = captureLogger();
     await request(
-      appThrowing(new HttpError(503, 'READ_MODEL_NOT_READY', 'rebuild running'), captured),
+      appThrowing(new HttpError('READ_MODEL_NOT_READY', 'rebuild running'), captured),
     ).get('/boom');
 
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
@@ -115,24 +109,30 @@ describe('HttpError mapping', () => {
     });
   });
 
-  it.each([
-    ['below any status', 42],
-    ['above what Express accepts', 1000],
-    ['not an integer', 404.5],
-    ['a typo for a 4xx', 4004],
-  ])('drops the code with the status when the status is %s', async (_name, status) => {
-    const res = await request(appThrowing(new HttpError(status, 'CONFLICT', 'nope'))).get('/boom');
+  it('passes details through untouched when they are not a list', async () => {
+    const details = { conflictsWith: 'promotion-1' };
+    const res = await request(appThrowing(new HttpError('CONFLICT', 'Overlap', details))).get(
+      '/boom',
+    );
 
-    // A code whose status does not match it is worse than no code: a client
-    // branching on CONFLICT would never retry what is actually a server fault.
-    expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    expect(res.body.error.details).toEqual(details);
+  });
+
+  it('cannot be given a status that disagrees with its code', () => {
+    // The pairing was wrong in three directions across three commits. It is not
+    // a rule any more: `new HttpError(404, 'CONFLICT', …)` does not compile, and
+    // the status is whatever the code says it is.
+    expect(new HttpError('CONFLICT', 'x').status).toBe(409);
+    expect(new HttpError('READ_MODEL_NOT_READY', 'x').status).toBe(503);
+    expect(Object.values(STATUS).every((s) => Number.isInteger(s) && s >= 400 && s <= 599)).toBe(
+      true,
+    );
   });
 
   it('includes details when the error carries them', async () => {
     const details = [{ path: 'page', message: 'Too small' }];
     const res = await request(
-      appThrowing(new HttpError(400, 'VALIDATION_ERROR', 'Invalid request query', details)),
+      appThrowing(new HttpError('VALIDATION_ERROR', 'Invalid request query', details)),
     ).get('/boom');
 
     expect(res.body.error.details).toEqual(details);
@@ -140,7 +140,7 @@ describe('HttpError mapping', () => {
 
   it('logs the rejection with the correlation id', async () => {
     const captured = captureLogger();
-    await request(appThrowing(new HttpError(409, 'CONFLICT', 'Overlap'), captured))
+    await request(appThrowing(new HttpError('CONFLICT', 'Overlap'), captured))
       .get('/boom')
       .set('x-request-id', 'trace-1');
 
@@ -331,7 +331,7 @@ describe('mounted without the http logger', () => {
   it('still answers, instead of throwing inside the error handler', async () => {
     const app = express();
     app.get('/boom', (_req, _res, next) => {
-      next(new HttpError(409, 'CONFLICT', 'Overlap'));
+      next(new HttpError('CONFLICT', 'Overlap'));
     });
     app.use(errorHandler);
 

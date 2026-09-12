@@ -3,7 +3,7 @@ import { HttpError } from '../../src/shared/http-error.js';
 
 describe('HttpError', () => {
   it('keeps its status, code and message', () => {
-    const error = new HttpError(409, 'CONFLICT', 'Overlap');
+    const error = new HttpError('CONFLICT', 'Overlap');
 
     expect(error).toBeInstanceOf(Error);
     expect(error.name).toBe('HttpError');
@@ -16,7 +16,7 @@ describe('HttpError', () => {
   it('carries details when a caller supplies them', () => {
     const details = [{ path: 'sku', message: 'Required' }];
 
-    expect(new HttpError(400, 'VALIDATION_ERROR', 'Invalid request body', details).details).toEqual(
+    expect(new HttpError('VALIDATION_ERROR', 'Invalid request body', details).details).toEqual(
       details,
     );
   });

@@ -11,7 +11,6 @@ export interface RequestSchemas {
 
 const PARTS = ['body', 'query', 'params'] as const;
 
-const MAX_DETAILS = 20;
 const MAX_LOGGED_KEYS = 20;
 const MAX_KEY_LENGTH = 64;
 
@@ -34,9 +33,7 @@ const formatPath = (part: string, path: PropertyKey[]): string =>
  * A union's detail is also only as good as its top-level message today.
  */
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
-  // Bounded like the log line: one 100kb body of array items is thousands of
-  // issues, and an unauthenticated request must not amplify into a response.
-  return error.issues.slice(0, MAX_DETAILS).map((issue) => ({
+  return error.issues.map((issue) => ({
     path: formatPath(part, issue.path),
     message:
       issue.code === 'unrecognized_keys'
@@ -83,7 +80,6 @@ export function validate(schemas: RequestSchemas): RequestHandler {
         }
         next(
           new HttpError(
-            400,
             'VALIDATION_ERROR',
             `Invalid request ${part}`,
             toDetails(result.error, part),

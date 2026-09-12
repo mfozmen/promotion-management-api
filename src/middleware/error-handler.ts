@@ -21,20 +21,14 @@ const OTHER_CLIENT_ERROR = {
   message: 'Request could not be processed',
 } as const;
 
+const MAX_DETAILS = 20;
+
 const SERVER_FAULT = { status: 500, code: 'INTERNAL', message: 'Internal server error' } as const;
 
-/**
- * Public wording for a 5xx, keyed by **status** so the pair is checked rather
- * than assumed: a handler that raises the right code under the wrong status has
- * still made a mistake, and `500 READ_MODEL_NOT_READY` would have a client
- * retry a genuine fault forever.
- */
-const SERVER_MESSAGES = new Map<number, { code: ErrorCode; message: string }>([
-  [
-    503,
-    { code: 'READ_MODEL_NOT_READY', message: 'The read model is not ready yet; retry shortly' },
-  ],
-]);
+/** Public wording for a 5xx. A code without an entry says nothing to a client. */
+const SERVER_MESSAGES: Partial<Record<ErrorCode, string>> = {
+  READ_MODEL_NOT_READY: 'The read model is not ready yet; retry shortly',
+};
 
 /**
  * Express 5 throws a `RangeError` for a status outside [100, 999], so an
@@ -42,9 +36,6 @@ const SERVER_MESSAGES = new Map<number, { code: ErrorCode; message: string }>([
  */
 const isClientStatus = (status: unknown): status is number =>
   typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 499;
-
-const isServerStatus = (status: unknown): status is number =>
-  typeof status === 'number' && Number.isInteger(status) && status >= 500 && status <= 599;
 
 /** Every error marked the http-errors way keeps its status, not an enumerated few (ADR-0008). */
 function clientError(err: unknown): ErrorMapping | undefined {
@@ -58,30 +49,21 @@ function clientError(err: unknown): ErrorMapping | undefined {
 
 /**
  * Being our own type is not the same as being safe: a 5xx message is written
- * for an operator, so only its status and code cross. `503
- * READ_MODEL_NOT_READY` stays branchable by the client without its prose.
+ * for an operator, so it crosses only where we wrote public words for its code.
+ * The status needs no guarding — it is derived from the code.
  */
 function raisedError(err: HttpError): ErrorMapping {
-  if (isClientStatus(err.status)) {
+  if (err.status < 500) {
     return err;
   }
-  if (!isServerStatus(err.status)) {
-    return SERVER_FAULT;
-  }
-  // The status survives — `502` and `504` are what an operator needs — but the
-  // code and the words cross only where we wrote public ones for that exact
-  // status. A client branching on `CONFLICT` must never see it on a read-model
-  // outage, and must not retry a `500` because it arrived wearing a 503's code.
-  const known = SERVER_MESSAGES.get(err.status);
+  const message = SERVER_MESSAGES[err.code];
 
-  return known && known.code === err.code
-    ? { status: err.status, ...known }
-    : { ...SERVER_FAULT, status: err.status };
+  return message ? { status: err.status, code: err.code, message } : SERVER_FAULT;
 }
 
 export const notFoundHandler: RequestHandler = (_req, _res, next) => {
   // The path is not echoed back: it is untrusted input.
-  next(new HttpError(404, 'NOT_FOUND', 'Route not found'));
+  next(new HttpError('NOT_FOUND', 'Route not found'));
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express recognises an error handler by its arity
@@ -112,7 +94,14 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       error: { code: known.code, message: known.message },
     };
     if (known.details !== undefined) {
-      body.error.details = known.details;
+      // Bounded at the envelope every producer crosses, not at one of them: a
+      // 100kb body of array items is thousands of zod issues, and an
+      // unauthenticated request must not amplify into the response.
+      // ponytail: truncated, not counted — the client fixes what it is shown,
+      // and several round trips on a large batch is the accepted cost.
+      body.error.details = Array.isArray(known.details)
+        ? known.details.slice(0, MAX_DETAILS)
+        : known.details;
     }
     res.status(known.status).json(body);
 
