@@ -3,7 +3,7 @@ import express, { type Express } from 'express';
 import request from 'supertest';
 import { errorHandler } from '../../src/middleware/error-handler.js';
 import { httpLogger } from '../../src/shared/logger.js';
-import { HttpError, STATUS } from '../../src/shared/http-error.js';
+import { HttpError } from '../../src/shared/http-error.js';
 import { DrizzleQueryError } from 'drizzle-orm';
 import { captureLogger, type CapturedLogger } from '../capture-logger.js';
 
@@ -124,9 +124,17 @@ describe('HttpError mapping', () => {
     // the status is whatever the code says it is.
     expect(new HttpError('CONFLICT', 'x').status).toBe(409);
     expect(new HttpError('READ_MODEL_NOT_READY', 'x').status).toBe(503);
-    expect(Object.values(STATUS).every((s) => Number.isInteger(s) && s >= 400 && s <= 599)).toBe(
-      true,
-    );
+  });
+
+  it('truncates a details list at the envelope, whoever produced it', async () => {
+    // The cap lives here now, not in the validator, so it holds for every
+    // producer. This is its test, next to the code it bounds.
+    const details = Array.from({ length: 21 }, (_, i) => ({ path: `body.f${i}`, message: 'bad' }));
+    const res = await request(
+      appThrowing(new HttpError('VALIDATION_ERROR', 'Invalid request body', details)),
+    ).get('/boom');
+
+    expect(res.body.error.details).toHaveLength(20);
   });
 
   it('includes details when the error carries them', async () => {

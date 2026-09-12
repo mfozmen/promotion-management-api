@@ -98,7 +98,8 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       // 100kb body of array items is thousands of zod issues, and an
       // unauthenticated request must not amplify into the response.
       // ponytail: truncated, not counted — the client fixes what it is shown,
-      // and several round trips on a large batch is the accepted cost.
+      // and several round trips on a large batch is the accepted cost. An object
+      // passes whole: the only producer of a list today is the validator.
       body.error.details = Array.isArray(known.details)
         ? known.details.slice(0, MAX_DETAILS)
         : known.details;

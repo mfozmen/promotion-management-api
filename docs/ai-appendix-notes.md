@@ -385,3 +385,28 @@ rewritten.
 
 - Estimated ratio: roughly 85 % AI-generated to 15 % human-crafted, unchanged in volume. The human share decided the same kind of thing for the fifth round running, and this time explicitly: refusing a fourth correct-looking patch to the same rule and asking for a shape instead. The owner also caught a documentation defect the AI produced — a measured number generalised to one sample and a mitigation asserted as configured when it exists nowhere in the repository.
 - Blind spots added to the list: (23) the AI fixes the field the finding names and re-verifies that field, so an invariant that spans fields can be broken and repaired alternately without the suite ever going red — three rounds of correct local fixes produced three different wrong behaviours here. (24) the AI reaches for another patch when the evidence is that the shape is wrong; the count of past fixes to the same rule is a signal it does not weigh. (25) when writing up a measurement, the AI reports the run it observed as the value and describes a planned mitigation in the present tense, which turns an unset flag into a documented control.
+
+### 2026-09-12 — Structural round: the status leaves the constructor (PR #30, commit `9f27f8d`)
+
+- Strategy: no new fix was attempted on the pairing rule. The question asked instead was which parameter made the wrong state expressible, and the answer was the one the caller supplied and the API already knew — the status. `HttpError` became `HttpError(code, message, details?)` with `STATUS`, a `Record<ErrorCode, …>`, deriving it. Both status-range guards on the raise path went with it, and `SERVER_MESSAGES` went back to being keyed by code because with the status derived there is no second field left to disagree.
+- Human refinement: the owner drew the lesson in the commit message rather than in the diff, and `architecture-critic` confirmed it and then found the next instance one level down (below). The owner also narrowed the `STATUS` value type after the critic's report.
+- Scope (commit `9f27f8d` plus the uncommitted narrowing): `src/shared/http-error.ts` derives `status` from `code`; `src/middleware/error-handler.ts` drops the raise-path range checks; `tests/unit/error-handler.test.ts` loses the `502 INTERNAL`, `503 CONFLICT` and `500 READ_MODEL_NOT_READY` cases, which now describe states no caller can construct.
+
+#### What ended a three-round defect was removing the parameter, not fixing it
+
+- Challenge: the status/code pairing was wrong in three directions across three consecutive commits — a code surviving a status it did not match (before `af38e0c`), the status dropped along with the code (`af38e0c`, caught black-box by `e2e-tester`, fixed in `4f10c7f`), then a code accepted under any 5xx at all (`4f10c7f`, fixed in `a218bf2`). Each fix was correct about the field it was aimed at.
+- Verification: `architecture-critic` on the branch, which confirmed the shape rather than the patch, and the type checker, which now rejects the old call sites outright.
+- Resolution (before/after): before, `new HttpError(503, 'CONFLICT', …)` compiled and three separate statements decided what a client saw. After, that line does not compile, `STATUS` is the single place a code's status is decided, and the REVIEW.md rule that would have asked authors not to write it is unnecessary.
+- Lesson: four rounds of correct patches did not settle a rule that a removed parameter settled in one. When the same invariant is re-broken by fixes that are each locally right, the signal is that the wrong state is expressible; the move is to delete the input that expresses it, so the violation becomes unstateable instead of forbidden.
+
+#### The same pattern one level down: an invariant asserted where the compiler could hold it
+
+- Challenge: with the status derived, `STATUS` was typed `Record<ErrorCode, number>`. A typo — `4004`, `1000` — still compiled and would still have reached `res.status()`; the range was held by a unit test asserting every value was an integer 4xx or 5xx.
+- Verification: found by `architecture-critic` reading the new type immediately after the round that removed the parameter, not by a failing test — the test passed, which is the point.
+- Resolution (before/after): before, `Record<ErrorCode, number>` plus a range test. After, `Record<ErrorCode, 400 | 404 | 409 | 413 | 415 | 429 | 500 | 503>`; the invalid literal is a compile error and the test no longer has anything to assert.
+- Lesson: identical to the one above, applied to the type instead of the signature. An invariant a test asserts is an invariant that can be violated between test runs and in any code path the suite does not reach; where the set of legal values is finite and known, the literal union costs nothing and the test becomes redundant. Both defects are now structural.
+
+### 2026-09-12 — after the structural round (PR #30, commit `9f27f8d`)
+
+- Estimated ratio: roughly 85 % AI-generated to 15 % human-crafted, unchanged in volume. The human and agent share was again the decision rather than the code: refusing the fifth patch, and the critic supplying the second instance once the pattern had a name.
+- Blind spots added to the list: (26) the AI defends an invariant with a guard or a test at the point of use and does not consider removing the input that makes the violation expressible, so a rule accumulates enforcement instead of losing its failure mode. (27) after a structural fix, the AI does not re-scan the new structure for the same pattern one level down — the widened `number` type was introduced in the same commit that removed the wrong parameter.

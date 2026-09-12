@@ -15,11 +15,13 @@ export type ErrorCode =
 
 /**
  * The one status each code answers with. Exhaustive over `ErrorCode`, so a new
- * code cannot be added without deciding its status, and a caller cannot pair a
- * code with a status that contradicts it — that pairing was wrong in three
+ * code cannot be added without deciding its status, the value type holds the
+ * range so a typo cannot reach `res.status()`, `as const` stops anything
+ * rewriting a row at runtime, and a caller cannot pair a code with a status that
+ * contradicts it — that pairing was wrong in three
  * different directions before it stopped being expressible.
  */
-export const STATUS: Record<ErrorCode, number> = {
+export const STATUS = {
   VALIDATION_ERROR: 400,
   BAD_REQUEST: 400,
   NOT_FOUND: 404,
@@ -29,7 +31,7 @@ export const STATUS: Record<ErrorCode, number> = {
   BACKPRESSURE: 429,
   INTERNAL: 500,
   READ_MODEL_NOT_READY: 503,
-};
+} as const satisfies Record<ErrorCode, 400 | 404 | 409 | 413 | 415 | 429 | 500 | 503>;
 
 /**
  * An error raised at the HTTP boundary. Not the `HttpError` of the
