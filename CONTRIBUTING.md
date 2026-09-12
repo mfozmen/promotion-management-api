@@ -42,6 +42,8 @@ Required on `main`:
 - `ci` — lint, typecheck, tests with 100 % coverage thresholds, SonarCloud scan
 - `claude-review` — advisory AI review
 
+`local-gates` also runs on every pull request but does not block a merge. It computes the agent labels this diff needs from its changed paths and prints the set: `docs-verified` always, `cases-verified` when the pull request touches `src/`, `impact-verified` for the behaviour or judgement group below, and `architecture-verified` when it touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules or `src/workers/`, or carries the `scenario` label. `e2e-verified` is never required; that run happens when the owner asks for it. Every new push strips all five, so the applicable agents are re-run and their labels re-applied before the pull request goes to the owner.
+
 `local-gates` still runs and computes the agent set from the changed paths, and
 its labels are read at hand-off, but it does not block a merge. The SonarCloud
 check is not required either: the scan is skipped when a pull request touches
@@ -66,6 +68,7 @@ Four Claude Code agents live in `.claude/agents/`. They are part of the process,
 | `architecture-critic` | Before pushing a PR that touches `ADR.md`, `docs/superpowers/specs/`, the vendor, promotion or pricing modules, the workers, or carries the `scenario` label | SOUND / REVISE / REJECT, label `architecture-verified`                                           |
 | `e2e-tester`          | When the owner asks for a run; never a required label                                                                                                        | PASS / FAIL, label `e2e-verified`                                                                |
 | `impact-analyzer`     | Before pushing a PR that touches the **behaviour** or the **judgement** group                                                                                | PASS / FAIL, label `impact-verified`                                                             |
+| `test-case-generator` | Before pushing a PR that touches `src/`; reads the story's acceptance criteria, never the implementation                                                     | PASS / FAIL, writes `docs/e2e-cases/<issue>.md`, label `cases-verified`                          |
 | `docs-scribe`         | Before every push, on the PR branch, and whenever an AI mistake is caught and fixed (this one always applies)                                                | Updates `ADR.md`, `README.md`, `docs/ai-appendix-notes.md` in the same PR, label `docs-verified` |
 
 Agent definitions are living documents: when an endpoint, job, cache or store lands, update the relevant agent in the same PR so it knows what to test, trace or attack.

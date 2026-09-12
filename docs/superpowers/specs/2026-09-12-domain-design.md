@@ -169,11 +169,19 @@ create table ingestion_chunks (
   The arithmetic is not in the rule, not in a registry and not in a parameter
   bag — it is one pure function over a typed row.
 - **One function, one vocabulary.** `applyPromotion(basePriceCents, promotion)`
-  in `src/modules/promotion/` takes the `Promotion` the row already is —
-  `discountType` of `percentage | fixed` and `value` in basis points or minor
-  units — and returns a `PricingOutcome`, a discriminated union of
+  in `src/modules/promotion/` takes
+  `Pick<Promotion, 'discountType' | 'value'>` — `discountType` of
+  `percentage | fixed`, `value` in basis points or minor units — and returns a
+  `PricingOutcome`, a discriminated union of
   `{ ok: true, effectivePriceCents }` or `{ ok: false, reason }`. A failure
-  carries no price, so a caller cannot publish one by mistake. Percentage is
+  carries no price, so a caller cannot publish one by mistake. The parameter is
+  narrowed rather than the whole row because the resolution query stopped
+  selecting `starts_at`/`ends_at` once the windows left the fact set: a
+  parameter typed `Promotion` demands `status`, `startsAt` and `endsAt`, which
+  the resolver has no columns to supply. `applyPromotion` on #29 takes the full
+  interface today and narrows to this `Pick` — the function body already reads
+  neither the window nor the status, so the change is the signature only.
+  Percentage is
   `base - floor(base * bps / 10000)`, fixed is `max(base - value, 0)`,
   arithmetic in `bigint`, the result clamped to `[0, base]`. A third kind of
   discount is a migration that widens the enum, and that is the right cost:
