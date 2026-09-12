@@ -48,8 +48,8 @@ use `gh pr diff <n>`.
    (`gh pr view <n> --comments`, the comment from `sonarqubecloud`) and list
    every finding it reports, an unreviewed security hotspot included. No CI
    step enforces this — REVIEW.md 13.6 is a rule, not a check, because a gate
-   condition on issue count is a paid feature — so this round is where an open
-   finding is caught. A finding silenced without an approved
+   condition on issue count is not available on this project's plan (owner,
+   PR #56) — so this round is where an open finding is caught. A finding silenced without an approved
    `sonar.issue.ignore.multicriteria` entry in `sonar-project.properties`
    counts as open. If the pull request skipped the scan (it touched nothing
    under `sonar.sources`/`sonar.tests`), say so instead.

@@ -271,9 +271,10 @@ rewritten.
   `api/qualitygates/get_by_project` reports that the project uses the built-in
   Sonar way gate, and the owner established that a custom gate with an
   issue-count condition is not available on this plan — that one is the owner's
-  finding, not an API result — so the gate cannot be made to fail on findings. A third check found that every endpoint the script called
-  answers anonymously on this public project: `issues/search`, the same call with
-  `issueStatuses`, and `hotspots/search` each answer 200 with no credential. So
+  finding, not an API result — so the gate cannot be made to fail on findings. A
+  third check found that every endpoint the script called answers anonymously on
+  this public project: `issues/search`, the same call with `issueStatuses`, and
+  `hotspots/search` each answer 200 with no credential. So
   the `SONAR_TOKEN` the script demanded was never needed — the AI wrote
   authenticated calls by default and two review rounds passed over the
   authentication without comment.
@@ -287,8 +288,8 @@ rewritten.
   check, the obligation went into `.claude/agents/impact-analyzer.md`, which runs
   before every push, instead of into prose nobody executes; and 13.6 names that
   plan constraint, attributed to the owner, so the next reader does not spend an
-  afternoon rebuilding what was just removed. `SONAR_TOKEN` stays on the scan step alone,
-  where uploading an analysis genuinely needs it.
+  afternoon rebuilding what was just removed. `SONAR_TOKEN` stays on the scan
+  step alone, where uploading an analysis genuinely needs it.
 - Ratio note: this episode is the clearest case so far of AI-generated work being
   net negative until a human asked what the tool already did. The script was
   well-tested, well-reviewed and unnecessary; the value came from deleting it.
