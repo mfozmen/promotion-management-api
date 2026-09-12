@@ -93,6 +93,8 @@ Promotions target either one product or a whole category, have a validity window
 
 Promotions are rows, not rules: `discount_type`, `value`, `starts_at`, `ends_at`, exactly one of `product_id` or `category` once active, and a `status` of `draft`, `active` or `cancelled` (a draft has no target; a cancelled row keeps the shape it had). Two PostgreSQL exclusion constraints (`btree_gist`, `tstzrange(starts_at, ends_at) &&`) guarantee at most one active product-level promotion per product and at most one active category-level promotion per category at any instant. Overlap at the same level fails with `409` and reports the conflicting promotion; there is no silent override.
 
+Which candidate applies is decided by `json-rules-engine` rules stored in `pricing_rules` (`type = 'promotion'`) and cached for 60 seconds, not by hard-coded precedence (owner decision, 2026-09-12). The resolver hands the engine one fact object per candidate and the highest-priority rule that fires names the winner, ties breaking on the lower id; the seeded default rule encodes "product level outranks category level", so changing that policy is a row edit rather than a deploy. The engine never computes money: the winning rule's action calls the one pure pricing function, so there is still a single implementation of the formula.
+
 The rule "at most one active promotion per product" is implemented as **at most one applied promotion**: the product-level promotion if active, else the category-level one, else none. Effective price is one pure function: percentage `base - floor(base * bps / 10000)`, fixed `max(base - value, 0)`. Three mutations exist: create (with a target → `active`, or without → `draft`), assign (`draft` → `active`, target set in the same guarded `UPDATE`, which rejects with `409` when the row is not a draft, when a concurrent assign won, or when its `ends_at` has already passed, and runs the exclusion constraints in the same statement) and cancel. A draft is never applied. Read endpoints for promotions serve the admin path from PostgreSQL. Boundaries are scheduled with delayed BullMQ jobs at `starts_at` and `ends_at`, enqueued at the moment a promotion first becomes active (create-with-target or assign), so an assigned draft reaches the read model immediately.
 
 ### Consequences
@@ -106,6 +108,8 @@ The rule "at most one active promotion per product" is implemented as **at most 
 
 ### Trade-offs
 
+- Precedence lives in data, so a wrong or missing rule changes prices without a code review. The mitigation is that rule changes are migrations like any other schema change, the seeded default is version-controlled, and a rule naming an unknown candidate is ignored and logged rather than applied.
+- The engine adds a per-resolution evaluation over at most two candidates. That cost lands on the event handler and the reconciler, never on a storefront read, because the read model stores the already-resolved price.
 - Cross-level coexistence is allowed rather than rejected. Rejecting it would require an application-side check that races; allowing it keeps the database the sole arbiter.
 - Percentage discounts round in the customer's disfavour by at most one cent (floor on the discount). Stated, deterministic, testable.
 - Reporting the conflicting promotion needs a second `SELECT` after SQLSTATE 23P01; acceptable on an admin path.
@@ -113,7 +117,7 @@ The rule "at most one active promotion per product" is implemented as **at most 
 ### Rejected alternatives
 
 - `product_promotions(product_id unique)` join table: not time-aware (blocks scheduling a future promotion), does not cover category promotions, and materialising category assignments means 50 000 inserts per flash sale.
-- Encoding promotions as `json-rules-engine` rules: duplicates the source of truth; promotions are already structured data.
+- Encoding the promotions themselves as `json-rules-engine` rules (rather than the policy that selects between them): that would duplicate the source of truth, since a promotion's type, value, window and target are already structured columns that the constraints and the scheduler operate on. The rules decide precedence; the rows stay the promotions.
 - Precedence by larger discount: surprising for admins who created a product-specific price, and harder to explain on a receipt.
 
 ---

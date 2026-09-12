@@ -78,8 +78,11 @@ create table promotions (
 -- The two GiST exclusion indexes also serve point lookups
 -- (target = $1 and tstzrange(starts_at, ends_at) @> now()).
 
-create table pricing_rules (                    -- ingestion rules only (json-rules-engine)
+create type pricing_rule_type as enum ('ingestion', 'promotion');
+
+create table pricing_rules (                    -- json-rules-engine rules, both layers
   id          bigint generated always as identity primary key,
+  type        pricing_rule_type not null,
   name        text not null,
   conditions  jsonb not null,
   event       jsonb not null,
@@ -88,6 +91,7 @@ create table pricing_rules (                    -- ingestion rules only (json-ru
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+create index pricing_rules_active_idx on pricing_rules (type, priority desc) where active;
 
 create type ingestion_status as enum ('running', 'paused', 'completed', 'failed', 'aborted');
 
@@ -136,10 +140,27 @@ create table ingestion_chunks (
 ## 4. Promotion resolution and effective price
 
 - **Active** = `status = 'active' and starts_at <= now() < ends_at`.
-- **Applied promotion** for a product: its active product-level promotion if
-  one exists, else the active category-level promotion for its category, else
-  none. The exclusion constraints guarantee at most one candidate per level,
-  so resolution is deterministic and race-free.
+- **Applied promotion** for a product is decided by `json-rules-engine`, not by
+  hard-coded precedence (owner decision, 2026-09-12). The resolver collects
+  every active promotion that could apply to the product (its product-level
+  one and its category's), builds a fact object, and runs the promotion rules
+  loaded from `pricing_rules` where `type = 'promotion'`. The rule that fires
+  with the highest priority names the winning candidate; ties break on the
+  lower promotion id so the result is deterministic. The rules are data, so
+  the precedence policy changes without a deploy.
+- Facts given to the engine, per candidate: `level` (`product` or `category`),
+  `discountType`, `valueBasisPointsOrCents`, `basePriceCents`,
+  `computedDiscountCents`, `stockQuantity`, `category`, `startsAt`, `endsAt`.
+  The engine chooses; it never computes money itself. The arithmetic stays in
+  the one pure function below, which the winning rule's action calls, so there
+  is still exactly one implementation of the formula (REVIEW.md rule 1.3).
+- The seeded default rule reproduces the case's requirement: a product-level
+  candidate outranks a category-level one. It is a row, not an `if`, so
+  "largest discount wins" or "category wins during a flash sale" is a rule
+  edit rather than a code change.
+- If no rule fires, no promotion is applied and the base price stands. A rule
+  that names a candidate which is not in the fact set is a defect, logged and
+  ignored rather than thrown, so a bad rule cannot take the storefront down.
 - The rule the case calls "at most one active promotion per product" is
   implemented as **at most one applied promotion**. A product-level and a
   category-level promotion may both exist; the product-level one wins even
@@ -147,12 +168,17 @@ create table ingestion_chunks (
   "50 % off Accessories" sale skips accessories that carry their own
   promotion.
 - Same-level overlap (two active product promotions on one product, or two on
-  one category, overlapping in time) is rejected with `409` by the constraint
-  (SQLSTATE 23P01). The handler then selects the overlapping promotion to
-  report `{ conflictingPromotionId }`. No silent override: cancel first.
-- Effective price, one pure function `applyPromotion(baseCents, promotion)` in
-  `src/modules/pricing/effective-price.ts`, used by the event handler, the
-  reconciler and tests:
+  one category, overlapping in time) is still rejected with `409` by the
+  exclusion constraints (SQLSTATE 23P01), and the handler selects the
+  overlapping promotion to report `{ conflictingPromotionId }`. The engine
+  would pick a winner either way, so this is no longer about correctness: it
+  keeps an admin from quietly shadowing a colleague's campaign, and it keeps
+  the candidate set small enough that resolution stays a two-row decision.
+  Relaxing it later is a constraint drop plus a priority rule, with no change
+  to the resolver.
+- Effective price is one pure function `applyPromotion(baseCents, promotion)`
+  in `src/modules/pricing/effective-price.ts`, called by the winning rule's
+  action and by the event handler, the reconciler and tests:
   - percentage: `base - floor(base * value / 10000)`
   - fixed: `max(base - value, 0)`
 - Validation on create: `endsAt > startsAt`, `endsAt > now()` (a promotion
