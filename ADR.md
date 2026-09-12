@@ -241,7 +241,7 @@ Alarms: the API and workers expose Prometheus metrics (`prom-client`); a `monito
 
 ## ADR-0008: HTTP boundary contract — `/api` prefix, strict validation, one JSON error envelope
 
-**Status:** Accepted — issue #6, PR #30 (branch `feat/http-skeleton`, commit `7fd588e` plus the review-fix commits `e46f14b`, `c6e4ff2`, `ccef8a4`, `de3bf9e`, `af38e0c`, `4f10c7f`, `a218bf2` and `9f27f8d`)
+**Status:** Accepted — issue #6, PR #30 (branch `feat/http-skeleton`, commit `7fd588e` plus the review-fix commits `e46f14b`, `c6e4ff2`, `ccef8a4`, `de3bf9e`, `af38e0c`, `4f10c7f`, `a218bf2`, `9f27f8d`, `5f4da57`, `ec623cc` and `30bc002`)
 
 ### Context
 
@@ -290,6 +290,7 @@ Every endpoint in ADR-0003 to ADR-0007 (storefront reads, admin promotion mutati
 - Validating inside handlers: the raw value stays reachable, so a handler can use the unvalidated field by accident.
 - `express-validator`: a second schema language next to the zod types the domain layer already needs.
 - Echoing the unknown path in the 404 message: reflects untrusted input into a response body for no diagnostic gain the log does not already give.
+- Withholding the rejected key entirely and reporting only a count at its location: what this branch did for two commits (`de3bf9e` to `a218bf2`, reversed in `ec623cc`). Stricter and worse — a key is an identifier the caller typed, not a stored value, and a `400` that will not say which field was wrong is one the client cannot act on.
 
 ---
 
