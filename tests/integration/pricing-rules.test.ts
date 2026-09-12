@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { asc, desc, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { pricingRules } from '../../src/shared/db/schema.js';
 import { useTestDatabase } from './db.js';
@@ -21,19 +21,39 @@ describe('seeded pricing rules', () => {
     expect(rows.every((row) => row.active)).toBe(true);
   });
 
-  it('states every rule as json-rules-engine conditions and an event', async () => {
-    const [markup] = await db()
+  // The vocabulary the ingestion wrapper (#39) compiles: an `adjustPercentBps` event with a
+  // signed basis-point value, and facts that exist on a parsed vendor row. A rule the wrapper
+  // cannot parse stops the whole job, so the seed is pinned rule by rule rather than sampled.
+  // Applied in priority order to an Electronics row at 80 000 cents with stock 150 that is
+  // 80 000 → 92 000 → 89 240 → 93 702; an Apparel row at 80 000 with stock 10 is 84 000.
+  it('states every rule in the vocabulary the ingestion wrapper compiles', async () => {
+    const rows = await db()
       .select()
       .from(pricingRules)
-      .where(eq(pricingRules.name, 'electronics category markup'));
+      .where(eq(pricingRules.type, 'ingestion'))
+      .orderBy(desc(pricingRules.priority));
 
-    expect(markup?.conditions).toEqual({
-      all: [{ fact: 'category', operator: 'equal', value: 'electronics' }],
-    });
-    expect(markup?.event).toEqual({
-      type: 'adjustPrice',
-      params: { operation: 'markup', basisPoints: 1500 },
-    });
+    expect(
+      rows.map((row) => ({ name: row.name, conditions: row.conditions, event: row.event })),
+    ).toEqual([
+      {
+        name: 'electronics category markup',
+        conditions: { all: [{ fact: 'category', operator: 'equal', value: 'Electronics' }] },
+        event: { type: 'adjustPercentBps', params: { value: 1500 } },
+      },
+      {
+        name: 'bulk stock discount',
+        conditions: { all: [{ fact: 'stockQuantity', operator: 'greaterThan', value: 100 }] },
+        event: { type: 'adjustPercentBps', params: { value: -300 } },
+      },
+      {
+        name: 'vendor commission',
+        conditions: {
+          all: [{ fact: 'vendorPriceCents', operator: 'greaterThanInclusive', value: 0 }],
+        },
+        event: { type: 'adjustPercentBps', params: { value: 500 } },
+      },
+    ]);
   });
 
   it('cannot hold the same rule twice, so a re-applied seed never doubles a markup', async () => {
