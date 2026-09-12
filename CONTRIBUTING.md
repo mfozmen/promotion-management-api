@@ -29,6 +29,7 @@ No implementation code is written before its failing test exists.
 - [ ] Tests written first and passing (`npm test`)
 - [ ] Coverage is 100 % (`npm run test:cov`; the pre-commit hook enforces the threshold, so a commit below 100 % is rejected)
 - [ ] Lint passes (`npm run lint`)
+- [ ] No open SonarCloud finding on the PR, read from SonarCloud's PR comment (an ignore needs the owner's approval and a reasoned entry in `sonar-project.properties`)
 - [ ] Commits follow Conventional Commits
 - [ ] Branch named `type/short-description`
 - [ ] ADR added/updated if the change affects architecture
@@ -38,10 +39,20 @@ No implementation code is written before its failing test exists.
 
 All of these are required on `main`:
 
-- `ci` — lint, typecheck, tests with 100 % coverage thresholds, SonarCloud scan
+- `ci` — lint, typecheck, tests with 100 % coverage thresholds, and the SonarCloud scan, which waits for the quality gate (`sonar.qualitygate.wait`), so a gate failure fails `ci`
 - `pr-title` — Conventional Commit PR title
 - `claude-review` — advisory AI review
 - `local-gates` — passes only when the PR carries the labels of every applicable local agent: `docs-verified` always, `e2e-verified` for the behaviour group below, `impact-verified` for the behaviour or the judgement group, plus `architecture-verified` when the PR touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules (`src/modules/vendor/`, `src/modules/promotion/`, `src/modules/pricing/`) or `src/workers/`, or carries the `scenario` label. The job prints the set it computed. Every new push strips all four, so the applicable agents must be re-run and their labels re-applied
+
+The scan runs only when the pull request touches something SonarCloud reads: the sources, the tests, a build or tool configuration, or `sonar-project.properties`. A pull request that changes only documentation or a workflow skips it, because the analysis would be a copy of the previous one. A push to `main` always scans. For that reason the required check is `ci`, which carries the scan, rather than SonarCloud's own check, which cannot report on a pull request it never analysed. The scan step carries `SONAR_TOKEN` because uploading an analysis is a write; nothing reads results back, so no other step needs it.
+
+A SonarCloud finding is fixed before the PR is handed to the owner — a rule (REVIEW.md 13.6), not a check. Read the findings in SonarCloud's own pull request comment, or through the _Details_ link on the SonarCloud check, whatever their severity, and count an unreviewed security hotspot as one — Sonar way already fails the gate on those (`new_security_hotspots_reviewed < 100`), so they turn `ci` red as well. `impact-analyzer` reads that comment on every pre-push round and fails on an open finding, so this is checked before the hand-off rather than at merge time.
+
+It is a rule and not a check on purpose. The free plan's quality gate judges ratings, coverage, duplication and hotspot review, so a CRITICAL code smell passes it, and a gate condition on issue count needs a custom gate, which SonarCloud asks to be paid for on this project's plan. The owner reported that from the SonarCloud interface on PR #56, which is the only place it can be seen; no API answers it. PR #56 built a CI step that queried SonarCloud's issue API instead, reviewed it twice, then deleted it: it restated what the pull request comment already says. Read that entry in `docs/ai-appendix-notes.md` before rebuilding it.
+
+Silencing a finding needs the repository owner's explicit approval and an entry in `sonar.issue.ignore.multicriteria` in `sonar-project.properties` whose comment names the rule, the scope and why the rule does not apply there. Never widen an existing scope to cover a new finding; add an approved entry instead. Accepting, won't-fixing or false-positiving a finding in the SonarCloud web interface is not that exception — nothing mechanical stops it, which is exactly why the silencing has to come back into the repository as an approved entry, and why a finding that vanishes without a matching repository change gets asked about.
+
+The scan is not a finding when SonarCloud is slow: a `ci` failure whose Sonar step reports a timeout (`sonar.qualitygate.timeout`, 300 s) is a re-run, not something to fix.
 
 `local-gates` lists the pull request files and edits labels with the workflow's `GITHUB_TOKEN`; both are served by the `pull-requests` and `issues` scopes, and the job performs no checkout, so it grants no `contents` scope. A `403` on that step means the pull request comes from a fork, where the token is read-only regardless of the `permissions` block. Fork pull requests cannot pass this gate (nor the Claude review); open the branch in this repository instead.
 
@@ -90,7 +101,7 @@ Every PR receives an advisory Claude AI review. When all required checks pass, n
 
 Definition of done for a PR hand-off:
 
-1. `ci`, `pr-title`, `claude-review`, `SonarCloud Code Analysis` and `local-gates` are green on the final commit.
+1. `ci`, `pr-title`, `claude-review` and `local-gates` are green on the final commit.
 2. Every review thread is answered and resolved.
 3. `e2e-verified`, `impact-verified`, `docs-verified` are present, plus `architecture-verified` for design or scenario PRs.
 4. `needs-human-check` is added and the owner is mentioned.
