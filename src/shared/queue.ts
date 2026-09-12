@@ -95,8 +95,7 @@ export type PromotionBoundary = 'activate' | 'expire';
 /**
  * Write-once per id: BullMQ ignores an `add` for an id it still holds, and the
  * returned `Job` then describes the request, not what is stored. Nothing may depend
- * on a fired job still being resident: the reconciler PR has to re-emit
- * `promotion.changed` with no job id instead.
+ * on a fired job still being resident; ADR-0007 says what the reconciler owes here.
  */
 export function promotionBoundaryJobId(promotionId: number, boundary: PromotionBoundary): string {
   return `promo:${promotionId}:${boundary}`;
