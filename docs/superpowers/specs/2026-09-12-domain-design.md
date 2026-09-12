@@ -170,8 +170,8 @@ create table ingestion_chunks (
   bag — it is one pure function over a typed row.
 - **One function, one vocabulary.** `applyPromotion(basePriceCents, promotion)`
   in `src/modules/promotion/` takes the `Promotion` the row already is —
-  `discountType` of `percentage | fixed`, `value` in basis points or minor
-  units, the window — and returns a `PricingOutcome`, a discriminated union of
+  `discountType` of `percentage | fixed` and `value` in basis points or minor
+  units — and returns a `PricingOutcome`, a discriminated union of
   `{ ok: true, effectivePriceCents }` or `{ ok: false, reason }`. A failure
   carries no price, so a caller cannot publish one by mistake. Percentage is
   `base - floor(base * bps / 10000)`, fixed is `max(base - value, 0)`,
@@ -247,8 +247,12 @@ create table ingestion_chunks (
 - **A failed computation is not a silent base price.** `applyPromotion` returns
   `{ ok: false, reason }` for a row the boundary should have rejected — a value
   above 10 000 basis points, a base price outside the safe-integer range. The
-  event handler logs it with the `promotionId` and writes the base price, so
-  the product is priced and the defect is visible; ingestion counts it as a
+  event handler logs it with the `promotionId` and writes the price the
+  surviving candidates resolve to — the base price only when no candidate
+  priced. An unpriceable candidate is absent to the rules, so a product whose
+  own promotion is defective still takes its category's sale price rather than
+  standing at full price inside it. The product is priced and the defect is
+  visible; ingestion counts it as a
   rejected row rather than aborting the batch. Neither path leaves the previous
   price in Redis with nothing recorded.
 - **The fact set always carries both candidate slots, and an absent one is
@@ -611,7 +615,9 @@ Alarms (monitoring stack, compose profile `monitoring`): the API and every
 worker expose `GET /metrics` with `prom-client` (default Node metrics plus
 `queue_waiting`, `queue_failed`, `queue_oldest_job_age_seconds`,
 `readmodel_drift_products`, `http_request_duration_seconds`,
-`ingestion_rows_processed_total`, `ingestion_chunks_stuck`). Prometheus
+`ingestion_rows_processed_total`, `ingestion_chunks_stuck`,
+`promotion_rules_no_event_total` — the silence counter of section 4, which the
+seeded rules cannot increment). Prometheus
 scrapes them; Grafana ships with a provisioned dashboard and alert rules:
 queue depth > 10 000, any failed (DLQ) job, drift > 1 %, API p95 > 500 ms,
 5xx rate > 1 %, worker RSS > 90 % of its limit, stuck ingestion chunk,

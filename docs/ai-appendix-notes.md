@@ -488,6 +488,25 @@ gone, which a file of 249 identical bullets passes.
   passes. The principle: a ruling that removes a test names the weaker assertion
   that keeps the mechanism covered, in the same round.
 
+### 2026-09-12 - The reversal reached ADR-0004 and stopped there (PR #35, `8a95ea7` review)
+
+- Challenge: the reversal round rewrote ADR-0004 and section 4 of the domain
+  spec, and left two sentences elsewhere in ADR.md arguing the replaced design.
+  ADR-0006 still listed "a `pricing_rules` layer for promotions" as a rejected
+  alternative, which ADR-0004 now adopts for candidate selection, and ADR-0005
+  still loaded ingestion rules from `pricing_rules` with no filter, written
+  before the table gained the `type` column that made the unfiltered read load
+  the promotion rules too.
+- Verification: not a diff review - the diff of this branch never touched
+  ADR-0005 or ADR-0006. The check that found it was reading every ADR that
+  names `pricing_rules` after the edit, which is the same rule the destroyed-file
+  round produced: search the document for the old policy's words, not the change.
+- Resolution: ADR-0006's rejected alternative now says what is actually
+  rejected - storing the promotions themselves as rule rows - and ADR-0005
+  names `type = 'ingestion'`. Both in this pass. The reusable part: a decision
+  reversal has to be swept across every ADR that cites the reversed one, because
+  the contradiction lands in the ADRs the diff did not touch.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
