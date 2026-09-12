@@ -280,6 +280,22 @@ rewritten.
   with its window, what is re-resolved and the two things that would fix it,
   and deliberately not built.
 
+### 2026-09-13 — End-to-end cases written from the story, not from the code (issue #8, PR #29, `08b5033`)
+
+- Strategy: the repo's first end-to-end case file (`docs/e2e-cases/8.md`). The
+  context given was issue #8's acceptance criteria and the settled precedence
+  decision (ADR-0004); `src/modules/promotion/effective-price.ts` was withheld
+  on purpose, so a case that only restates what the implementation happens to do
+  could not be produced. Each case names the actor whose problem it is and the
+  criterion it covers, and case ids are declared permanent so later files and
+  tests can cite them.
+- Human refinement: criterion 3 of the issue body still asserts product-level
+  precedence, which the owner reversed on 2026-09-12. The cases were written
+  against the settled policy, the product-level route kept as case 8-3b (the
+  higher-priority override rule), and the divergence stated at the head of the
+  file rather than quietly reconciled — a derived document may not pick a winner
+  between two source documents without saying that it did.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -1112,6 +1128,35 @@ gone, which a file of 249 identical bullets passes.
   code: there is no test that fails when two correct versions of a paragraph
   collide.
 
+### 2026-09-13 — The story body still argued the reverted precedence policy (issue #8, PR #29, `08b5033`)
+
+- Challenge: acceptance criterion 3 of issue #8 says the product-level candidate
+  is applied whenever both a product-level and a category-level candidate exist.
+  ADR-0004 has said the opposite since the owner's ruling of 2026-09-12: the
+  lower effective price wins, with a higher-priority rule as the override. The
+  case file was to be derived from the acceptance criteria, so a faithful
+  derivation would have written the reverted policy into the repo's first e2e
+  case file.
+- Why nothing else would have caught it: an e2e case file is prose, not a test
+  run. The implementation is already correct and its 24 unit tests are green, so
+  lint, typecheck, coverage and the advisory review would all have passed with
+  the case file asserting a rule the code does not implement — and the next
+  person to write tests from it would have "fixed" the code to match.
+- Verification: by reading, not by running. The criterion was read next to
+  ADR-0004's decision and rejected-alternatives list before any case was
+  written. Two source documents disagreed; the ADR carries a dated owner
+  decision and the issue body predates it, so the ADR wins.
+- Before / after. Before, from issue #8 criterion 3: given both a product-level
+  and a category-level promotion, the product-level promotion is applied. After,
+  case 8-3: "the candidate producing the lower effective price is applied, and
+  its effective price is returned", with case 8-3b covering the product-level
+  candidate winning when a higher-priority rule names the product level, and a
+  note at the head of the file recording the divergence, its date and the ADR.
+- Resolution: a story body is a snapshot of intent at filing time; where it
+  disagrees with a dated ADR, the ADR wins and the divergence is stated in the
+  derived document rather than resolved by silently following either source. The
+  issue body itself is left untouched by this branch.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
@@ -1141,3 +1186,18 @@ gone, which a file of 249 identical bullets passes.
   the resulting file. Both failures this round — the contradiction left in an
   untouched bullet, and the 249-bullet file that passed its own absence check —
   were invisible to a diff review and obvious to anyone who opened the document.
+
+### 2026-09-13 — Running estimate after the first e2e case file (issue #8, PR #29, `08b5033`, merge `50a350b`)
+
+- Share, documents only: unchanged in drafting — prose AI-written, decisions the
+  owner's. The case file is the first document on this branch drafted from a
+  written requirement with the implementation deliberately out of context. Worth
+  counting separately, because every other AI-written document here was drafted
+  with the code in view, and prose written next to code tends to describe the
+  code rather than the requirement.
+- Blind spot noticed: stale inputs, as distinct from wrong output. This
+  appendix has been treating an "AI mistake" as something the AI wrote wrongly;
+  here the input was wrong and faithfulness to it was the failure mode. The
+  2026-09-12 precedence reversal was swept across the ADRs, REVIEW.md and the
+  design spec, but not across the open issues, and no agent in the pre-push set
+  reads issue bodies for contradictions with a later decision.

@@ -34,7 +34,7 @@ npm run lint
 ```
 src/    application source code
 tests/  automated tests (unit, integration)
-docs/   design specs (docs/superpowers/specs)
+docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
 
 ## API
