@@ -112,8 +112,8 @@ export async function compileRules(rows: readonly PricingRuleRow[]): Promise<Com
       throw new Error(`${where} has a malformed event: ${event.error.issues[0]?.message}`);
     }
     const properties: RuleProperties = {
-      // The engine reports a fired rule by name only, and names are not unique
-      // in the design, so the id travels inside the name and reaches `rejectedBy`.
+      // The engine reports a fired rule by name only, so the id travels inside
+      // the name and reaches `rejectedBy` as the row a reader can look up.
       name: where,
       // The rank, not the stored priority: one rule per engine priority set
       // makes the evaluation order total rather than "highest set first".
@@ -160,15 +160,25 @@ const vendorRowFacts = z.object({
 /** `Engine.run` keeps one status per engine, so a run that finishes while
  *  another is in flight makes the other skip its remaining rules and return a
  *  short result with no error. Runs on one engine are queued instead; a batch
- *  prices its rows one at a time either way. */
-const runQueue = new WeakMap<Engine, Promise<unknown>>();
+ *  prices its rows one at a time either way.
+ *
+ *  A failed run is worse than a slow one: it rejects while its own evaluation
+ *  carries on in the background, and marks the engine finished under the next
+ *  run's feet, so the next row loses rules and is priced as if none matched.
+ *  The engine is therefore spent once a run fails. That costs nothing, because
+ *  a `fault: 'rules'` already tells the caller to stop the job. */
+const runState = new WeakMap<Engine, { queue: Promise<unknown>; spentBy?: Error }>();
+
 const runSerialised = (engine: Engine, facts: VendorRowFacts) => {
-  const next = (runQueue.get(engine) ?? Promise.resolve()).then(() => engine.run(facts));
-  runQueue.set(
-    engine,
-    next.catch(() => undefined),
-  );
-  return next;
+  const state = runState.get(engine) ?? { queue: Promise.resolve() };
+  runState.set(engine, state);
+  if (state.spentBy) return Promise.reject(state.spentBy);
+
+  const run = state.queue.then(() => engine.run(facts));
+  state.queue = run.catch((error: Error) => {
+    state.spentBy = error;
+  });
+  return run;
 };
 
 /** A bad row is a returned rejection, never a thrown exception, so one row

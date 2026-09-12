@@ -411,6 +411,33 @@ describe('priceRow', () => {
     });
   });
 
+  it('keeps reporting a rules fault after one, rather than mispricing the next row', async () => {
+    const rules = await compileRules([
+      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
+    ]);
+    // A fact that fails once. The failed run keeps evaluating in the background
+    // and marks the engine finished under the next run's feet, which would drop
+    // that run's remaining rules and price the row as if no rule matched.
+    let failing = true;
+    rules.engine.addFact('flaky', () => {
+      if (!failing) return Promise.resolve(1);
+      failing = false;
+      return Promise.reject(new Error('fact blew up'));
+    });
+    rules.engine.addRule({
+      name: 'flaky',
+      priority: 1000,
+      conditions: { all: [{ fact: 'flaky', operator: 'equal', value: 1 }] },
+      event: cents(0),
+    });
+
+    const first = await priceRow(rules, vendorRow());
+    const second = await priceRow(rules, vendorRow());
+
+    expect(first).toMatchObject({ ok: false, fault: 'rules' });
+    expect(second).toMatchObject({ ok: false, fault: 'rules', reason: 'fact blew up' });
+  });
+
   it('turns an engine failure into a rejection rather than letting it escape', async () => {
     const exploding = {
       pricingRulesVersion: 1,
