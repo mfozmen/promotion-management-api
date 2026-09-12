@@ -19,13 +19,20 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
-- PostgreSQL 16 for the integration tests
+- Docker with the Compose plugin (PostgreSQL 16 and Redis 7 run locally from `docker-compose.yml`)
 
 ## Getting started
 
 ```bash
 npm ci
+cp .env.example .env          # placeholders only; .env is gitignored
+docker compose up -d --wait   # PostgreSQL on 5432, Redis on 6379, both healthy
 npm run dev
+```
+
+Tests and checks:
+
+```bash
 npm test
 npm run test:cov # needs a PostgreSQL, see below
 npm run lint
@@ -76,7 +83,7 @@ The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/mi
 | ------ | --------- | ----------------------------------------- |
 | GET    | `/health` | Liveness probe, returns `{"status":"ok"}` |
 
-Further endpoints are documented as they land.
+Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`); the scaffold health route still sits at `/health` and moves with the `api` service in issue #19.
 
 ## Development workflow
 
