@@ -50,7 +50,7 @@ a truncation turns the first into 434 cents. A parser that rounds its way out
 of that is a finding, because the next input will find the case it misses.
 
 1.3 Exactly one implementation of the discount formula exists
-(`src/modules/promotion/effective-price.ts`). A second copy inline in a query, a
+(`src/modules/promotion/domain/effective-price.ts`). A second copy inline in a query, a
 worker or a test fixture is a finding even when it agrees today.
 
 1.4 Rounding direction is stated and tested: the discount is floored, so the

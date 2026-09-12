@@ -145,10 +145,11 @@ create table ingestion_chunks (
 ## 4. Promotion resolution and effective price
 
 - **Active** = `status = 'active' and starts_at <= now() < ends_at`, decided by
-  the **database clock**. The application never forms its own opinion: a
-  resolver that needs the predicate in TypeScript takes the instant the query
-  returned and passes it in, so one `now` decides a boundary a millisecond wide
-  (REVIEW.md 1.7). Two clocks for one predicate is how a read model publishes a
+  the **database clock** and evaluated only in SQL — the `active_promotions`
+  view, or the resolution query's `WHERE` until that view lands (REVIEW.md
+  2.7). The application never forms its own opinion and never takes an injected
+  `now`: no TypeScript copy of the predicate exists to disagree with SQL, the
+  last one having been deleted with its tests (`33422ce`). Two clocks for one predicate is how a read model publishes a
   discount for a promotion SQL considers expired.
 - **Applied promotion** for a product is decided by `json-rules-engine`, not by
   hard-coded precedence (owner decision, 2026-09-12). The resolver collects
@@ -169,7 +170,7 @@ create table ingestion_chunks (
   The arithmetic is not in the rule, not in a registry and not in a parameter
   bag — it is one pure function over a typed row.
 - **One function, one vocabulary.** `effectivePrice(basePriceCents, promotion)`
-  in `src/modules/promotion/` takes
+  in `src/modules/promotion/domain/` takes
   `Pick<Promotion, 'discountType' | 'value'>` — `discountType` of
   `percentage | fixed`, `value` in basis points or minor units — and returns a
   `PricingOutcome`, a discriminated union of
@@ -662,7 +663,11 @@ src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
-    promotion/   promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), effective-price.ts (effectivePrice, pure), pricing-outcome.ts (PricingOutcome), pricing-input-error.ts (pricingInputError, the guards), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
+    promotion/
+      domain/    promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), effective-price.ts (effectivePrice, pure), pricing-input-error.ts (pricingInputError, the guards), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine)
+      db/        promotion.repository.ts
+      http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
+      jobs/      scheduling.ts
     pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts

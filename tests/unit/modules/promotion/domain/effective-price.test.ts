@@ -1,22 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { effectivePrice } from '../../../../src/modules/promotion/effective-price.js';
-import type { Promotion } from '../../../../src/modules/promotion/promotion.js';
+import { effectivePrice } from '../../../../../src/modules/promotion/domain/effective-price.js';
+import type { Promotion } from '../../../../../src/modules/promotion/domain/promotion.js';
 
-function active(overrides: Partial<Omit<Promotion, 'status'>> = {}): Promotion {
-  return {
-    discountType: 'percentage',
-    value: 2500,
-    startsAt: new Date('2026-09-12T00:00:00.000Z'),
-    endsAt: new Date('2026-09-13T00:00:00.000Z'),
-    ...overrides,
-    status: 'active',
-  };
+type Discount = Pick<Promotion, 'discountType' | 'value'>;
+
+function active(overrides: Partial<Discount> = {}): Discount {
+  return { discountType: 'percentage', value: 2500, ...overrides };
 }
 
-function priced(
-  basePriceCents: number,
-  overrides: Partial<Omit<Promotion, 'status'>> = {},
-): number {
+function priced(basePriceCents: number, overrides: Partial<Discount> = {}): number {
   const outcome = effectivePrice(basePriceCents, active(overrides));
 
   if (!outcome.ok) throw new Error(`expected a price, got: ${outcome.reason}`);
@@ -25,8 +17,6 @@ function priced(
 
 describe('effectivePrice', () => {
   it('takes only the discount fields, so a resolver need not supply a window', () => {
-    // The resolution query stops selecting starts_at/ends_at once the windows
-    // leave the fact set, so the parameter must not demand them.
     expect(effectivePrice(10_000, { discountType: 'percentage', value: 2500 })).toEqual({
       ok: true,
       effectivePriceCents: 7500,
