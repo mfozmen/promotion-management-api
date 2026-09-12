@@ -325,6 +325,35 @@ rewritten.
   a contradiction with a blocking rule is not a remedy — the correct expression
   existed and cost one line.
 
+### 2026-09-12 — Pricing core: the markup check compared against the wrong price (issue #8, PR #29, commit `2719dd2`)
+
+- Corrects the entry above: the markup rejection it recorded was itself defective.
+  It compared the ADJUSTED price with the base price, so an adjustment too small
+  to move a cheap product's price passed as `ok: true` at the base price — exactly
+  the "looks like no promotion fired" case the check exists to prevent. A `+1500`
+  basis-point markup on a base of six minor units floors to nothing. The rejection
+  now tests the sign of the value, before the arithmetic runs, with tests for a
+  tiny base and for a base of zero.
+- Two smaller defects in the same commit: the event parameter is typed as the
+  unchecked shape a rule row actually has (the validated shape is assignable to
+  it, so the union said nothing extra), and a string `params.value` is quoted in
+  the rejection reason, since `"-2500"` and `-2500` otherwise produce the identical
+  message and the second reads as a contradiction. The quoting came from the
+  `e2e-tester`; the price comparison from the `impact-analyzer`'s final pass.
+- Also fixed: three comments referred to `priceRow`, a symbol that lives only on
+  the unmerged ingestion branch and that a reader of this branch alone cannot
+  resolve.
+- Verification of the fix: 30 tests pass at 100 % statement, branch, function and
+  line coverage; `npm run lint` and `npm run typecheck` are clean and all four
+  local agents were re-run.
+- Closing fact, not a code change: the advisory review's last pass raised a
+  Critical REVIEW.md 13.5 finding — `ADR.md` on this branch still describes the
+  pre-reshape design, because the matching ADR-0004 and spec text lives on PR #35
+  (`docs/promotion-rule-engine`, commit `09c9915`), which this PR is forbidden to
+  edit. Resolved by retargeting PR #29's base branch onto
+  `docs/promotion-rule-engine`, so the code can only reach `main` together with
+  the ADR text that documents it.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
