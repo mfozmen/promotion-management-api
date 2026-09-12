@@ -107,6 +107,11 @@ create table ingestion_jobs (
 create unique index ingestion_jobs_one_running_per_vendor
   on ingestion_jobs (vendor) where status in ('running', 'paused');
 
+create table reconciler_state (             -- one row; watermark for the promotion boundary sweep
+  id                      boolean primary key default true check (id),
+  last_boundary_sweep_at  timestamptz not null default now()
+);
+
 create type chunk_status as enum ('pending', 'running', 'done', 'failed');
 
 create table ingestion_chunks (
@@ -116,7 +121,8 @@ create table ingestion_chunks (
   end_offset      bigint not null,                -- byte offset after last newline, exclusive
   next_offset     bigint not null,                -- durable checkpoint, starts at start_offset
   lease_until     timestamptz,                    -- claim expiry; expired = re-claimable
-  attempts        integer not null default 0,
+  attempts        integer not null default 0,    -- claims, including planned budget hand-offs
+  failures        integer not null default 0,    -- claims that ended in an error; drives the terminal 'failed' state
   rows_processed  integer not null default 0,
   rows_rejected   integer not null default 0,
   status          chunk_status not null default 'pending',
@@ -156,8 +162,15 @@ create table ingestion_chunks (
     creates a `draft`: no target, never applied, invisible to the read model.
   - `POST /api/promotions/:id/assign` with exactly one of `productId` or
     `category` moves a `draft` to `active` and sets the target in one
-    `UPDATE`; the exclusion constraints run at that moment, so overlap is a
-    `409` exactly as on create. Assigning a non-draft is a `409`.
+    guarded `UPDATE`:
+    ```sql
+    update promotions set status = 'active', product_id = $2, category = $3
+    where id = $1 and status = 'draft' returning *;
+    ```
+    Zero rows → `409` (not a draft, or a concurrent assign won); the
+    exclusion constraints run inside the same statement, so overlap is a
+    `409` exactly as on create. Two concurrent assigns of one draft yield one
+    `200` and one `409` with no application-side locking.
   - `POST /api/promotions/:id/cancel` sets `status = 'cancelled'`,
     `cancelled_at = now()`; cancelling a draft is allowed. Nothing is deleted.
 - Storefront responses carry `basePriceCents`, `effectivePriceCents` and
@@ -316,13 +329,17 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    and return. The checkpoint is already durable, so the next invocation
    resumes at `next_offset`. A crash between release and enqueue leaves a
    `pending` chunk without a job; the reconciler's orphan sweep (section 9)
-   re-enqueues it. `lockDuration` on the BullMQ worker is `budgetMs + 30 s`, so a
+   re-enqueues it. A planned release does not touch `failures`; only a
+   caught error does (`set failures = failures + 1, last_error = $e,
+status = 'pending', lease_until = null`), so a slow chunk may hand off
+   any number of times without approaching the failure limit. `lockDuration` on the BullMQ worker is `budgetMs + 30 s`, so a
    healthy run is never marked stalled; a dead worker's job is re-queued by
    stalled detection and re-claimed once the lease expires.
 6. **Finish**: when `next_offset = end_offset`, mark the chunk `done` and
    increment `chunks_done`; the job becomes `completed` when
-   `chunks_done = chunks_total`. A chunk that fails three times is `failed`
-   with `last_error`, and the job is `failed` once every chunk is terminal.
+   `chunks_done = chunks_total`. A chunk whose `failures` reaches
+   `INGESTION_MAX_FAILURES` (default 3) is `failed` with `last_error`; the job
+   is `failed` once every chunk is terminal. `attempts` is informational.
 
 Memory: one batch of parsed rows plus the stream buffers. No whole-file reads,
 no `Promise.all` across the file, no per-row events. Parallelism: chunks are
@@ -345,7 +362,7 @@ on its first read; expiry and scheduled starts happen on time.
 5. Cancel: `status = 'cancelled'` → delayed jobs removed → immediate `promotion.changed` → category rescanned → base prices restored.
 6. Scheduled start/end: the delayed `activate`/`expire` jobs fire at the boundary; the read model changes within the handler's scan time, not on a cache TTL.
 
-Base-price changes during a sale (ingestion, `PUT`) go through
+Base-price changes during a sale (vendor ingestion, the only update channel) go through
 `product.upserted` and pick up the active promotion in the recompute.
 
 ## 9. Safety net
@@ -356,7 +373,7 @@ Automatic:
 - **Stalled recovery**: BullMQ stalled detection with `lockDuration` sized to the time budget; a crashed worker's job is re-run and the lease lets the next worker claim it.
 - **Checkpoint resume**: the compare-and-set `next_offset` means a retry continues, never restarts, and two workers cannot both advance one chunk.
 - **Backpressure**: `429` on new imports above `INGESTION_MAX_WAITING`.
-- **Category-scoped reconciler** (`reconcile.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of 50 products and compare with the hashes, and sweep promotions whose `starts_at`/`ends_at` fell inside the last 10 min (re-emitting `promotion.changed`, idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
+- **Category-scoped reconciler** (`reconcile.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of 50 products and compare with the hashes, and sweep promotions whose `starts_at`/`ends_at` fell between the previous successful sweep and now (the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
 - **Cold start**: the API enqueues `readmodel.rebuild {}` when `readmodel:ready` is missing and answers `503` on storefront routes until it exists.
 - **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: always` brings it back.
 - **Handler isolation**: every handler catches, logs with the job id and rethrows so BullMQ records the failure; nothing crashes the process.
