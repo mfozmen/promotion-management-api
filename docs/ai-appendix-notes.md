@@ -6,11 +6,11 @@ rewritten.
 
 ## Tool manifest
 
-| Model / Tool                      | Primary purpose                                                               | Effectiveness (1-5) and why |
-| --------------------------------- | ----------------------------------------------------------------------------- | --------------------------- |
-| Claude Code (Claude Fable 5.1)    | Infrastructure design, scaffolding, CI, agent definitions, TDD implementation | pending                     |
-| Claude Code Action (subscription) | Advisory review on every pull request                                         | pending                     |
-| Local agents (`.claude/agents/`)  | Pre-push e2e and impact verification, design critique, documentation          | pending                     |
+| Model / Tool                      | Primary purpose                                                               | Effectiveness (1-5) and why                                                                                                                                                                                                                               |
+| --------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code (Claude Fable 5.1)    | Infrastructure design, scaffolding, CI, agent definitions, TDD implementation | 4 — fast and accurate on structure and tests, but defaults to trusting input that arrives via infrastructure and to a library option whose name matches the requirement (see the `x-request-id` and `redact` entries)                                     |
+| Claude Code Action (subscription) | Advisory review on every pull request                                         | 3 — catches contract and consistency problems reliably; re-analysed the whole diff on every push until the workflow was changed to review only new commits (PR #23)                                                                                       |
+| Local agents (`.claude/agents/`)  | Pre-push e2e and impact verification, design critique, documentation          | 4 — `impact-analyzer` and `architecture-critic` found the highest-value defects (the `local-gates` masked failure, the REVIEW.md rule that contradicted ADR-0006, five structural errors in the first architecture) before any of them reached a reviewer |
 
 ## AI tool usage approach
 
@@ -88,6 +88,11 @@ rewritten.
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
 - Human refinement: none needed — `impact-analyzer` confirmed no doc or config referenced the removed sections and every named script (`dev`, `test`, `test:cov`, `lint`) still exists in `package.json`.
 
+### 2026-09-12 — HTTP skeleton (issue #6, branch `feat/http-skeleton`)
+
+- Strategy: gave the issue's acceptance criteria plus `REVIEW.md` (§6.6 per-request work, §8.1 boundary validation, §8.3 error shape, §8.4 no internal detail escapes, §10.1/§10.3 logging) and the already-approved ADRs as context, and asked for the four pieces (validation helper, error handler, logger, `AppError`) one failing test at a time rather than as a single scaffold. Each piece was specified by the behaviour it had to produce (status/code table, strict-schema rejection, correlation-id echo), not by the code shape.
+- Human refinement: three AI defaults were rejected and replaced — the untrusted `x-request-id` header, `redact` as the credential defence, and a wrong test expectation about zod 4's unknown-key path (all three recorded below). The owner also required the unexpected-500 stack to be logged, which `REVIEW.md` §8.4 reads as forbidding until the rule is scoped to the client-facing response; that scoping is now written into ADR-0008 so the next reviewer does not re-open it.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -120,7 +125,27 @@ rewritten.
 - Verification: caught by the `impact-analyzer` agent reasoning through the workflow's `on.pull_request.types` list against the create step's `if` condition.
 - Resolution: scoped the create step to `if: contains(fromJSON('["opened", "synchronize"]'), github.event.action)`, the only events that precede the strip step, so labels are created idempotently once per event that needs them instead of on every label change.
 
+### 2026-09-12 — Correlation id trusted an untrusted header (issue #6, branch `feat/http-skeleton`)
+
+- Challenge: the first draft took the incoming `x-request-id` header verbatim as the request id. The header is unauthenticated client input, so a value containing a newline forges whole log lines (an attacker writes a fake "request completed" entry, or buries a real one) and a value containing CR injects a response header, since the same value is echoed back as `x-request-id`.
+- Verification: traced both sinks the value reaches — the log line and `res.setHeader` — and confirmed neither pino nor Express sanitises it; covered by tests that send a malformed header and assert both the response header and the logged `reqId` are a generated uuid instead.
+- Resolution: before, the id was `req.headers['x-request-id'] ?? randomUUID()`. After, the header is accepted only when it matches `^[A-Za-z0-9._-]{1,128}$`, otherwise a `randomUUID()` is used, and the id that is bound and echoed is always the validated one. Recorded as a decision in ADR-0009.
+
+### 2026-09-12 — `redact` mistaken for a logging privacy control (issue #6, branch `feat/http-skeleton`)
+
+- Challenge: the first draft satisfied "credentials never reach a log line" (REVIEW.md §10.3) with pino's `redact` option listing `authorization`, `cookie` and `x-api-key`. Two gaps: redaction paths apply to the logger instance they are configured on rather than to every derived child, and even where they do apply they mask three named headers while pino-http's default serializer still logs the full header set, the query string and the request body — so every other header, a token in a query parameter, and any personal data in a payload were still written.
+- Verification: inspected the log lines actually captured in tests instead of trusting the option's name; the captured lines contained the whole `headers` and `query` objects.
+- Resolution: narrowed the serializers so those fields are never serialised at all — `req` to `{ id, method, url }`, `res` to `{ statusCode }`. `redact` stays as defence in depth, not as the control. Recorded in ADR-0009 together with the rejected alternative.
+
+### 2026-09-12 — Wrong test expectation about zod 4 unknown keys (issue #6, branch `feat/http-skeleton`)
+
+- Challenge: a test asserted that a strict schema reports an unrecognised key under that key's own `path`. Zod 4 reports `unrecognized_keys` at the object root, naming the offending key in the message.
+- Verification: ran the assertion against zod's real output rather than changing the middleware to satisfy the test — the failure was in the expectation, not in the code under test.
+- Resolution: corrected the test expectation. Worth recording because the tempting fix (re-mapping the issue onto a synthetic path inside `details()`) would have added production code to make a wrong assumption true.
+
 ## Overall reflection
 
-- Estimated ratio: pending.
-- Key takeaway: pending.
+### 2026-09-12 — after the HTTP skeleton (issue #6)
+
+- Estimated ratio: roughly 85 % of the committed text (code, tests, docs) is AI-generated, 15 % human-crafted. The proportion inverts on decisions: the architecture choice between the two competing designs, the label-and-comment PR protocol, the assign/draft endpoint shape, the alarm-simulation requirement and the "log the stack, never return it" call were all made by the owner, and the AI's role was to draft and then be corrected.
+- Blind spots noticed so far: (1) the AI reaches for a library option whose name matches the requirement (`redact` for "no credentials in logs") and stops there, without checking what the default path still emits; (2) untrusted input is treated as trusted whenever it arrives through infrastructure rather than through a request body — the `x-request-id` header is the clear case; (3) when a test fails, the first instinct is to change the code rather than to question the assertion; (4) documentation drifts silently — the README advertised `/health` after the route moved to `/api/health`, which no test could catch.

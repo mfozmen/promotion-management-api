@@ -236,3 +236,82 @@ Alarms: the API and workers expose Prometheus metrics (`prom-client`); a `monito
 
 - Full rebuild on any drift: unnecessary load; scoped rebuilds are sufficient.
 - `FLUSHDB` for rebuilds: would erase the queue when it shares the instance.
+
+---
+
+## ADR-0008: HTTP boundary contract — `/api` prefix, strict validation, one JSON error envelope
+
+**Status:** Accepted — issue #6, branch `feat/http-skeleton` (PR pending at the time of writing)
+
+### Context
+
+Every endpoint in ADR-0003 to ADR-0007 (storefront reads, admin promotion mutations, ingestion, `/api/admin` operations) has to agree on where it is mounted, how untrusted input is rejected, and what an error looks like. Deciding that per route produces three shapes of 400 and leaks Express defaults — an HTML 404 page, a stack trace on an unexpected throw — to clients.
+
+### Decision
+
+- **Prefix.** Everything is mounted on an `express.Router()` under `/api`, including the liveness probe, which moves from `GET /health` to `GET /api/health`. One prefix means one reverse-proxy rule and no split between "infrastructure" and "application" paths.
+- **Validation at the boundary.** `src/middleware/validate.ts` takes `{ body?, query?, params? }` zod object schemas, calls `.strict()` on them **once at route construction**, and replaces each request part with the parsed, typed value. Handlers never see raw input. `.strict()` makes an unknown field a `400` instead of a silently ignored client typo — a misspelled `catgeory` filter must not return an unfiltered catalogue. Compiling the strict schema at construction rather than per request keeps the hot storefront path free of per-request schema work (REVIEW.md §6.6). `req.query` is a getter in Express 5, so the parsed value is installed with `Object.defineProperty`.
+- **One error envelope.** `src/middleware/error-handler.ts` emits `{ error: { code, message, details? } }` and nothing else. `AppError(status, code, message, details?)` (`src/shared/http-error.ts`) maps straight through, giving the catalogue the later PRs draw from: `400 VALIDATION_ERROR`, `404 NOT_FOUND`, `409 CONFLICT` (ADR-0004 exclusion-constraint overlap), `429 BACKPRESSURE` (ADR-0007 queue depth), `503 READ_MODEL_NOT_READY` (ADR-0003 cold start). Body-parser failures are translated by `err.type`: `entity.too.large` to `413 PAYLOAD_TOO_LARGE`, `entity.parse.failed` to `400 VALIDATION_ERROR`. Anything else is masked as `500 INTERNAL`.
+- **Unknown routes** hit a `notFoundHandler` before the error handler, so a typo gets JSON `404 NOT_FOUND` rather than Express's HTML page. The requested path is not echoed back, because it is untrusted input.
+- **Body cap.** `express.json({ limit: '100kb' })`. JSON routes carry a single entity; vendor files arrive as a multipart stream (ADR-0005), never as a JSON body.
+- **Stack logged, never returned.** An unexpected error is logged with `req.log.error({ err })` — full stack — and the client receives only `{ code: 'INTERNAL', message: 'Internal server error' }`. REVIEW.md §8.4 ("no internal detail escapes") governs the client-facing response; issue #6's acceptance criteria require the stack on the server side, where it is the only way to diagnose a 500.
+
+### Consequences
+
+- A client can branch on `error.code` without parsing prose, and `details` carries the per-field `{ path, message }` list from zod only where it exists.
+- Every later endpoint inherits rejection behaviour by declaring a schema; there is no per-route error formatting to review.
+- The 100kb cap is a denial-of-service bound as much as a correctness one: a request body can never grow toward the 256 MB container limit (REVIEW.md §8.6).
+- Moving the probe to `/api/health` is a breaking change to any existing health-check configuration; it is made now, while the only consumer is the README.
+
+### Trade-offs
+
+- `.strict()` rejects forward-compatible clients that send extra fields. Accepted: this is an internal admin and storefront API, and a silently ignored typo is the worse failure.
+- A single envelope means `details` is typed as `unknown` at the middleware level, so its shape is a per-endpoint contract rather than a compiler-checked one. Accepted: only the validation path populates it today.
+- The 413/400 body-parser mapping keys off `err.type`, an undocumented body-parser property. Accepted: it is covered by tests, and the fallback is the 500 mask rather than a crash.
+- A 100kb cap is a guess until a real payload argues otherwise; raising it is a one-constant change.
+
+### Rejected alternatives
+
+- Per-route `try`/`catch` with ad-hoc `res.status().json()`: three shapes of 400 and no single place to mask stacks.
+- RFC 7807 `application/problem+json`: more ceremony (`type` URIs) than a single-consumer API needs, and the case study asks for no particular media type.
+- Validating inside handlers: the raw value stays reachable, so a handler can use the unvalidated field by accident.
+- `express-validator`: a second schema language next to the zod types the domain layer already needs.
+- Echoing the unknown path in the 404 message: reflects untrusted input into a response body for no diagnostic gain the log does not already give.
+
+---
+
+## ADR-0009: Structured logging with a validated correlation id
+
+**Status:** Accepted — issue #6, branch `feat/http-skeleton` (PR pending at the time of writing)
+
+### Context
+
+A request in this system does not end at the HTTP response: it emits an event that a BullMQ worker picks up later (ADR-0003), and an ingestion request fans out into chunk jobs that run minutes apart (ADR-0005). Diagnosing "this price is wrong" means joining an API line to a worker line. `console.log` gives neither structure nor a join key.
+
+### Decision
+
+`src/shared/logger.ts` exports a pino root logger and a `pino-http` middleware, mounted first in `createApp` so every later middleware and handler has `req.log`.
+
+- **Correlation id.** Taken from the incoming `x-request-id` header **only when it matches `^[A-Za-z0-9._-]{1,128}$`**; otherwise a `randomUUID()` is generated. The header is untrusted input: a value containing a newline would forge whole log lines, and one containing CR would inject a response header. The id is echoed in the `x-request-id` response header and bound as `reqId` on every line through `quietReqLogger: true`. One "request completed" line closes each request.
+- **Narrowed serializers.** `req` is serialised to `{ id, method, url }` and `res` to `{ statusCode }`. Headers, query and body are therefore never serialised at all, so no credential or personal data can reach a log line (REVIEW.md §10.3). `redact` on the root logger stays as defence in depth for `authorization`, `cookie` and `x-api-key`.
+- **Injectable.** `createApp(logger?)` takes a logger, so tests capture lines instead of asserting on stdout.
+
+### Consequences
+
+- Every line is JSON carrying `reqId`, so a grep on one id returns the whole request.
+- The error handler logs at `warn` for a deliberate `AppError` and at `error` with the stack for an unexpected throw, which makes "real 500s" a distinct, alertable signal rather than noise mixed with client mistakes.
+- The id is the join key the queue boundary will have to carry: an event payload must propagate it so a worker's lines attach to the request that caused them. That propagation is **not implemented yet** — it lands with the first event producer.
+
+### Trade-offs
+
+- Narrow serializers mean a diagnosis that needs a request header or query string has to reproduce the request rather than read it back from logs. Accepted: the alternative failure (a credential or a customer's data sitting in a retained log) is not recoverable.
+- A generated uuid is used whenever the incoming header is malformed, so a caller that sends a non-conforming id loses its own trace key. Accepted: the response header returns the id actually used, so the caller can still join.
+- pino writes JSON to stdout with no rotation or shipping; that is the container runtime's job.
+- The `x-request-id` echo tells a caller the id exists. It is a uuid with no embedded information.
+
+### Rejected alternatives
+
+- `morgan`: text lines, no structured fields, no per-request child logger.
+- Trusting `x-request-id` verbatim: log forging and response-header injection from an unauthenticated header.
+- `redact` alone instead of narrow serializers: it protects only the paths named on the root logger and still serialises the rest of the headers, the query string and the body.
+- `AsyncLocalStorage` for ambient context: `req.log` covers the HTTP path; the store earns its place when the worker path needs the same id without a request object.

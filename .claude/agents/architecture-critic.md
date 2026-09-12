@@ -56,7 +56,7 @@ evidence. Skip an item only if it truly does not apply, and say so.
 
 ### Scenario B, flash sales
 
-11. Read path cost: does `GET /products` compute effective price per row at
+11. Read path cost: does `GET /api/products` compute effective price per row at
     request time with a join or subquery per product, or read a materialised
     or cached value? What is the query plan on 50k+ products with category
     filter, pagination and sort by effective price?

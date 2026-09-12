@@ -24,7 +24,7 @@ routes under `src/`.
 2. Start dependencies if a `docker-compose.yml` exists: `docker compose up -d --wait`.
 3. Pick a free port (e.g. 3100 + random) and start the API in the background:
    `PORT=<port> npm run dev > e2e-server.log 2>&1 &`. Record the PID.
-4. Wait until `curl -sf localhost:<port>/health` returns 200 (max 30 s). If it
+4. Wait until `curl -sf localhost:<port>/api/health` returns 200 (max 30 s). If it
    never does, print the last 40 lines of `e2e-server.log` and FAIL.
 
 Always tear down at the end (kill the server PID; leave docker services up
@@ -52,8 +52,8 @@ listener PID with `Get-NetTCPConnection -LocalPort <port>` and run
    that category, cancel while reading. Verify invariants afterwards by
    reading the state back. Exactly one winner where the rule says one.
 4. **Load** with `npx autocannon@8` (no global install):
-   - `GET /products/:id` (hottest endpoint) at `-c 100 -d 15`.
-   - `GET /products?category=...&sort=effectivePrice` at `-c 50 -d 15`.
+   - `GET /api/products/:id` (hottest endpoint) at `-c 100 -d 15`.
+   - `GET /api/products?category=...&sort=effectivePrice` at `-c 50 -d 15`.
    - Mixed read load while a promotion is created and cancelled in a loop.
      Record requests/s, p50/p99 latency, non-2xx count, and errors/timeouts.
 5. **Resource usage** during load. Sample the server process every 2 s:
@@ -67,7 +67,7 @@ listener PID with `Get-NetTCPConnection -LocalPort <port>` and run
 ## Pass criteria (fail the run if any is violated)
 
 - Zero non-2xx responses under read load, zero timeouts.
-- p99 latency for `GET /products/:id` under 100 ms locally.
+- p99 latency for `GET /api/products/:id` under 100 ms locally.
 - Peak RSS under 256 MB for the API, under 128 MB for an ingestion run.
 - Every invariant in section 2 holds after every race scenario in section 3.
 

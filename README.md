@@ -9,6 +9,8 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Node.js 22
 - Express 5
 - TypeScript (strict mode)
+- zod (request validation at the boundary)
+- pino + pino-http (structured JSON logging)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
 - SonarCloud (static analysis / quality gate)
@@ -29,6 +31,8 @@ npm run test:cov
 npm run lint
 ```
 
+`npm run dev` starts the API on `PORT` (default `3000`); `GET http://localhost:3000/api/health` should answer `{"status":"ok"}`. No database, migrations, seed or ingestion command exist yet — they are documented here as they land (ADR-0003 makes the SQL migrations the DDL deliverable).
+
 ## Project structure
 
 ```
@@ -39,18 +43,27 @@ docs/   design specs (docs/superpowers/specs)
 
 ## API
 
-| Method | Path      | Description                               |
-| ------ | --------- | ----------------------------------------- |
-| GET    | `/health` | Liveness probe, returns `{"status":"ok"}` |
+All endpoints are mounted under the `/api` prefix (ADR-0008).
+
+| Method | Path          | Description                               | Query parameters |
+| ------ | ------------- | ----------------------------------------- | ---------------- |
+| GET    | `/api/health` | Liveness probe, returns `{"status":"ok"}` | none             |
 
 Further endpoints are documented as they land.
+
+### Conventions
+
+- **Errors.** Every failure returns `{ "error": { "code": "...", "message": "...", "details"?: ... } }`. Codes in use: `VALIDATION_ERROR` (400), `NOT_FOUND` (404), `CONFLICT` (409), `PAYLOAD_TOO_LARGE` (413), `BACKPRESSURE` (429), `INTERNAL` (500), `READ_MODEL_NOT_READY` (503). An unexpected error is logged with its stack and returned as `INTERNAL` only — no internal detail reaches the client.
+- **Validation.** Request bodies, query strings and path parameters are validated at the boundary with strict zod schemas: an unknown field is a `400 VALIDATION_ERROR` with a per-field `details` list, not a silently ignored typo.
+- **Request bodies** are capped at 100kb; a larger body is `413 PAYLOAD_TOO_LARGE`.
+- **Correlation id.** Send `x-request-id` (matching `^[A-Za-z0-9._-]{1,128}$`) to trace a request; anything else is replaced by a generated uuid. The id used is returned in the `x-request-id` response header and appears as `reqId` on every JSON log line (ADR-0009).
 
 ## Development workflow
 
 - **TDD**: every change starts with a failing test (red-green-refactor).
 - **Conventional Commits** for all commit messages.
 - All changes land through pull requests — no direct pushes to `main`.
-- A PR merges only once CI is green, the SonarCloud quality gate passes, the advisory Claude AI review has run, and at least one human reviewer has approved.
+- A PR merges only once CI is green, the SonarCloud quality gate passes, the advisory Claude AI review has run, the applicable local-agent labels are present (`local-gates`, PR #21), and the owner has confirmed the `needs-human-check` hand-off.
 - Merges to `main` are squash merges.
 - Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check.
 
