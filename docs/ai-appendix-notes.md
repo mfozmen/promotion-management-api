@@ -834,6 +834,27 @@ rewritten.
   four-object list as a trade-off; `README.md`'s database-schema paragraph is
   brought to the same list in this round's documentation commit.
 
+### 2026-09-13 — The fourth rule citation, in the file the comment sweep did not read (PR #50, `a4cad6b`)
+
+- Challenge: the entry above counts three 8b.2 rule-number citations removed in
+  `489bc27`. There were four. `src/shared/db/migrations/0001_seed_pricing_rules.sql`
+  carried `(REVIEW.md 11.1)` on its `ON CONFLICT` comment and was missed because
+  the pass was read file by file over TypeScript — the migrations were treated as
+  generated output rather than as commented source, which `0001` is not: it is
+  hand-written and its header is the contract between the seeded rules and #39's
+  engine wrapper.
+- Verification: the `architecture-critic` run after `489bc27` named it, and
+  `grep -rn "REVIEW.md" src/` now returns nothing. That grep, not a file-by-file
+  read, is the check that would have found all four in one pass.
+- Before: `-- ON CONFLICT keeps a hand-applied re-run from doubling a markup (REVIEW.md 11.1).`
+  After: `-- ON CONFLICT keeps a hand-applied re-run from doubling a markup.`
+- Resolution: `a4cad6b`. The entry above stands as written at the time; the 8b/8c
+  pass fixed four citations, not three. ADR.md and README.md keep their REVIEW.md
+  references — 8b.2 governs code comments, and an ADR citing the rulebook is the
+  citation working as intended.
+- Blind spot: the comment rules were applied to the language the linter covers. A
+  `.sql` file has comments and no linter, so nothing but a grep sees it.
+
 ## Overall reflection
 
 - Estimated ratio: pending (final figure is the owner's).
