@@ -41,7 +41,8 @@ create table products (
   base_price_cents       bigint not null check (base_price_cents >= 0),
   stock_quantity         integer not null check (stock_quantity >= 0),
   pricing_rules_version  integer,                -- set by ingestion, null for manual creates
-  ingest_source_offset   bigint,                 -- byte offset of the vendor row that last wrote this product
+  ingest_job_id          bigint,                 -- ingestion job that last wrote this product (identity, monotonic)
+  ingest_source_offset   bigint,                 -- byte offset of that row inside its file
   created_at             timestamptz not null default now(),
   updated_at             timestamptz not null default now()
 );
@@ -366,13 +367,16 @@ Memory: one batch of parsed rows plus the stream buffers. No whole-file reads,
 no `Promise.all` across the file, no per-row events. Parallelism: chunks are
 independent, `--scale ingestion-worker=N` processes N chunks concurrently;
 rows for the same SKU in different chunks resolve by **file position, not
-commit order**: `products.ingest_source_offset` stores the byte offset of the
-row that last wrote the product, and the upsert carries
-`where excluded.ingest_source_offset > products.ingest_source_offset`. The
-later row in the file therefore wins no matter which worker commits first, so
-`--scale ingestion-worker=N` is safe. Rows from an older file cannot clobber a
-newer one either, because a new job resets the column through the same
-comparison against its own offsets.
+commit order**: `products.ingest_job_id` and `products.ingest_source_offset`
+record which job and which byte offset last wrote the product, and the upsert
+carries
+`where (excluded.ingest_job_id, excluded.ingest_source_offset) > (products.ingest_job_id, products.ingest_source_offset)`
+(row-value comparison; both columns are null on manually created products,
+which therefore accept their first ingested row). Job ids come from the
+identity column and only one job per vendor runs at a time, so a newer file
+always carries a higher job id: within a file the later row wins no matter
+which worker commits first, and across files the newer file wins even when its
+row sits at a smaller offset. `--scale ingestion-worker=N` is safe.
 
 ## 8. Scenario B: flash sales
 
@@ -400,7 +404,7 @@ Automatic:
 - **Stalled recovery**: BullMQ stalled detection with `lockDuration` sized to the time budget; a crashed worker's job is re-run and the lease lets the next worker claim it.
 - **Checkpoint resume**: the compare-and-set `next_offset` means a retry continues, never restarts, and two workers cannot both advance one chunk.
 - **Backpressure**: `429` on new imports above `INGESTION_MAX_WAITING`.
-- **Category-scoped reconciler** (`reconcile.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of 50 products and compare with the hashes, and sweep promotions whose `starts_at`/`ends_at` fell between the previous successful sweep and now (the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
+- **Category-scoped reconciler** (`reconcile.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`/`ends_at` fell between the previous successful sweep and now (the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
 - **Cold start**: the API enqueues `readmodel.rebuild {}` when `readmodel:ready` is missing and answers `503` on storefront routes until it exists.
 - **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: always` brings it back.
 - **Handler isolation**: every handler catches, logs with the job id and rethrows so BullMQ records the failure; nothing crashes the process.
