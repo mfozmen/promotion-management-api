@@ -61,6 +61,12 @@ Four Claude Code agents live in `.claude/agents/`. They are part of the process,
 
 Agent definitions are living documents: when an endpoint, job, cache or store lands, update the relevant agent in the same PR so it knows what to test, trace or attack.
 
+## Stacked pull requests
+
+Two pull requests that touch the same file are not independent, even when their content is: merging one forces conflict resolution in the other. Before opening a branch, compare its expected file list with the open pull requests. On any overlap, branch from that pull request's branch, open the new one against it (`gh pr create --base <branch>`) and register the stack (`gh stack link <lower PR> <new branch>`). GitHub retargets the upper pull requests automatically as the lower ones merge.
+
+Never merge `main` into a branch that is part of a stack; the merge commit breaks the cascading rebase. Use `gh stack sync`. To merge only the bottom pull request of a stack, use the asynchronous merge endpoint (`gh api -X PUT repos/OWNER/REPO/pulls/N/merge-async -f merge_method=squash`), because `gh stack merge` is atomic over the whole stack.
+
 ## Review rules
 
 Severity policy for review findings, from any reviewer:
