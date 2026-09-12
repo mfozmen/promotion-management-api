@@ -40,8 +40,8 @@ jobs:
 
       # SonarCloud analyses `sonar.sources` and `sonar.tests`. A pull request that
       # touches neither has nothing for it to read, and its result would be a copy
-      # of the previous one, so the scan and its gate are skipped. A push to `main`
-      # always scans, so the branch's own analysis never goes stale.
+      # of the previous one, so the scan is skipped. A push to `main` always scans,
+      # so the branch's own analysis never goes stale.
       - name: Is there anything for SonarCloud to analyse
         id: analysable
         env:
@@ -53,25 +53,21 @@ jobs:
             exit 0
           fi
           files=$(git diff --name-only "$BASE" "$HEAD")
-          if grep -qE '^(src/|tests/|scripts/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|sonar-project\.properties$)' <<<"$files"; then
+          if grep -qE '^(src/|tests/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|sonar-project\.properties$)' <<<"$files"; then
             echo 'needed=true' >> "$GITHUB_OUTPUT"
           else
             echo 'needed=false' >> "$GITHUB_OUTPUT"
             echo "No analysable file changed; skipping the SonarCloud scan."
           fi
 
+      # The token is here because uploading an analysis is a write. Reading the
+      # results back needs none on a public project, and nothing here reads them:
+      # SonarCloud posts its findings as a pull request comment (REVIEW.md 13.6).
       - name: SonarCloud Scan
         if: steps.analysable.outputs.needed == 'true'
         uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-      - name: Fail on any SonarCloud issue
-        if: github.event_name == 'pull_request' && steps.analysable.outputs.needed == 'true'
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          PR: ${{ github.event.pull_request.number }}
-        run: node scripts/sonar-issues.mjs
 
   pr-title:
     if: github.event_name == 'pull_request'

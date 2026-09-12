@@ -233,6 +233,42 @@ rewritten.
   tabulated in the pull request body, so a reader can check the rule without
   running it.
 
+### 2026-09-12 — A CI gate built, reviewed twice, then deleted (PR #56)
+
+- Challenge: PR #56 was, for most of its life, a 130-line Node script
+  (`scripts/sonar-issues.mjs`) that queried three SonarCloud APIs and failed the
+  build on anything they returned. The gap it addressed is real: the free plan's
+  quality gate judges ratings, coverage, duplication and hotspot review, so a
+  CRITICAL code smell passes it — three did exactly that on PR #50, behind a
+  green badge. Two review rounds hardened the script (a retry loop that did not
+  retry a thrown `fetch`; a bypass through the SonarCloud web interface). Neither
+  round, AI or human, asked the prior question: does anything already say this?
+- Verification: it does. SonarCloud posts its findings as a pull request comment
+  without being asked, which is the same list the script was re-printing as
+  GitHub annotations. The configuration alternative was checked and rejected on
+  evidence rather than assumed: `api/qualitygates/get_by_project` reports the
+  project on the built-in Sonar way, and a custom gate with an issue-count
+  condition is a paid feature on this plan, so the gate cannot be made to fail on
+  findings. A third check found that every endpoint the script called answers
+  anonymously on this public project, so the `SONAR_TOKEN` it demanded was never
+  needed — the AI wrote authenticated calls by default and two review rounds
+  passed over the authentication without comment.
+- Resolution: the script, its six tests, its ESLint globals block, its CI step
+  and the `scripts/` directory were deleted. What the branch keeps is
+  configuration and a rule: `sonar.qualitygate.wait=true` with a 300 s bound, the
+  approved `plsql:S1192` ignore, the step that skips the scan when a pull request
+  touches nothing under `sonar.sources`/`sonar.tests`, and REVIEW.md 13.6
+  rewritten to say what is actually true — findings are read in SonarCloud's pull
+  request comment and fixed before hand-off. Because that is a rule rather than a
+  check, the obligation went into `.claude/agents/impact-analyzer.md`, which runs
+  before every push, instead of into prose nobody executes; and 13.6 names the
+  paid-feature constraint so the next reader does not spend an afternoon
+  rebuilding what was just removed. `SONAR_TOKEN` stays on the scan step alone,
+  where uploading an analysis genuinely needs it.
+- Ratio note: this episode is the clearest case so far of AI-generated work being
+  net negative until a human asked what the tool already did. The script was
+  well-tested, well-reviewed and unnecessary; the value came from deleting it.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
