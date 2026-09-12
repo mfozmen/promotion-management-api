@@ -547,7 +547,7 @@ approach was rejected, a shortcut's ceiling, a contract a caller must honour.
 Evidence: four source files in flight carried between 34 and 67 per cent
 comment lines, all of them passing the rule this one replaced.
 
-8b.1 These are findings, every time:
+8b.2 These are findings, every time:
 
 - restating the next line, or the line above;
 - narrating a function already named after what it does;
