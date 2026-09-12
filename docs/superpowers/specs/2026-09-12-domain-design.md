@@ -144,11 +144,15 @@ create table ingestion_chunks (
 
 ## 4. Promotion resolution and effective price
 
-- **Active** = `status = 'active' and starts_at <= now() < ends_at`, decided by
-  the **database clock**. The application never forms its own opinion: a
-  resolver that needs the predicate in TypeScript takes the instant the query
-  returned and passes it in, so one `now` decides a boundary a millisecond wide
-  (REVIEW.md 1.7). Two clocks for one predicate is how a read model publishes a
+- **Active** = `status = 'active' and tstzrange(starts_at, ends_at) @> now()`
+  — the half-open window `[starts_at, ends_at)`, spelled as the range operator
+  rather than as two comparisons so it uses the GiST index (REVIEW.md 6.14) —
+  decided by the **database clock** and evaluated only in SQL — the
+  `active_promotions` view, or the resolution query's `WHERE` until that view
+  lands (REVIEW.md 2.7). The application never forms its own opinion and never
+  takes an injected `now`: no TypeScript copy of the predicate exists to
+  disagree with SQL, the last one having been deleted with its tests
+  (`33422ce`). Two clocks for one predicate is how a read model publishes a
   discount for a promotion SQL considers expired.
 - **Applied promotion** for a product is decided by `json-rules-engine`, not by
   hard-coded precedence (owner decision, 2026-09-12). The resolver collects
@@ -166,10 +170,11 @@ create table ingestion_chunks (
 - **The rule decides which promotion wins; it does not decide how one is
   computed.** A matching rule's event names the winner and nothing else:
   `{ type: 'selectCandidate', params: { level: 'product' | 'category' } }`.
-  The arithmetic is not in the rule, not in a registry and not in a parameter
-  bag — it is one pure function over a typed row.
-- **One function, one vocabulary.** `applyPromotion(basePriceCents, promotion)`
-  in `src/modules/promotion/` takes
+  The arithmetic is not in the rule, not in a registry the rule can name and
+  not in a parameter bag — it is a pure calculator per discount type behind one
+  pure entry point.
+- **One function, one vocabulary.** `effectivePrice(basePriceCents, promotion)`
+  in `src/modules/promotion/domain/` takes
   `Pick<Promotion, 'discountType' | 'value'>` — `discountType` of
   `percentage | fixed`, `value` in basis points or minor units — and returns a
   `PricingOutcome`, a discriminated union of
@@ -178,17 +183,31 @@ create table ingestion_chunks (
   narrowed rather than the whole row because the resolution query stopped
   selecting `starts_at`/`ends_at` once the windows left the fact set: a
   parameter typed `Promotion` demands `status`, `startsAt` and `endsAt`, which
-  the resolver has no columns to supply. `applyPromotion` on #29 takes the full
-  interface today and narrows to this `Pick` — the function body already reads
-  neither the window nor the status, so the change is the signature only.
-  Percentage is
-  `base - floor(base * bps / 10000)`, fixed is `max(base - value, 0)`,
-  arithmetic in `bigint`, the result clamped to `[0, base]`. A third kind of
-  discount is a migration that widens the enum, and that is the right cost:
+  the resolver has no columns to supply; the function body reads neither the
+  window nor the status. Whether a candidate is active was decided by that
+  query on the database clock before it reached the function. Percentage is
+  `base - floor(base * bps / 10000)` and fixed is `max(base - value, 0)`, each
+  in its own `DiscountCalculator` (`percentage-discount.ts`,
+  `fixed-discount.ts`) together with its own value check — the 10 000
+  basis-point ceiling belongs to percentage, not to the guard.
+  `effectivePrice` looks one up instead of branching on the type;
+  arithmetic in `bigint`, the result clamped to `[0, base]` by
+  `effectivePrice`. A third kind of
+  discount is a migration that widens the enum plus a calculator file the
+  `Record<DiscountType, DiscountCalculator>` will not typecheck without, and
+  that is the right cost:
   the case names two, and a vocabulary the reader can enumerate is worth more
   than one that can hold anything.
+- **The union is exhaustive; the database is not.** The enum can widen a deploy
+  before the union does, so the map is reached only through
+  `discountCalculatorFor(discountType: string)`, which checks own properties —
+  a `discountType` of `toString` resolves nothing — and returns
+  `DiscountCalculator | undefined`. `effectivePrice` turns `undefined` into
+  `{ ok: false, reason: 'unknown discount type' }`, so a row the code does not
+  understand yet is a defective row and a log line, not a throwing event
+  handler that retries and leaves the product unpriced.
 - **Selection compares candidates, so each is priced first.** The resolver
-  runs `applyPromotion` for every candidate, then runs the engine once over a
+  runs `effectivePrice` for every candidate, then runs the engine once over a
   single fact set — the only one, so a rule author has one list to read, and it
   is the flat shape given below. The candidates' windows are not in it: the
   resolution query already filters to active promotions, so a window fact could
@@ -200,7 +219,8 @@ create table ingestion_chunks (
   `src/modules/pricing/` holds the `json-rules-engine` rules that Scenario A's
   ingestion uses to adjust a vendor's base price. Neither module imports the
   other: a promotion is a row a human created with a window and a target, an
-  ingestion adjustment is a rule applied to a feed. Sharing a registry between
+  ingestion adjustment is a rule applied to a feed. Sharing a cross-module
+  registry between
   them is what this design tried and the owner reversed — the two look alike
   only at the level of "something changes a number".
 
@@ -252,7 +272,7 @@ create table ingestion_chunks (
   and the highest-priority match wins, which is what keeps the case's "at most
   one active promotion" true at the applied level. Letting several stack would
   be a change to that one selection step, not to the pricing function.
-- **A failed computation is not a silent base price.** `applyPromotion` returns
+- **A failed computation is not a silent base price.** `effectivePrice` returns
   `{ ok: false, reason }` for a row the boundary should have rejected — a value
   above 10 000 basis points, a base price outside the safe-integer range. The
   event handler logs it with the `promotionId` and writes the price the
@@ -282,7 +302,7 @@ create table ingestion_chunks (
 - **The slot is the effective price.** "Slot non-null" in the table below means
   `productEffectivePriceCents` / `categoryEffectivePriceCents`, never the
   discount type or the value. A candidate that exists but cannot be priced —
-  `applyPromotion` returned `{ ok: false }` — is `null` in **all three** of its
+  `effectivePrice` returned `{ ok: false }` — is `null` in **all three** of its
   keys plus a defect log carrying the `promotionId`, so it is absent to the
   rules rather than half-present. Without this the two readings diverge on a
   real customer: null the keys and the category discount applies with the
@@ -658,20 +678,27 @@ served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 
 ## 11. Layout
 
+Target layout: a file appears here before it exists on disk, and lands with the PR that needs it.
+
 ```
 src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
-    promotion/   promotion.ts (the Promotion row as a type), effective-price.ts (applyPromotion, pure), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
+    promotion/
+      domain/    promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), effective-price.ts (effectivePrice, pure), pricing-input-error.ts (pricingInputError, the guards), discount-calculator.ts (the DiscountCalculator interface: valueError + discountCents), percentage-discount.ts and fixed-discount.ts (one calculator each, formula and value check together), discount-calculators.ts (Record<DiscountType, DiscountCalculator>), discount-calculator-for.ts (the only lookup; undefined for a type the union does not have), candidate-selection.ts (runs the engine over already-loaded rules, pure)
+      db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
+      http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
+      jobs/      scheduling.ts
     pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
   shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
-tests/
+tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
   unit/          effective-price, csv-lines, ingestion-rules, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
+  e2e/           the docs/e2e-cases scenarios against the running compose stack
 docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander
 Dockerfile           one image, command per service
 ```
@@ -703,6 +730,15 @@ Dockerfile           one image, command per service
   it. That test inserts the rule rows it asserts against. No test reads the row
   a **running** database holds — the seed is code and is tested as code; the
   runtime row is data and an operator editing it must not turn CI red.
+- Test files import their subject through the `@src/*` alias (`tsconfig.json`
+  `paths` plus a matching `vitest` `resolve.alias`, `ee6aa9e`), so a test five
+  directories deep does not carry a relative path that breaks silently when a
+  file moves. Production code under `src/` keeps relative specifiers: `tsc`
+  does not rewrite path aliases on emit, so an alias in `src/` would compile to
+  an import Node cannot resolve — and it fails at container start, not at
+  build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts`
+  enforces that (`40cf7ba`). Tests are never emitted, so nothing reaches the
+  runtime through the alias.
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
 - Integration: real PostgreSQL and Redis from `docker compose`, database

@@ -49,9 +49,10 @@ a decimal price, no `parseFloat`, no `toFixed` to "fix" a rounding artefact.
 a truncation turns the first into 434 cents. A parser that rounds its way out
 of that is a finding, because the next input will find the case it misses.
 
-1.3 Exactly one implementation of the discount formula exists
-(`src/modules/promotion/effective-price.ts`). A second copy inline in a query, a
-worker or a test fixture is a finding even when it agrees today.
+1.3 Exactly one implementation of each discount formula exists, in the
+calculator for that discount type (`src/modules/promotion/domain/`), reached
+only through `effectivePrice`. A second copy inline in a query, a worker or a
+test fixture is a finding even when it agrees today.
 
 1.4 Rounding direction is stated and tested: the discount is floored, so the
 customer pays at most one cent more than the ideal. Any new rounding site
@@ -639,13 +640,17 @@ Evidence: `http-error.ts` exported a class called `AppError`. The fields were
 
 8c.2 One exported declaration per file — `class`, `interface`, `abstract class`,
 `enum`, `type` alias or function — in a file named after it, together with the
-private helpers only it uses. A second exported declaration in the same file is a finding, and
-"they are all about one concept" is not a defence: a concept is what a directory
-is for.
+private helpers only it uses. A second exported declaration in the same file is
+a finding, and "they are all about one concept" is not a defence: a concept is
+what a directory is for. A type alias counts: a union of string literals is a
+declaration a caller imports by name, not punctuation on the interface beside
+it.
 
 Evidence: a 199-line module held two interfaces, an abstract base, two classes,
 a registry and a factory, all of them sharing the concept "discount
-calculation".
+calculation". The alias clause is the owner's reading of 2026-09-13 on PR #29,
+written down here so #30, #37 and #39 are judged against the rulebook rather
+than against a comment thread (13b.1).
 
 8c.3 A file is named for its role as a kebab-case noun, `<subject>-<role>.ts`,
 never for the verb it exports. `request-validator.ts`, not `validate.ts`, beside
