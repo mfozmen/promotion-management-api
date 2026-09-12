@@ -493,6 +493,14 @@ rather than ignored, so a typo in a client is visible.
 `400` validation, `404` missing, `409` conflict, `429` backpressure, `503` read
 model not ready. The message is for a human; the code is for a client.
 
+8.3b A response may name where a problem is, never reproduce what the client
+sent. A path we generated (`body.items[3].sku`) is ours and the caller needs it
+to fix the request; a key or a value they supplied is theirs and does not come
+back, not in a validation message, not in a 404, not in a conflict. Log the
+offending content with the correlation id instead. This is one rule, so a
+validator that quotes a rejected key back is the same finding as a handler that
+echoes a path.
+
 8.4 No internal detail escapes: no stack trace, no SQL text, no connection
 string, no secret, in a response or a log line.
 
