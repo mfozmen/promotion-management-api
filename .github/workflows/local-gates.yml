@@ -28,6 +28,16 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PR: ${{ github.event.pull_request.number }}
     steps:
+      # The labels must exist in the repository before they can be removed from
+      # a PR: gh resolves each name against the repo's label set first. --force
+      # makes this idempotent, so a fresh clone of this repo gates correctly.
+      - name: Ensure the verification labels exist
+        run: |
+          gh label create e2e-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "e2e-tester agent passed locally on the latest push"
+          gh label create impact-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "impact-analyzer agent passed locally on the latest push"
+          gh label create docs-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "docs-scribe agent updated the docs for the latest push"
+          gh label create architecture-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "architecture-critic agent returned SOUND on the latest push"
+
       - name: Strip verification labels on new commits
         if: github.event.action == 'synchronize'
         run: |
