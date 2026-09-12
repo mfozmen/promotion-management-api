@@ -1,4 +1,4 @@
-import type { Promotion } from './promotion.js';
+import type { ActivePromotion, Promotion } from './promotion.js';
 
 /** A failure carries no price, so a caller cannot publish one by mistake. */
 export type PricingOutcome =
@@ -6,27 +6,27 @@ export type PricingOutcome =
 
 const BASIS_POINTS_PER_UNIT = 10_000n;
 
-export function applyPromotion(basePriceCents: number, promotion: Promotion): PricingOutcome {
+// Only the discount fields: the resolution query stops selecting the window
+// columns once the windows leave the fact set, so a resolver has none to pass.
+// Whether the candidate is active was decided by that query, on the database
+// clock, before it got here.
+export function applyPromotion(
+  basePriceCents: number,
+  promotion: Pick<Promotion, 'discountType' | 'value'>,
+): PricingOutcome {
   // `BigInt` throws on a fractional or `NaN` input, and one bad row must not
   // take down the batch around it. The zod boundary and the `promotions` check
   // constraints will back these guards up; neither has landed on this branch.
+  // A `reason` names the defect, never the stored value: the caller holds the
+  // row and logs it, a message can end up in a response.
   if (!Number.isSafeInteger(basePriceCents) || basePriceCents < 0) {
-    return {
-      ok: false,
-      reason: `base price ${basePriceCents} is not a whole number of minor units in range`,
-    };
+    return { ok: false, reason: 'base price is not a whole number of minor units in range' };
   }
   if (!Number.isSafeInteger(promotion.value) || promotion.value <= 0) {
-    return {
-      ok: false,
-      reason: `discount value ${promotion.value} is not a whole, positive number`,
-    };
+    return { ok: false, reason: 'discount value is not a whole, positive number' };
   }
   if (promotion.discountType === 'percentage' && promotion.value > 10_000) {
-    return {
-      ok: false,
-      reason: `percentage discount ${promotion.value} is above 10000 basis points`,
-    };
+    return { ok: false, reason: 'percentage discount is above 10000 basis points' };
   }
 
   const base = BigInt(basePriceCents);
@@ -41,7 +41,11 @@ export function applyPromotion(basePriceCents: number, promotion: Promotion): Pr
   return { ok: true, effectivePriceCents: Number(discount > base ? 0n : base - discount) };
 }
 
-export function isActive(promotion: Promotion, now: Date): boolean {
+/**
+ * `now` is PostgreSQL's `now()`, read and injected by the caller: the database
+ * clock decides activity, and nothing re-evaluates the window on the Node clock.
+ */
+export function isActive(promotion: Promotion, now: Date): promotion is ActivePromotion {
   const nowMs = now.getTime();
 
   return (

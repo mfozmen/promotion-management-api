@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyPromotion, isActive } from '../../src/modules/promotion/effective-price.js';
-import type { Promotion } from '../../src/modules/promotion/promotion.js';
+import type { ActivePromotion, Promotion } from '../../src/modules/promotion/promotion.js';
 
 const NOW = new Date('2026-09-12T12:00:00.000Z');
 const MS = 1;
@@ -16,14 +16,30 @@ function promotion(overrides: Partial<Promotion> = {}): Promotion {
   };
 }
 
-function priced(basePriceCents: number, overrides: Partial<Promotion> = {}): number {
-  const outcome = applyPromotion(basePriceCents, promotion(overrides));
+function active(overrides: Partial<Omit<Promotion, 'status'>> = {}): ActivePromotion {
+  return { ...promotion(overrides), status: 'active' };
+}
+
+function priced(
+  basePriceCents: number,
+  overrides: Partial<Omit<Promotion, 'status'>> = {},
+): number {
+  const outcome = applyPromotion(basePriceCents, active(overrides));
 
   if (!outcome.ok) throw new Error(`expected a price, got: ${outcome.reason}`);
   return outcome.effectivePriceCents;
 }
 
 describe('applyPromotion', () => {
+  it('takes only the discount fields, so a resolver need not supply a window', () => {
+    // The resolution query stops selecting starts_at/ends_at once the windows
+    // leave the fact set, so the parameter must not demand them.
+    expect(applyPromotion(10_000, { discountType: 'percentage', value: 2500 })).toEqual({
+      ok: true,
+      effectivePriceCents: 7500,
+    });
+  });
+
   it('applies a percentage discount in basis points', () => {
     expect(priced(10_000, { value: 2500 })).toBe(7500);
   });
@@ -71,9 +87,9 @@ describe('applyPromotion', () => {
 
   it('rejects a base price that is not a whole, non-negative number of minor units', () => {
     for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, -500, 2 ** 53]) {
-      expect(applyPromotion(basePriceCents, promotion())).toEqual({
+      expect(applyPromotion(basePriceCents, active())).toEqual({
         ok: false,
-        reason: `base price ${basePriceCents} is not a whole number of minor units in range`,
+        reason: 'base price is not a whole number of minor units in range',
       });
     }
   });
@@ -81,18 +97,25 @@ describe('applyPromotion', () => {
   it('rejects a discount value that is not a whole, positive number', () => {
     for (const discountType of ['percentage', 'fixed'] as const) {
       for (const value of [2500.5, NaN, Infinity, -2500, 0, 2 ** 53]) {
-        expect(applyPromotion(10_000, promotion({ discountType, value }))).toEqual({
+        expect(applyPromotion(10_000, active({ discountType, value }))).toEqual({
           ok: false,
-          reason: `discount value ${value} is not a whole, positive number`,
+          reason: 'discount value is not a whole, positive number',
         });
       }
     }
   });
 
   it('rejects a percentage above 100 % rather than clamping it to a free product', () => {
-    expect(applyPromotion(10_000, promotion({ value: 10_001 }))).toEqual({
+    expect(applyPromotion(10_000, active({ value: 10_001 }))).toEqual({
       ok: false,
-      reason: 'percentage discount 10001 is above 10000 basis points',
+      reason: 'percentage discount is above 10000 basis points',
+    });
+  });
+
+  it('prices a candidate that carries only the discount fields', () => {
+    expect(applyPromotion(10_000, { discountType: 'percentage', value: 2500 })).toEqual({
+      ok: true,
+      effectivePriceCents: 7500,
     });
   });
 });
@@ -135,5 +158,14 @@ describe('isActive', () => {
 
   it('is never active for a cancelled promotion', () => {
     expect(isActive(promotion({ status: 'cancelled' }), NOW)).toBe(false);
+  });
+
+  it('narrows the promotion it accepts to an active one', () => {
+    const candidate: Promotion = promotion();
+    const status: ActivePromotion['status'] | null = isActive(candidate, NOW)
+      ? candidate.status
+      : null;
+
+    expect(status).toBe('active');
   });
 });

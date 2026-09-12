@@ -178,10 +178,9 @@ create table ingestion_chunks (
   narrowed rather than the whole row because the resolution query stopped
   selecting `starts_at`/`ends_at` once the windows left the fact set: a
   parameter typed `Promotion` demands `status`, `startsAt` and `endsAt`, which
-  the resolver has no columns to supply. `applyPromotion` on #29 takes the full
-  interface today and narrows to this `Pick` — the function body already reads
-  neither the window nor the status, so the change is the signature only.
-  Percentage is
+  the resolver has no columns to supply; the function body reads neither the
+  window nor the status. Whether a candidate is active was decided by that
+  query on the database clock before it reached the function. Percentage is
   `base - floor(base * bps / 10000)`, fixed is `max(base - value, 0)`,
   arithmetic in `bigint`, the result clamped to `[0, base]`. A third kind of
   discount is a migration that widens the enum, and that is the right cost:

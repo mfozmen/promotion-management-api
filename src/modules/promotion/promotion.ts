@@ -11,3 +11,6 @@ export interface Promotion {
   /** Exclusive: the window is `[startsAt, endsAt)`. */
   endsAt: Date;
 }
+
+/** What `isActive` narrows to; the only shape `applyPromotion` prices. */
+export type ActivePromotion = Promotion & { status: 'active' };
