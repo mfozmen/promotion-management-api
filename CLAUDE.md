@@ -24,7 +24,11 @@ Node.js 22, Express 5, TypeScript (strict), Vitest + Supertest, ESLint + Prettie
 - Before opening a PR: run lint, typecheck, and the full test suite; all must pass. Coverage thresholds are 100 % and the pre-commit hook runs typecheck and coverage, so a commit that drops coverage is rejected. Never bypass hooks with --no-verify.
 - **Before every push**, run the `e2e-tester`, `impact-analyzer` and `docs-scribe` subagents (`.claude/agents/`) on the branch, plus `architecture-critic` when the PR touches `ADR.md`, `docs/superpowers/specs/`, `src/modules/vendor/`, `src/modules/promotion/`, `src/modules/pricing/`, `src/workers/`, or carries the `scenario` label. Push only on PASS/SOUND with the docs changes committed, then apply `e2e-verified`, `impact-verified`, `docs-verified` (and `architecture-verified`) to the PR; the `local-gates` check requires the applicable set and strips all of them on every new push.
 - `architecture-critic` also reviews every ADR draft or design spec before implementation starts; `docs-scribe` maintains `ADR.md`, `README.md` and `docs/ai-appendix-notes.md` (the running source for the Form 5 appendix). Update agent definitions in `.claude/agents/` whenever the system gains an endpoint, job, cache or store.
-- After checks pass, label the PR `needs-human-check`, mention the owner, and wait for their go-ahead before merging. Squash merge only.
+- **Hand-off, never skipped:** the moment a PR has every required check green, no unresolved review thread and all applicable agent labels, add the `needs-human-check` label and post a comment mentioning the owner that says what changed and how it was verified. A PR that is ready but unlabelled is invisible to the owner. Merge only after the owner comments their approval, and squash merge only.
+- Never write the approval word in your own comments; the owner's approval comment is the merge signal and a monitor watches for it.
 - Address Claude review comments before asking for the owner's check; resolve review threads once handled.
 - Every PR body has a **Case coverage** table (template section): which case-study items (R/A/B/D codes) it delivers, in plain words the owner can verify without reading code.
+
+- `REVIEW.md` is the review rulebook: read it before writing code and before reviewing; blocking rules are fixed before a PR is handed to the owner.
+
 - See `README.md`, `ADR.md`, `CONTRIBUTING.md` and `Form 5_AI Appendix.docx` for project context and process. Update `Form 5_AI Appendix.docx` as you go, not at the end.

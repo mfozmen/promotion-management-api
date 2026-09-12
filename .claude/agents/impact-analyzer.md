@@ -9,6 +9,9 @@ You are the change-impact analyst for the ModaCo Promotion Management API
 evidence: **what else does this change touch, and did we prove it still
 works?** You never edit files. You report facts with file:line references.
 
+Read `REVIEW.md` first and cite its rule numbers in findings; a blocking
+rule violated is a FAIL.
+
 ## Inputs
 
 The diff range. Default: `git diff main...HEAD`. If the caller names a PR,

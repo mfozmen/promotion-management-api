@@ -39,7 +39,34 @@ rewritten.
 - Strategy: extended the `local-gates` required check to read the PR's file list and labels and compute which local-agent labels apply — `docs-verified` is required on every PR, `architecture-verified` only when the PR touches `ADR.md`, `docs/superpowers/specs/` or carries the `scenario` label. All four labels are still stripped on every push.
 - Human refinement: the owner asked for the gate to cover all four local agents, not just `e2e-tester` and `impact-analyzer` — docs and architecture review were process-only before this and easy to skip. `docs-scribe` moved from "after every merge" to "before every push, on the branch", so documentation lands in the same PR instead of trailing it.
 
+### 2026-09-12 — Review rulebook (commit `4f049ec`)
+
+- Strategy: owner asked for a `REVIEW.md` rulebook as the first task after
+  planning, encoding the case's sharpest failure modes — race conditions,
+  high-traffic hygiene, serverless ingestion constraints, and money/time
+  exactness — as numbered, severity-tagged rules. Wired the same file into
+  the advisory Claude review workflow, the `architecture-critic`,
+  `e2e-tester` and `impact-analyzer` agent definitions, `CLAUDE.md` and
+  `CONTRIBUTING.md` so every reviewer (AI or human) cites rule numbers
+  instead of restating them.
+- Human refinement: the first draft of rule 3 was corrected after the
+  `impact-analyzer` run (see the entry below, commit `2f271fa`).
+- Follow-up (commit `44a06a5`): the owner asked for staff-level depth —
+  explicit coverage of race conditions, loop performance at 500 000-row
+  scale, and the edge-case tests a senior reviewer would demand — so the
+  10-rule draft was expanded into a 14-section rulebook (money and time,
+  database invariants, concurrency and ordering, serverless ingestion, the
+  read path, loop and query performance, tests and edge cases, API
+  boundaries, failure handling, observability, migrations, scope hygiene,
+  repository hygiene, and a six-question reviewer quick pass).
+
 ## Judgement, challenges and verification
+
+### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
+
+- Challenge: the first draft of rule 3 demanded that a category recompute never let a listing show mixed prices, and described per-category serialisation. The approved design (ADR-0006) deliberately accepts a short mixed-price window during a pipelined keyset recompute and serialises with one event-handler instance at concurrency 1. Left as written, the rulebook would have blocked the very implementation the design prescribes.
+- Verification: caught by the `impact-analyzer` agent run before push, which compared every REVIEW.md rule against the design spec on the open design PR.
+- Resolution: rule 3 now names the actual serialisation mechanism and accepts the window, while still flagging unretried half-way stops and per-product round trips (commit `2f271fa`).
 
 ### 2026-09-12 — `local-gates` check masked its own failure (PR #1)
 
