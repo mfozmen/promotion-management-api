@@ -147,7 +147,7 @@ Weekly vendor files of 500 000+ rows must pass through application-layer pricing
 
 ### Trade-offs
 
-- Rows for one SKU appearing in different chunks resolve as last commit wins. Vendor files are treated as newest-row-wins, which matches the source.
+- Rows for one SKU appearing in different chunks resolve by file position (`ingest_source_offset`), not commit order, so out-of-order commits from scaled workers cannot regress a later row; the cost is one extra column and one comparison per upsert.
 - The file must be immutable once registered and must not contain embedded newlines; both are stated as the file contract.
 - A crash between commit and enqueueing `product.upserted` delays the read-model update until the reconciler runs.
 - Locally the "serverless" unit is hosted by a BullMQ worker under Docker memory and CPU limits; the function body is the same, the trigger differs.
