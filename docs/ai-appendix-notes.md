@@ -19,6 +19,19 @@ rewritten.
 - Strategy: gave the full case study PDF and hard process constraints (TypeScript, TDD, Conventional Commits, PR-only, SonarCloud, advisory AI review). Asked for a design before any scaffolding, approved it, then let parallel agents build disjoint parts.
 - Human refinement: rejected required human approval in branch protection (owner cannot approve own PRs) in favour of a label-and-comment protocol; asked for coverage to be enforced at commit time instead of a paid SonarCloud gate; asked for the original Form 5 docx instead of a Markdown rewrite.
 
+### 2026-09-12 — Review rulebook (commit `4f049ec`)
+
+- Strategy: owner asked for a `REVIEW.md` rulebook as the first task after
+  planning, encoding the case's sharpest failure modes — race conditions,
+  high-traffic hygiene, serverless ingestion constraints, and money/time
+  exactness — as numbered, severity-tagged rules. Wired the same file into
+  the advisory Claude review workflow, the `architecture-critic`,
+  `e2e-tester` and `impact-analyzer` agent definitions, `CLAUDE.md` and
+  `CONTRIBUTING.md` so every reviewer (AI or human) cites rule numbers
+  instead of restating them.
+- Human refinement: none needed; rules were transcribed from the approved
+  design spec and PR review requirements rather than decided fresh.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — `local-gates` check masked its own failure (PR #1)

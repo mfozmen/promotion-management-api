@@ -49,10 +49,14 @@ Review every path that touches shared state for interleavings:
   racing a flash sale.
 - Event handlers running twice (BullMQ is at-least-once): every handler must
   be idempotent and must recompute from PostgreSQL, never apply a delta.
-- Category events are serialised per category; a change that lets two
-  handlers for the same category run concurrently is a finding.
-- Read-model writes for a category recompute go through one pipeline or
-  transaction so a listing never shows a half-updated sale.
+- Category events are processed serially: the design runs one event-handler
+  instance with concurrency 1 (per-category locks are the named upgrade).
+  A change that lets two handlers for the same category run concurrently
+  without such a lock is a finding.
+- A category recompute writes each keyset batch in one pipeline. The short
+  window in which pages mix old and new prices is accepted in ADR-0006; a
+  recompute that can stop half-way without being retried or repaired, or
+  one that writes products one round trip at a time, is a finding.
 - Chunk checkpoints are compare-and-set (`where next_offset = $seen`) and
   the lease is renewed only by its holder. A plain `UPDATE` of a checkpoint
   is a finding.
