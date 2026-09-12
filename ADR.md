@@ -172,7 +172,7 @@ A category promotion must affect tens of thousands of products the moment it is 
 
 **Pattern:** derive, do not store, on the write side; materialise on the read side.
 
-- Creating a category promotion is one row and one `promotion.changed` event. Nothing touches product rows.
+- Creating or assigning a category promotion is one row and one `promotion.changed` event. Nothing touches product rows.
 - The event handler scans the category by keyset in batches of 1 000, recomputes each product's applied promotion and effective price from PostgreSQL, and pipelines the read-model writes: `HSET product:{id}`, `ZADD category:{c}`, `ZADD products:all`. Listings are `ZRANGE ... BYSCORE` with offset and limit; detail is `HGETALL`.
 - A new product's `product.upserted` recompute finds the active category promotion, so the product is born discounted; it is not visible in the storefront until its hash exists.
 - Cancellation removes the delayed boundary jobs and emits an immediate recompute; scheduled starts and expiries fire as delayed jobs at the boundary.

@@ -165,9 +165,12 @@ create table ingestion_chunks (
     guarded `UPDATE`:
     ```sql
     update promotions set status = 'active', product_id = $2, category = $3
-    where id = $1 and status = 'draft' returning *;
+    where id = $1 and status = 'draft' and ends_at > now() returning *;
     ```
-    Zero rows → `409` (not a draft, or a concurrent assign won); the
+    Zero rows → `409` (not a draft, a concurrent assign won, or the draft's
+    window has already ended; the handler reads the row back to say which).
+    The `ends_at > now()` guard mirrors the create-time check: a draft that
+    sat unassigned past its own window cannot be activated dead. The
     exclusion constraints run inside the same statement, so overlap is a
     `409` exactly as on create. Two concurrent assigns of one draft yield one
     `200` and one `409` with no application-side locking.
@@ -448,8 +451,10 @@ Dockerfile           one image, command per service
 
 - Edge cases that must have a named test: cancel an unassigned draft (no
   target, allowed by the CHECKs), assign a non-draft (`409`), assign with
-  both or neither target (`400`), two concurrent assigns of one draft (one
-  `200`, one `409`), a budget release leaving `failures` untouched while an
+  both or neither target (`400`), assigning a draft whose `endsAt` has passed
+  (`409`), two concurrent assigns of one draft (one `200`, one `409`), a
+  product created in a category with an active promotion is discounted on its
+  first read, a budget release leaving `failures` untouched while an
   error increments it, and a reconciler catch-up after an outage longer than
   its period (watermark sweep re-emits the missed boundary).
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
