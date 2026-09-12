@@ -38,13 +38,36 @@ jobs:
       - name: Test with coverage
         run: npm run test:cov
 
+      # SonarCloud analyses `sonar.sources` and `sonar.tests`. A pull request that
+      # touches neither has nothing for it to read, and its result would be a copy
+      # of the previous one, so the scan and its gate are skipped. A push to `main`
+      # always scans, so the branch's own analysis never goes stale.
+      - name: Is there anything for SonarCloud to analyse
+        id: analysable
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != 'pull_request' ]; then
+            echo 'needed=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE" "$HEAD")
+          if grep -qE '^(src/|tests/|scripts/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|sonar-project\.properties$)' <<<"$files"; then
+            echo 'needed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'needed=false' >> "$GITHUB_OUTPUT"
+            echo "No analysable file changed; skipping the SonarCloud scan."
+          fi
+
       - name: SonarCloud Scan
+        if: steps.analysable.outputs.needed == 'true'
         uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       - name: Fail on any SonarCloud issue
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.analysable.outputs.needed == 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
