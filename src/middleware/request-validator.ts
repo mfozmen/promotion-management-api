@@ -1,14 +1,9 @@
 import type { RequestHandler } from 'express';
-import type { ZodError, ZodObject } from 'zod';
+import type { ZodError } from 'zod';
 import { HttpError } from '../shared/http-error.js';
 import { MAX_DETAILS } from '../shared/error-bounds.js';
+import type { RequestSchemas } from './request-schemas.js';
 import { logger } from '../shared/logger.js';
-
-export interface RequestSchemas {
-  body?: ZodObject;
-  query?: ZodObject;
-  params?: ZodObject;
-}
 
 const PARTS = ['body', 'query', 'params'] as const;
 

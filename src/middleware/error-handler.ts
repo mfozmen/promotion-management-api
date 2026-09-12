@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { MAX_DETAILS, MAX_MESSAGE } from '../shared/error-bounds.js';
+import type { ErrorMapping } from './error-mapping.js';
 import {
   CLIENT_ERRORS,
   HttpError,
@@ -7,13 +8,6 @@ import {
   type ErrorCode,
 } from '../shared/http-error.js';
 import { logger, serializeError } from '../shared/logger.js';
-
-interface ErrorMapping {
-  status: number;
-  code: ErrorCode;
-  message: string;
-  details?: unknown;
-}
 
 /** A 4xx message crosses verbatim, so the bound belongs here rather than in
  *  every handler that writes one. */
