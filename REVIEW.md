@@ -508,29 +508,22 @@ rather than ignored, so a typo in a client is visible.
 `400` validation, `404` missing, `409` conflict, `429` backpressure, `503` read
 model not ready. The message is for a human; the code is for a client.
 
-8.3b A response may name where a problem is, never reproduce what the client
-sent. A path we generated (`body.items[3].sku`) is ours and the caller needs it
-to fix the request; a key or a value they supplied is theirs and does not come
-back, not in a validation message, not in a 404, not in a conflict. Log the
-offending content with the correlation id instead. This is one rule, so a
-validator that quotes a rejected key back is the same finding as a handler that
-echoes a path.
+8.3b A response may name where a problem is and which of the caller's own
+fields or identifiers it concerns. It never reproduces a stored value, and it
+never repeats a free-form value the caller sent: a value is not an identifier
+and there is nothing to fix by seeing it again, so a 404 does not echo the path
+and a parser's message is replaced rather than forwarded.
 
-Evidence: this API applied the rule in two places out of three, withholding the
-path from a 404 and replacing body-parser's messages, then let zod quote a
-rejected key back and pinned it with a test.
+Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
+another row's fields, which they never had. `Unrecognized key: "discountTyp"` is
+correct: the client cannot fix the request without knowing which of its own keys
+was wrong.
 
-8.3c One exception, bounded: a 4xx may name an identifier the caller supplied,
-because a client that cannot see which of its own rows was rejected cannot fix
-the request. It may not carry a stored value: not the conflicting row's fields,
-not a neighbouring record, not anything the caller did not already have. Cap
-the echoed identifier at 64 characters and truncate rather than omit, so a
-long value cannot turn an error body into a mirror.
+8.3c Cap an echoed field name or identifier at 64 characters and truncate
+rather than omit, so a long key cannot turn an error body into a mirror.
 
-Evidence: forbidding the echo outright would have left a client unable to tell
-which of its own rows a bulk request rejected, and the first draft of the
-exception had no bound at all, so a multi-kilobyte key would have come straight
-back in the error body.
+Evidence: the first draft of the exception had no bound, so a multi-kilobyte key
+would have come straight back in the error body.
 
 8.4 No internal detail escapes: no stack trace, no SQL text, no connection
 string, no secret, in a response or a log line.
@@ -554,7 +547,7 @@ approach was rejected, a shortcut's ceiling, a contract a caller must honour.
 Evidence: four source files in flight carried between 34 and 67 per cent
 comment lines, all of them passing the rule this one replaced.
 
-8b.2 These are findings, every time:
+8b.1 These are findings, every time:
 
 - restating the next line, or the line above;
 - narrating a function already named after what it does;
@@ -565,26 +558,17 @@ comment lines, all of them passing the rule this one replaced.
 - a module docblock that retells the design spec. Link the section instead:
   the spec changes and the copy does not.
 
-8b.3 **Measure it.** More than one comment line per four lines of code in a
-source file is a finding unless every surviving comment passes 8b.1. Count the
-whole file, docblocks included. The number is not a budget to spend: a file at
-ten per cent with one comment that restates its function still fails 8b.2, and
-a file at thirty per cent whose comments are all contracts passes on appeal,
-stated in the reply.
-
-8b.4 Prose that explains a decision belongs in `ADR.md`, and prose that
+8b.3 Prose that explains a decision belongs in `ADR.md`, and prose that
 explains a mechanism belongs in the design spec. A comment points at them; it
 does not reproduce them.
 
-8b.5 **The count is the cheap half.** A ratio cannot tell which lines were
-load-bearing, and a deleted comment leaves nothing behind to notice it went:
-the first trim of one module hit the target on every file and still removed two
-contracts. So a trimming pass is reviewed by reading what was cut, not by
-checking the new number, and a contract that only a comment was holding gets a
-test in the same PR, so the next deletion fails something instead of passing
-quietly.
+8b.4 A trimming pass is reviewed by reading what was cut. A deleted comment
+leaves nothing behind to notice it went: one trim removed two contracts while
+every file looked better afterwards. A contract that only a comment was holding
+gets a test in the same pull request, so the next deletion fails something
+instead of passing quietly.
 
-8b.6 A comment that states a claim about the code must not outlive it. When a
+8b.5 A comment that states a claim about the code must not outlive it. When a
 fix changes behaviour, the `ADR.md` sentence and the design-spec paragraph that
 described the old behaviour change in the same commit; leaving the code right
 and the prose wrong is the same defect one indirection further away. A comment
@@ -597,23 +581,30 @@ rule or a section that lands in another pull request reads as fact and is not.
 
 **Severity: warning.**
 
-8c.1 A file is named after what it exports. A module whose only export is
-`AppError` is `app-error.ts`, not `http-error.ts`: the next reader greps for
-the name they saw in a stack trace, and a file that answers to a different
-word costs them a search every time. Kebab-case file, PascalCase class, the
-same word in both.
+8c.1 A name says what the thing is. A file and its main export carry the same
+word, and when the two disagree, fix whichever is wrong rather than whichever is
+easier: usually the wrong one describes how the thing was built instead of what
+it is.
 
-Evidence: `src/shared/http-error.ts` exported exactly one class and it was
-called `AppError`.
+Evidence: `http-error.ts` exported a class called `AppError`. The fields were
+`status`, `code` and `details`, so the file was right and the class was renamed.
 
-8c.2 One concept per file, and the file says which. A module exporting several
-things is named after the concept they share, not after the first one written;
-if no shared word fits, that is the file telling you it holds two concepts.
+8c.2 One declaration per file. Every `class`, `interface`, `abstract class` and
+`enum` lives in its own file named after it, together with the private helpers
+only it uses. A second exported declaration in the same file is a finding, and
+"they are all about one concept" is not a defence: a concept is what a directory
+is for.
 
-8c.3 The same thing is called the same thing everywhere: the class, the file,
-the test file, the directory, the error code, the ADR and the design spec. A
-rename that stops at the code and leaves the prose behind is 8b.6 again, one
-indirection further away.
+Evidence: a 199-line module held two interfaces, an abstract base, two classes,
+a registry and a factory, all of them sharing the concept "discount
+calculation".
+
+8c.3 A file is named for its role as a kebab-case noun, `<subject>-<role>.ts`,
+never for the verb it exports. `request-validator.ts`, not `validate.ts`, beside
+`error-handler.ts`.
+
+Evidence: `src/middleware/validate.ts` exported `validate()` and read as an
+instruction rather than a thing.
 
 8c.4 Names say what a thing is, not how it was built or when it arrived. No
 `utils`, `helpers`, `common`, `misc`, `manager`, `base` or `new` in a file or
