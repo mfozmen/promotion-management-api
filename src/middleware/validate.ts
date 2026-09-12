@@ -20,7 +20,7 @@ const details = (error: ZodError): { path: string; message: string }[] =>
  * inside it is dropped in silence (ADR-0008).
  */
 export function validate(schemas: RequestSchemas): RequestHandler {
-  // Never per request: the hot path does no schema work.
+  // Strict once, at construction: never per request.
   const strict = PARTS.flatMap((part) => {
     const schema = schemas[part];
 
