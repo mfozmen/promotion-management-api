@@ -14,7 +14,12 @@ const PARTS = ['body', 'query', 'params'] as const;
 const MAX_SHOWN_KEYS = 20;
 const MAX_KEY_LENGTH = 64;
 
-/** `body.items[3].sku`: the part it was found in, then the way in. */
+/**
+ * `body.items[3].sku`: the part it was found in, then the way in. Segments are
+ * truncated like an echoed key, because a `z.record` nested in a part puts the
+ * caller's own key here — a part cannot itself be a record, since `validate`
+ * calls `.strict()` and that needs a `ZodObject`.
+ */
 const formatPath = (part: string, path: PropertyKey[]): string =>
   path.reduce<string>(
     (acc, segment) =>

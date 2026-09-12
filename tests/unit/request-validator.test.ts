@@ -243,6 +243,30 @@ describe('validate: how much one request can cost', () => {
   });
 });
 
+describe('validate: a schema with client-controlled keys', () => {
+  it('truncates a caller key that reaches the path, not only one in the message', async () => {
+    // A request part cannot itself be a key bag — `RequestSchemas` takes a
+    // `ZodObject` and `validate` calls `.strict()` on it, so `z.record` does not
+    // compile as a part. Nested inside one it does, and that is the only way a
+    // caller's own key reaches `path`.
+    const long = `attr${'z'.repeat(200)}`;
+    const app = appWith(
+      '/vendors',
+      validate({ body: z.object({ attributes: z.record(z.string(), z.number()) }) }),
+    );
+
+    const res = await request(app)
+      .post('/vendors')
+      .send({ attributes: { [long]: 'not-a-number' } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.details).toContainEqual({
+      path: `body.attributes.${long.slice(0, 64)}`,
+      message: expect.any(String),
+    });
+  });
+});
+
 describe('validate: mounted without the http logger', () => {
   it('still rejects, instead of throwing while trying to log', async () => {
     const app = express();
