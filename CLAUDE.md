@@ -27,5 +27,8 @@ Node.js 22, Express 5, TypeScript (strict), Vitest + Supertest, ESLint + Prettie
 - **Hand-off, never skipped:** the moment a PR has every required check green, no unresolved review thread and all applicable agent labels, add the `needs-human-check` label and post a comment mentioning the owner that says what changed and how it was verified. A PR that is ready but unlabelled is invisible to the owner. Merge only after the owner comments their approval, and squash merge only.
 - Never write the approval word in your own comments; the owner's approval comment is the merge signal and a monitor watches for it.
 - Address Claude review comments before asking for the owner's check; resolve review threads once handled.
+- Every PR body has a **Case coverage** table (template section): which case-study items (R/A/B/D codes) it delivers, in plain words the owner can verify without reading code.
+
 - `REVIEW.md` is the review rulebook: read it before writing code and before reviewing; blocking rules are fixed before a PR is handed to the owner.
+
 - See `README.md`, `ADR.md`, `CONTRIBUTING.md` and `Form 5_AI Appendix.docx` for project context and process. Update `Form 5_AI Appendix.docx` as you go, not at the end.
