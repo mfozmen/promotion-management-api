@@ -68,7 +68,9 @@ export const promotions = pgTable(
     id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
     name: text('name').notNull(),
     discountType: promotionDiscountType('discount_type').notNull(),
-    // Basis points for 'percentage', minor units for 'fixed'.
+    // Basis points for 'percentage', minor units for 'fixed'. integer, not bigint: a fixed
+    // discount therefore tops out well below base_price_cents, which is harmless because a
+    // discount above the base clamps to zero anyway.
     value: integer('value').notNull(),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
