@@ -46,6 +46,19 @@ All of these are required on `main`:
 
 Pre-push local gates: run the `e2e-tester` and `impact-analyzer` agents (`.claude/agents/`) against the branch before pushing. Push only when both report PASS, then apply the labels.
 
+## Local agents
+
+Four Claude Code agents live in `.claude/agents/`. They are part of the process, not optional:
+
+| Agent                 | When it runs                                                          | Output                                                     |
+| --------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `architecture-critic` | On every ADR draft or design spec, and before a scenario PR is opened | SOUND / REVISE / REJECT verdict                            |
+| `e2e-tester`          | Before every push                                                     | PASS / FAIL, label `e2e-verified`                          |
+| `impact-analyzer`     | Before every push                                                     | PASS / FAIL, label `impact-verified`                       |
+| `docs-scribe`         | After every merge, and whenever an AI mistake is caught and fixed     | Updates `ADR.md`, `README.md`, `docs/ai-appendix-notes.md` |
+
+Agent definitions are living documents: when an endpoint, job, cache or store lands, update the relevant agent in the same PR so it knows what to test, trace or attack.
+
 ## Review process
 
 Every PR receives an advisory Claude AI review. The PR is then labelled `needs-human-check` and the repository owner is mentioned; merge happens only after the owner says so. `main` is protected: no direct pushes.
