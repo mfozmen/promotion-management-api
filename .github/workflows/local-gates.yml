@@ -40,6 +40,7 @@ jobs:
           gh label create impact-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "impact-analyzer agent passed locally on the latest push"
           gh label create docs-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "docs-scribe agent updated the docs for the latest push"
           gh label create architecture-verified --repo "$GITHUB_REPOSITORY" --force             --color 0E8A16 --description "architecture-critic agent returned SOUND on the latest push"
+          gh label create scenario --repo "$GITHUB_REPOSITORY" --force             --color 5319E7 --description "Implements Scenario A or B; architecture-critic required"
 
       - name: Strip verification labels on new commits
         if: github.event.action == 'synchronize'
