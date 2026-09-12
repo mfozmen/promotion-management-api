@@ -402,6 +402,31 @@ rewritten.
   mitigation used was to retarget PR #29's base onto PR #35's branch, so the code
   cannot reach `main` ahead of the text that documents it.
 
+### 2026-09-12 — Pricing core: a failure carried a price, and rule params were loose (issue #8, PR #29, commit `108199a`)
+
+- Two defects in the reshaped module, each found by the local agents and each
+  raised independently by two of them.
+- Challenge 1 — `PricingOutcome` carried `effectivePriceCents` on BOTH variants,
+  including the failure one. A caller that read the field without checking `ok`
+  would have published a product free the moment its base price was unusable:
+  the worst available business outcome produced by the safest-looking line of
+  code. The failure variant now carries only a reason, so the discriminated
+  union forces every caller to branch — the storefront keeps the base price it
+  already holds, ingestion treats it as a `rules` fault and stops the job.
+- Challenge 2 — the calculators' zod schemas were `z.object`, which drops an
+  unknown key in silence. A rule row is admin-authored data that no code review
+  sees, so `valueBasisPoint` beside a valid `valueBasisPoints` would have kept
+  pricing at the old value with no error anywhere (REVIEW.md 8.1). Both are
+  `z.strictObject` now, with `calculator` folded in since it shares the `params`
+  object, and a typo is a rejection naming the calculator.
+- Verification of the fix: 29 tests in the suite, 28 of them in
+  `tests/pricing/effective-price.test.ts`, at 100 % statement, branch, function
+  and line coverage; `npm run lint` and `npm run typecheck` are clean and the
+  local agents were re-run.
+- Honest lesson: both defects are the same shape — a safe-looking default that
+  hides a bad input rather than reporting it — which is the shape this pull
+  request kept finding.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
