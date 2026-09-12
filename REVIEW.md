@@ -119,6 +119,9 @@ all-null case; otherwise test each column null on its own.
 promotions, products, categories, thresholds an operator would ever want to
 change: rows, read through a query, never a constant in a module.
 
+Evidence: a pricing module shipped a `DEFAULT_PRICING_RULES` array that nothing
+imported, written because the table it belonged in had not been built yet.
+
 2b.2 A seed belongs with the migrations, not in the code that consumes it. A
 `DEFAULT_*` array of rows inside a runtime module is a finding even when
 nothing reads it: the bundle ships data it never uses, and the day the table
@@ -501,6 +504,10 @@ offending content with the correlation id instead. This is one rule, so a
 validator that quotes a rejected key back is the same finding as a handler that
 echoes a path.
 
+Evidence: this API applied the rule in two places out of three, withholding the
+path from a 404 and replacing body-parser's messages, then let zod quote a
+rejected key back and pinned it with a test.
+
 8.4 No internal detail escapes: no stack trace, no SQL text, no connection
 string, no secret, in a response or a log line.
 
@@ -519,6 +526,9 @@ memory on the smallest configured container.
 8b.1 A comment earns its line by saying something the code cannot: a
 non-obvious invariant, a unit that is not in the name, a reason the obvious
 approach was rejected, a shortcut's ceiling, a contract a caller must honour.
+
+Evidence: four source files in flight carried between 34 and 67 per cent
+comment lines, all of them passing the rule this one replaced.
 
 8b.2 These are findings, every time:
 
@@ -568,6 +578,9 @@ rule or a section that lands in another pull request reads as fact and is not.
 the name they saw in a stack trace, and a file that answers to a different
 word costs them a search every time. Kebab-case file, PascalCase class, the
 same word in both.
+
+Evidence: `src/shared/http-error.ts` exported exactly one class and it was
+called `AppError`.
 
 8c.2 One concept per file, and the file says which. A module exporting several
 things is named after the concept they share, not after the first one written;
@@ -688,6 +701,10 @@ finding names a class of mistake rather than one instance, the pull request
 that fixes it also adds or sharpens the rule here, in the same commit. The
 test is simple: would the same finding be worth making on someone else's PR
 next week? Then it belongs in the rulebook.
+
+Evidence: three rules in this section arrived only because someone happened to
+notice the pattern behind a finding, and the fourth was a rule that had sat
+unenforceable for a day because nothing measured it.
 
 13b.2 A rule that never fires is a bug in the rule. When a finding gets past
 review, ask which rule should have caught it and why it did not: usually the
