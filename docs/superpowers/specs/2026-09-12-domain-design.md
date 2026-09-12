@@ -418,7 +418,7 @@ served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 | GET    | `/api/products/:id`                            | Redis    | hottest endpoint; `404` if the hash is missing                                                                        |
 | POST   | `/api/products`                                | PG+event | `sku, name, category, basePriceCents, stockQuantity`; `409` on duplicate SKU                                          |
 | POST   | `/api/promotions`                              | PG+event | `name, discountType, value, startsAt, endsAt, productId? \| category?`; no target = `draft`; `409` on overlap         |
-| POST   | `/api/promotions/:id/assign`                   | PG+event | `productId \| category`; draft → active; `409` on overlap or non-draft                                                |
+| POST   | `/api/promotions/:id/assign`                   | PG+event | `productId \| category`; draft → active; `409` on overlap, non-draft, or an `endsAt` already passed                   |
 | POST   | `/api/promotions/:id/cancel`                   | PG+event | idempotent                                                                                                            |
 | GET    | `/api/promotions`, `/api/promotions/:id`       | PG       | `status?`, `category?`, `productId?`                                                                                  |
 | POST   | `/api/vendor/imports`                          | PG+queue | multipart `file`, field `vendor`; `202`                                                                               |
