@@ -63,7 +63,22 @@ jobs:
           labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')
           # Current and previous paths, so a file moved out of the specs directory still counts.
           files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)')
-          required="e2e-verified impact-verified docs-verified"
+          # An agent is required by what the diff can break, not by the fact that a diff exists.
+          # A rulebook edit cannot leak a connection or deadlock a transaction, so making it wait
+          # for a load run buys nothing and costs a round trip on every pull request.
+          #
+          # docs-scribe is the one that always applies: every change can outdate the ADRs, the
+          # README or the appendix, and that is the case-study deliverable.
+          required="docs-verified"
+          # e2e-tester needs something that can change how the running application behaves.
+          if grep -qE '^(src/|tests/|package(-lock)?\.json$|.*\.config\.ts$|tsconfig.*\.json$|Dockerfile|docker-compose.*\.ya?ml$)' <<<"$files"; then
+            required="$required e2e-verified"
+          fi
+          # impact-analyzer also covers the workflows, because a change to how pull requests are
+          # judged lands on every branch in flight at once; that is the widest blast radius here.
+          if grep -qE '^(src/|tests/|package(-lock)?\.json$|.*\.config\.ts$|\.github/workflows/)' <<<"$files"; then
+            required="$required impact-verified"
+          fi
           # Design documents, the modules that implement Scenario A and B, and the workers all
           # require the architecture-critic; the scenario label is the manual override.
           if grep -qE '^(ADR\.md$|docs/superpowers/specs/|src/modules/(vendor|promotion|pricing)/|src/workers/)' <<<"$files" || grep -qx scenario <<<"$labels"; then
