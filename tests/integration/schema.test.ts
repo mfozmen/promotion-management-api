@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   ingestionChunks,
@@ -313,6 +313,16 @@ describe('products', () => {
     expect(await sqlStateOf(insertProduct({ stockQuantity: -1 }))).toBe(CHECK_VIOLATION);
 
     expect(await insertProduct({ basePriceCents: 0, stockQuantity: 0 })).toBeGreaterThan(0);
+  });
+
+  it('round-trips the largest price the number-mode column can carry', async () => {
+    const id = await insertProduct({ basePriceCents: Number.MAX_SAFE_INTEGER });
+
+    const [row] = await db()
+      .select({ basePriceCents: products.basePriceCents })
+      .from(products)
+      .where(eq(products.id, id));
+    expect(row!.basePriceCents).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('keeps the ingestion provenance columns null together, so the upsert guard can order them', async () => {

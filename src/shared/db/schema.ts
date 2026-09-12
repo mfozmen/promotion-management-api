@@ -35,6 +35,9 @@ export const products = pgTable(
     sku: text('sku').notNull().unique(),
     name: text('name').notNull(),
     category: text('category').notNull(),
+    // mode:'number' reads back through a JS number, so the usable ceiling is
+    // Number.MAX_SAFE_INTEGER cents, not the column's. Switch to mode:'bigint' if a price
+    // ever needs more than that.
     basePriceCents: bigint('base_price_cents', { mode: 'number' }).notNull(),
     stockQuantity: integer('stock_quantity').notNull(),
     // Null for manual creates; ingestion stamps the rules version it priced the row with.
