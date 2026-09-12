@@ -547,6 +547,29 @@ and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not.
 
+## 8c. Names match
+
+**Severity: warning.**
+
+8c.1 A file is named after what it exports. A module whose only export is
+`AppError` is `app-error.ts`, not `http-error.ts`: the next reader greps for
+the name they saw in a stack trace, and a file that answers to a different
+word costs them a search every time. Kebab-case file, PascalCase class, the
+same word in both.
+
+8c.2 One concept per file, and the file says which. A module exporting several
+things is named after the concept they share, not after the first one written;
+if no shared word fits, that is the file telling you it holds two concepts.
+
+8c.3 The same thing is called the same thing everywhere: the class, the file,
+the test file, the directory, the error code, the ADR and the design spec. A
+rename that stops at the code and leaves the prose behind is 8b.6 again, one
+indirection further away.
+
+8c.4 Names say what a thing is, not how it was built or when it arrived. No
+`utils`, `helpers`, `common`, `misc`, `manager`, `base` or `new` in a file or
+directory name: a bucket named after nothing collects everything.
+
 ## 9. Failure handling and operations
 
 **Severity: warning. Blocking when a failure path has no recovery.**
