@@ -111,6 +111,39 @@ all-null case; otherwise test each column null on its own.
 
 ---
 
+## 2b. Business data lives in the database
+
+**Severity: critical. Blocking.**
+
+2b.1 Business data comes from the database at runtime, always. Pricing rules,
+promotions, products, categories, thresholds an operator would ever want to
+change: rows, read through a query, never a constant in a module.
+
+Evidence: a pricing module shipped a `DEFAULT_PRICING_RULES` array that nothing
+imported, written because the table it belonged in had not been built yet.
+
+2b.2 A seed belongs with the migrations, not in the code that consumes it. A
+`DEFAULT_*` array of rows inside a runtime module is a finding even when
+nothing reads it: the bundle ships data it never uses, and the day the table
+arrives the same rows exist in two places with nothing keeping them equal.
+
+2b.3 Tests are the exception, and only tests. A test may build its own rows in
+memory, but a story that owns a table also has one test that reads through the
+real query against a real database, so the query is exercised at least once.
+
+2b.4 Order the work so this is possible: the table and its migration land
+before the code that reads it. A story written against a table that does not
+exist yet has to invent a constant to stand in for it, and that constant then
+has to be removed, re-tested and re-documented. Doing it in the wrong order
+means doing it twice.
+
+2b.5 What may be a constant in code: the instruction set, not the policy.
+Zod schemas, enum members the database column already constrains, and physical
+limits such as PostgreSQL's bind parameter ceiling. If an operator would ever
+want to change it without a deploy, it is a row.
+
+---
+
 ## 3. Concurrency and ordering
 
 **Severity: critical. Blocking.**
@@ -438,6 +471,18 @@ _Failure_
   defined response, and the test asserts it.
 - A poisoned job reaching the dead-letter set after its retries.
 
+7.4b **A control is proved only in the configuration production runs.** A test
+that exercises a safety control sets the level, the environment variable and
+the framework default explicitly instead of inheriting whatever the harness
+uses. If the control depends on a log level, build the logger at that level in
+the test; if it depends on `NODE_ENV`, set it.
+
+Evidence: twice in one pull request a control passed review while never firing
+in production. Express prints a raw stack on every environment except `test`,
+which is the one the suite runs in, and a compensating `debug` log line sat
+under a root logger running at `info` while the capture logger in the test ran
+at `trace`.
+
 7.5 **Determinism.** Fixed clocks (injected `now` or fake timers), fixed
 fixtures, no random data, no `sleep` to wait for a worker. Poll a condition with
 a timeout. A flaky test is a finding, not a retry.
@@ -462,6 +507,23 @@ rather than ignored, so a typo in a client is visible.
 `400` validation, `404` missing, `409` conflict, `429` backpressure, `503` read
 model not ready. The message is for a human; the code is for a client.
 
+8.3b A response may name where a problem is and which of the caller's own
+fields or identifiers it concerns. It never reproduces a stored value, and it
+never repeats a free-form value the caller sent: a value is not an identifier
+and there is nothing to fix by seeing it again, so a 404 does not echo the path
+and a parser's message is replaced rather than forwarded.
+
+Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
+another row's fields, which they never had. `Unrecognized key: "discountTyp"` is
+correct: the client cannot fix the request without knowing which of its own keys
+was wrong.
+
+8.3c Cap an echoed field name or identifier at 64 characters and truncate
+rather than omit, so a long key cannot turn an error body into a mirror.
+
+Evidence: the first draft of the exception had no bound, so a multi-kilobyte key
+would have come straight back in the error body.
+
 8.4 No internal detail escapes: no stack trace, no SQL text, no connection
 string, no secret, in a response or a log line.
 
@@ -470,6 +532,104 @@ neither logged nor rethrown is a silent failure.
 
 8.6 Request body size is capped, and the cap is smaller than what would exhaust
 memory on the smallest configured container.
+
+---
+
+## 8b. Comments
+
+**Severity: warning.**
+
+8b.1 A comment earns its line by saying something the code cannot: a
+non-obvious invariant, a unit that is not in the name, a reason the obvious
+approach was rejected, a shortcut's ceiling, a contract a caller must honour.
+
+Evidence: four source files in flight carried between 34 and 67 per cent
+comment lines, all of them passing the rule this one replaced.
+
+8b.2 These are findings, every time:
+
+- restating the next line, or the line above;
+- narrating a function already named after what it does;
+- a docblock on a type that repeats the type's name
+  (`/** A row of the pricing_rules table */` above `type PricingRuleRow`);
+- documenting a parameter whose type already documents it;
+- quoting a REVIEW.md rule number back at the reader;
+- a module docblock that retells the design spec. Link the section instead:
+  the spec changes and the copy does not.
+
+8b.3 Prose that explains a decision belongs in `ADR.md`, and prose that
+explains a mechanism belongs in the design spec. A comment points at them; it
+does not reproduce them.
+
+8b.4 A trimming pass is reviewed by reading what was cut. A deleted comment
+leaves nothing behind to notice it went: one trim removed two contracts while
+every file looked better afterwards. A contract that only a comment was holding
+gets a test in the same pull request, so the next deletion fails something
+instead of passing quietly.
+
+8b.5 A comment that states a claim about the code must not outlive it. When a
+fix changes behaviour, the `ADR.md` sentence and the design-spec paragraph that
+described the old behaviour change in the same commit; leaving the code right
+and the prose wrong is the same defect one indirection further away. A comment
+or an ADR may cite only what its own branch carries: a forward reference to a
+rule or a section that lands in another pull request reads as fact and is not.
+
+---
+
+## 8c. Names match
+
+**Severity: warning.**
+
+8c.1 A name says what the thing is. A file and its main export carry the same
+word, and when the two disagree, fix whichever is wrong rather than whichever is
+easier: usually the wrong one describes how the thing was built instead of what
+it is.
+
+Evidence: `http-error.ts` exported a class called `AppError`. The fields were
+`status`, `code` and `details`, so the file was right and the class was renamed.
+
+8c.2 One declaration per file. Every `class`, `interface`, `abstract class` and
+`enum` lives in its own file named after it, together with the private helpers
+only it uses. A second exported declaration in the same file is a finding, and
+"they are all about one concept" is not a defence: a concept is what a directory
+is for.
+
+Evidence: a 199-line module held two interfaces, an abstract base, two classes,
+a registry and a factory, all of them sharing the concept "discount
+calculation".
+
+8c.3 A file is named for its role as a kebab-case noun, `<subject>-<role>.ts`,
+never for the verb it exports. `request-validator.ts`, not `validate.ts`, beside
+`error-handler.ts`.
+
+Evidence: `src/middleware/validate.ts` exported `validate()` and read as an
+instruction rather than a thing.
+
+8c.4 Names say what a thing is, not how it was built or when it arrived. No
+`utils`, `helpers`, `common`, `misc`, `manager`, `base` or `new` in a file or
+directory name: a bucket named after nothing collects everything.
+
+8c.5 Prefer a type that cannot say the wrong thing over a rule asking nobody to
+say it. When a rule exists because an expression is legal but always wrong,
+look for the deletion that makes the expression unstateable: an argument that
+can disagree with another argument, a pair of fields only one combination of
+which is valid, a string where a closed set would do. A constructor that cannot
+be called incorrectly needs no reviewer to notice, and the rulebook gets shorter
+rather than longer.
+
+Evidence: a status argument sat beside an error code, and the pairing between
+them was wrong in three different directions across three commits before the
+argument itself was deleted and the status derived from the code.
+
+8c.6 The same thing is called the same thing everywhere: the class, the file,
+the test file, the directory, the error code, the ADR and the design spec. A
+rename that stops at the code and leaves the prose behind is 8b.5 again, one
+indirection further away.
+
+Evidence: ADR-0004 on #35 stated the promotion precedence rule three different
+ways in one section: "at most one active promotion per product", "at most one
+applied promotion", and "product level wins". No single name ran through the
+prose, so a rename had nothing to follow.
 
 ---
 
@@ -539,17 +699,9 @@ change.
 12.2 A deliberate shortcut carries a comment naming its ceiling and the upgrade
 path, so the reviewer can tell a decision from an oversight.
 
-12.3 Comments earn their line. Write one where the code cannot speak: a
-non-obvious invariant, a unit that is not in the name, a reason the obvious
-approach was rejected, a shortcut's ceiling. Do not restate what the next line
-says, do not narrate a function already named after what it does, do not quote
-a REVIEW.md rule back at the reader, and do not document a parameter whose type
-already documents it. A module whose comments outweigh its code is a finding:
-trim the prose, or move it to the ADR if it is a decision rather than a note.
+12.3 A PR delivers one story. Scope creep is a finding; open another issue.
 
-12.4 A PR delivers one story. Scope creep is a finding; open another issue.
-
-12.5 Dependencies: prefer the standard library, then something already
+12.4 Dependencies: prefer the standard library, then something already
 installed. A new dependency for a few lines of code is a finding.
 
 ---
@@ -587,6 +739,38 @@ Evidence: the one approved ignore is `plsql:S1192` on
 `src/shared/db/migrations/*.sql`. The repeated literals there are a schema
 qualifier and an enum value in DDL: SQL has no constant to declare for either
 (PR #56, `6a0a9c1`).
+
+---
+
+## 13b. The rulebook learns
+
+**Severity: warning.**
+
+13b.1 A review finding that would recur is a rule, not just a fix. When a
+finding names a class of mistake rather than one instance, the pull request
+that fixes it also adds or sharpens the rule here, in the same commit. The
+test is simple: would the same finding be worth making on someone else's PR
+next week? Then it belongs in the rulebook.
+
+Evidence: three rules in this section arrived only because someone happened to
+notice the pattern behind a finding, and the fourth was a rule that had sat
+unenforceable for a day because nothing measured it.
+
+13b.2 A rule that never fires is a bug in the rule. When a finding gets past
+review, ask which rule should have caught it and why it did not: usually the
+trigger is unreachable, the severity is too low to act on, or the reviewer was
+never told to measure it. Fix the rule the same way you would fix code, and
+say in the pull request what evidence made it necessary.
+
+13b.3 Rules carry their evidence. A rule states the failure that produced it,
+in one line, so a later reader can judge whether it still applies rather than
+obeying it out of habit. A rule nobody can trace to a real failure is a
+candidate for deletion.
+
+13b.4 Amending a rule in the pull request that discovered it is in scope and
+is not scope creep (12.3): the preamble already says the design wins and the
+rule gets fixed in the same PR. Quote the amendment in the PR description so
+the change to the shared standard is reviewed, not just the code.
 
 ---
 
