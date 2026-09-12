@@ -16,3 +16,4 @@
 - [ ] Lint and typecheck pass
 - [ ] English only (code, comments, copy)
 - [ ] PR title follows Conventional Commits
+- [ ] `e2e-tester` and `impact-analyzer` agents run locally on the final commit and passed (labels `e2e-verified`, `impact-verified`)

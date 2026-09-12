@@ -27,6 +27,11 @@ routes under `src/`.
 Always tear down at the end (kill the server PID; leave docker services up
 unless you started them). Delete `e2e-server.log` after quoting what matters.
 
+Windows notes: `jq` may be missing, use a `node -e` one-liner for JSON
+assertions. `kill` on the npm PID does not stop the tsx/node child; find the
+listener PID with `Get-NetTCPConnection -LocalPort <port>` and run
+`taskkill //PID <pid> //F //T`.
+
 ## What to test, in this order
 
 1. **Functional scenarios** for every endpoint in scope, with `curl` and `jq`:
