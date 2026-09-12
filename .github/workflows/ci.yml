@@ -15,7 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
-      # The queue integration tests need a real Redis on 6399, as they do locally.
       redis:
         image: redis:7-alpine
         ports:
