@@ -3,21 +3,18 @@ import {
   applyPromotions,
   CalculatorFactory,
   isActive,
-  type DiscountEvent,
   type Promotion,
 } from '../../src/modules/pricing/effective-price.js';
 
 const NOW = new Date('2026-09-12T12:00:00.000Z');
 const MS = 1;
 
-const percentage = (valueBasisPoints: unknown): DiscountEvent => ({
-  type: 'applyDiscount',
-  params: { calculator: 'PercentageDiscount', valueBasisPoints },
-});
-const fixed = (valueCents: unknown): DiscountEvent => ({
-  type: 'applyDiscount',
-  params: { calculator: 'FixedDiscount', valueCents },
-});
+/** What a `promotions` row carries: the registry key, and its configuration. */
+const percentage = (valueBasisPoints: unknown): [string, unknown] => [
+  'PercentageDiscount',
+  { valueBasisPoints },
+];
+const fixed = (valueCents: unknown): [string, unknown] => ['FixedDiscount', { valueCents }];
 
 function promotion(overrides: Partial<Promotion> = {}): Promotion {
   return {
@@ -28,8 +25,8 @@ function promotion(overrides: Partial<Promotion> = {}): Promotion {
   };
 }
 
-function priced(basePriceCents: number, event: DiscountEvent | null): number {
-  const outcome = applyPromotions(basePriceCents, event);
+function priced(basePriceCents: number, [calculator, params]: [string, unknown]): number {
+  const outcome = applyPromotions(basePriceCents, calculator, params);
 
   // The union forces this branch, which is the point of it: a caller cannot
   // read a price out of a failure by accident.
@@ -52,10 +49,8 @@ describe('CalculatorFactory', () => {
     // a vendor price, promotions run the winning rule's over a base price.
     const percent = CalculatorFactory.create('PercentageDiscount');
 
-    const params = { calculator: 'PercentageDiscount', valueBasisPoints: 2500 };
-
-    expect(percent?.validate(params)).toBeNull();
-    expect(percent?.calculate(10_000n, params)).toBe(7500n);
+    expect(percent?.validate({ valueBasisPoints: 2500 })).toBeNull();
+    expect(percent?.calculate(10_000n, { valueBasisPoints: 2500 })).toBe(7500n);
   });
 
   it('applies no discount when asked to price parameters it rejects', () => {
@@ -63,9 +58,7 @@ describe('CalculatorFactory', () => {
     // the safe answer rather than a guess.
     const percent = CalculatorFactory.create('PercentageDiscount');
 
-    expect(
-      percent?.calculate(10_000n, { calculator: 'PercentageDiscount', valueBasisPoints: -1 }),
-    ).toBe(10_000n);
+    expect(percent?.calculate(10_000n, { valueBasisPoints: -1 })).toBe(10_000n);
     expect(percent?.calculate(10_000n, null)).toBe(10_000n);
   });
 });
@@ -98,10 +91,6 @@ describe('applyPromotions', () => {
     expect(priced(0, fixed(800))).toBe(0);
   });
 
-  it('returns the base price when no rule fired', () => {
-    expect(priced(10_000, null)).toBe(10_000);
-  });
-
   it('is exact at the largest price the money representation allows', () => {
     // The ceiling of the `mode: 'number'` price columns. In doubles the
     // intermediate product is far outside the exact-integer range.
@@ -114,32 +103,27 @@ describe('applyPromotions', () => {
   });
 
   it('reports a calculator name the registry does not know', () => {
-    expect(
-      applyPromotions(10_000, {
-        type: 'applyDiscount',
-        params: { calculator: 'TieredDiscount', valueBasisPoints: 2500 },
-      }),
-    ).toEqual({ ok: false, reason: 'unknown calculator "TieredDiscount"' });
+    expect(applyPromotions(10_000, 'TieredDiscount', { valueBasisPoints: 2500 })).toEqual({
+      ok: false,
+      reason: 'unknown calculator "TieredDiscount"',
+    });
   });
 
-  it('reports an event that names no calculator at all', () => {
-    for (const event of [
-      { type: 'applyDiscount' },
-      { type: 'applyDiscount', params: null },
-      { type: 'applyDiscount', params: { valueBasisPoints: 2500 } },
-      { type: 'applyDiscount', params: { calculator: 42 } },
-    ]) {
-      expect(applyPromotions(10_000, event)).toEqual({
+  it('reports a promotion row whose calculator column is unusable', () => {
+    // The column is `text not null`, but the row is data: a blank or a value
+    // the registry never knew must read back as a defect, not a crash.
+    for (const calculator of ['', 'percentagediscount', null as unknown as string]) {
+      expect(applyPromotions(10_000, calculator, { valueBasisPoints: 2500 })).toEqual({
         ok: false,
-        reason: 'event names no calculator',
+        reason: `unknown calculator "${calculator}"`,
       });
     }
   });
 
   it('reports parameters the named calculator rejects', () => {
     for (const value of [2500.5, NaN, Infinity, -2500, 0, '2500', null, undefined]) {
-      const percentOutcome = applyPromotions(10_000, percentage(value));
-      const fixedOutcome = applyPromotions(10_000, fixed(value));
+      const percentOutcome = applyPromotions(10_000, ...percentage(value));
+      const fixedOutcome = applyPromotions(10_000, ...fixed(value));
 
       expect(percentOutcome.ok).toBe(false);
       expect(fixedOutcome.ok).toBe(false);
@@ -147,11 +131,11 @@ describe('applyPromotions', () => {
 
     // A percentage above 100 % can only be a mistake, so it is rejected rather
     // than clamped to a free product.
-    expect(applyPromotions(10_000, percentage(10_001)).ok).toBe(false);
+    expect(applyPromotions(10_000, ...percentage(10_001)).ok).toBe(false);
   });
 
   it('names the calculator that rejected the parameters, for the log', () => {
-    const outcome = applyPromotions(10_000, percentage(-1));
+    const outcome = applyPromotions(10_000, ...percentage(-1));
 
     expect(outcome.ok).toBe(false);
     expect(outcome.ok === false && outcome.reason).toMatch(
@@ -160,9 +144,9 @@ describe('applyPromotions', () => {
   });
 
   it('rejects a base price that is not a whole, non-negative number of minor units', () => {
-    for (const event of [null, percentage(2500), fixed(2500)]) {
+    for (const event of [percentage(2500), fixed(2500)]) {
       for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, -500, 2 ** 53]) {
-        expect(applyPromotions(basePriceCents, event)).toEqual({
+        expect(applyPromotions(basePriceCents, ...event)).toEqual({
           ok: false,
           reason: `base price ${basePriceCents} is not a whole number of minor units in range`,
         });
@@ -181,12 +165,12 @@ describe('applyPromotions', () => {
     }
   });
 
-  it('rejects a rule row carrying a key its calculator does not know', () => {
+  it('rejects a promotion row carrying a key its calculator does not know', () => {
     // A typo beside a valid key is the one mistake nothing else would catch:
-    // rule rows are admin-authored and never code-reviewed.
-    const outcome = applyPromotions(10_000, {
-      type: 'applyDiscount',
-      params: { calculator: 'PercentageDiscount', valueBasisPoints: 2500, valueBasisPoint: 9999 },
+    // `promotions.params` is admin-authored and never code-reviewed.
+    const outcome = applyPromotions(10_000, 'PercentageDiscount', {
+      valueBasisPoints: 2500,
+      valueBasisPoint: 9999,
     });
 
     expect(outcome.ok).toBe(false);

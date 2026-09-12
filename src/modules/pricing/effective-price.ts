@@ -1,10 +1,12 @@
 /**
- * The calculators the promotion rules name (design section 4, ADR-0004).
+ * The calculators a promotion row names (design section 4, ADR-0004).
  *
- * A rule row carries both the condition and the calculation: its event names a
- * calculator and the configuration that calculator needs. Code holds the
- * classes and the registry, never the policy — a discount that works
- * differently is a new class, one registry line and rule rows naming it.
+ * `promotions.calculator` is the registry key and `promotions.params` its
+ * configuration, so a new kind of discount needs no enum migration and no
+ * change to any existing function — a new class, one registry line, and rows
+ * naming it. Code holds the classes and the registry, never the policy: which
+ * candidate wins is a rule, and the resolver (#36) runs the engine over the
+ * discounts this module computed for each candidate.
  *
  * The registry is shared with the ingestion rules, so the percentage and fixed
  * arithmetic has one implementation (REVIEW.md 1.3). Ingestion still carries
@@ -20,12 +22,6 @@ export interface Promotion {
   startsAt: Date;
   /** Exclusive: the window is `[startsAt, endsAt)`. */
   endsAt: Date;
-}
-
-/** What a rule row can contain, before anything has validated it. */
-export interface DiscountEvent {
-  type: string;
-  params?: unknown;
 }
 
 /**
@@ -86,14 +82,13 @@ abstract class ValidatedDiscount<P> implements DiscountCalculator {
   }
 }
 
-// Strict, because a rule row is admin-authored data that no code review sees:
-// `valueBasisPoint` beside a valid `valueBasisPoints` would otherwise be
-// dropped in silence and the old discount would keep applying (REVIEW.md 8.1).
-// A discount of zero is a rule that does nothing, and one above 100 % can only
-// ever mean a mistake; both are rejected rather than clamped, so the rule row
-// gets fixed instead of quietly pricing at zero.
+// Strict, because `promotions.params` is admin-authored data that no code
+// review sees: `valueBasisPoint` beside a valid `valueBasisPoints` would
+// otherwise be dropped in silence and the old discount would keep applying
+// (REVIEW.md 8.1). A discount of zero is a promotion that does nothing, and
+// one above 100 % can only ever mean a mistake; both are rejected rather than
+// clamped, so the row gets fixed instead of quietly pricing at zero.
 const percentageParams = z.strictObject({
-  calculator: z.literal('PercentageDiscount'),
   valueBasisPoints: z.number().int().positive().max(10_000),
 });
 
@@ -108,10 +103,7 @@ class PercentageDiscount extends ValidatedDiscount<z.infer<typeof percentagePara
   }
 }
 
-const fixedParams = z.strictObject({
-  calculator: z.literal('FixedDiscount'),
-  valueCents: z.number().int().positive(),
-});
+const fixedParams = z.strictObject({ valueCents: z.number().int().positive() });
 
 class FixedDiscount extends ValidatedDiscount<z.infer<typeof fixedParams>> {
   protected readonly name = 'FixedDiscount';
@@ -149,9 +141,11 @@ export const CalculatorFactory = {
 };
 
 /**
- * The whole call site: resolve the calculator the winning rule names, validate
- * the event's parameters against that calculator's schema, run it. `event` is
- * `null` when no rule fired, and the base price stands.
+ * The whole call site: resolve the calculator the promotion row names,
+ * validate its `params` against that calculator's schema, run it. The resolver
+ * calls this once per candidate, before the engine chooses between them — the
+ * largest-discount default has to compare two discounts, and a rule cannot
+ * compare candidates it never sees together.
  *
  * Never throws. `BigInt` raises a `RangeError` on a fractional, `NaN` or
  * infinite number, and one unusable product must not take down the batch
@@ -159,7 +153,8 @@ export const CalculatorFactory = {
  */
 export function applyPromotions(
   basePriceCents: number,
-  event: DiscountEvent | null,
+  calculatorName: string,
+  params: unknown,
 ): PricingOutcome {
   if (!Number.isSafeInteger(basePriceCents) || basePriceCents < 0) {
     return {
@@ -167,21 +162,21 @@ export function applyPromotions(
       reason: `base price ${basePriceCents} is not a whole number of minor units in range`,
     };
   }
-  if (event === null) return { ok: true, effectivePriceCents: basePriceCents };
 
-  const rejected = (reason: string): PricingOutcome => ({ ok: false, reason });
+  // A blank or unknown name needs no separate guard: the registry is a `Map`,
+  // so anything it never knew — including a row that lost its column — misses.
+  const calculator = CalculatorFactory.create(calculatorName);
+  if (calculator === undefined) {
+    return { ok: false, reason: `unknown calculator "${calculatorName}"` };
+  }
 
-  const name: unknown = (event.params as { calculator?: unknown } | null | undefined)?.calculator;
-  if (typeof name !== 'string') return rejected('event names no calculator');
+  const invalid = calculator.validate(params);
+  if (invalid !== null) return { ok: false, reason: invalid };
 
-  const calculator = CalculatorFactory.create(name);
-  if (calculator === undefined) return rejected(`unknown calculator "${name}"`);
-
-  const invalid = calculator.validate(event.params);
-  if (invalid !== null) return rejected(invalid);
-
-  const effective = calculator.calculate(BigInt(basePriceCents), event.params);
-  return { ok: true, effectivePriceCents: Number(effective) };
+  return {
+    ok: true,
+    effectivePriceCents: Number(calculator.calculate(BigInt(basePriceCents), params)),
+  };
 }
 
 /**
