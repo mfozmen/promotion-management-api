@@ -28,13 +28,17 @@ routes under `src/`.
    came from exactly that. Use the production path instead:
 
    ```
-   npm run build && PORT=<port> npm start > e2e-server.log 2>&1 &
+   npm run build && PORT=<port> node dist/server.js > e2e-server.log 2>&1 &
    ```
 
-   `npm start` is `node dist/server.js`: one process, one PID, `kill` ends it,
-   and the numbers come from the build the case study ships. If a run must
-   exercise TypeScript directly, `tsx src/server.ts` without `watch` has the
-   same single-process shape.
+   Run the built entry point directly, not `npm start`. On Windows `npm start`
+   is npm -> `cmd.exe /d /s /c node dist/server.js` -> node, so the PID your
+   shell records in `$!` is the wrapper: killing it leaves the node grandchild
+   listening and still answering `/health`, which is the same orphan
+   `npm run dev` produces. `node dist/server.js` is one process, `$!` is its
+   PID, `kill` ends it and frees the port. The numbers still come from the
+   build the case study ships. If a run must exercise TypeScript directly,
+   `tsx src/server.ts` without `watch` has the same single-process shape.
 
 4. **Prove the port is free before binding it**, with a command that runs in
    your own shell, which is Bash:
@@ -62,19 +66,25 @@ routes under `src/`.
    ```
 
    A stale server answers `/health` exactly like yours and makes every number
-   after it false evidence.
+   after it false evidence. Compare the `CommandLine`, not the number: in Git
+   Bash `$!` is a shell pseudo-PID, not the Windows PID of the listener, so
+   the two never match even when the process is yours.
 
 7. Wait until `curl -sf localhost:<port>/health` returns 200 (max 30 s). If it
    never does, print the last 40 lines of `e2e-server.log` and FAIL.
 
-Always tear down at the end, and verify it: kill the process, then confirm
-nothing listens on the port any more with the same command from step 4. Leave
-docker services up unless you started them. Delete `e2e-server.log` after
-quoting what matters.
+Always tear down at the end, and verify it: `kill` the shell job, then confirm
+nothing listens on the port any more with the same command from step 4. If the
+port is still held, kill the listener PID that check printed — it is yours, you
+proved that in step 6 — with `taskkill //PID <pid> //F //T` on Windows, and
+check the port once more. A teardown you did not verify is how the next run
+inherits an orphan. Leave docker services up unless you started them. Delete
+`e2e-server.log` after quoting what matters.
 
 Windows notes: `jq` may be missing, so use a `node -e` one-liner for JSON
-assertions. If a process refuses to die, `taskkill //PID <pid> //F //T` kills
-the tree.
+assertions — and give it a `C:/...` path, because node does not resolve Git
+Bash's `/c/...` or `/tmp/...` mount aliases. `ss` is not available in Git Bash;
+the `netstat -ano` form in step 4 is the one that runs here.
 
 ## What to test, in this order
 
