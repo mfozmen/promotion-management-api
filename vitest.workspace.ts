@@ -3,8 +3,13 @@ import { defineWorkspace } from 'vitest/config';
 // Two layers, so a machine with no PostgreSQL can still run `npm test` and commit.
 export default defineWorkspace([
   {
-    // Pure code: no store, no service, runs in the pre-commit hook.
-    test: { name: 'unit', include: ['tests/unit/**/*.test.ts'] },
+    // Pure code: no store, no service, runs in the pre-commit hook. Everything outside
+    // tests/integration, so a test file added anywhere else runs here rather than nowhere.
+    test: {
+      name: 'unit',
+      include: ['tests/**/*.test.ts'],
+      exclude: ['tests/integration/**'],
+    },
   },
   {
     // Our code against the real store, never a mock: constraints and queries only

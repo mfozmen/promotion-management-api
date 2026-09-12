@@ -27,7 +27,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 npm ci
 npm run dev
 npm test
-npm run test:cov
+npm run test:cov # needs a PostgreSQL, see below
 npm run lint
 ```
 

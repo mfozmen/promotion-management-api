@@ -592,7 +592,9 @@ Dockerfile           one image, command per service
   its period (watermark sweep re-emits the missed boundary).
 - Unit (`tests/unit/`): pure functions and schemas (effective price,
   precedence, CSV byte splitting across chunk boundaries with BOM/CRLF/UTF-8,
-  rule application). No store, so this layer runs in the pre-commit hook.
+  rule application). No store, so this layer runs in the pre-commit hook, and
+  it claims every test outside `tests/integration/` so a file added elsewhere
+  runs somewhere rather than nowhere.
 - Integration (`tests/integration/`): real PostgreSQL and Redis, never a mock,
   reached through `TEST_DATABASE_URL`. Its Vitest project carries the
   `globalSetup` that migrates one template database, named after the checkout;
