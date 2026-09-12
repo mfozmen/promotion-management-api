@@ -60,6 +60,8 @@ CQRS on a modular monolith. PostgreSQL 16 is the write store and the only source
 
 Money is stored as integer minor units, percentages as basis points, timestamps as `timestamptz`.
 
+Locally both stores run from `docker-compose.yml` (`postgres:16-alpine` and `redis:7-alpine`, healthchecked, on named volumes and a named network; the application containers, the migration step and the `monitoring` and `tools` profiles are added on top of it by issue #19). The application takes its wiring from the environment — `DATABASE_URL`, `REDIS_URL` and the two logical-database indexes `REDIS_READ_MODEL_DB` (read model) and `REDIS_QUEUE_DB` (BullMQ) — documented in `.env.example` and read once at startup by `loadConfig` in `src/shared/config.ts`, which derives `redisReadModelUrl` and `redisQueueUrl` and rejects a configuration that points both at the same database.
+
 ### Consequences
 
 - Storefront reads never touch PostgreSQL; their cost is one or two Redis round trips regardless of promotion activity.

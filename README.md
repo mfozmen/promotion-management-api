@@ -18,16 +18,32 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
+- Docker with the Compose plugin (PostgreSQL 16 and Redis 7 run locally from `docker-compose.yml`)
 
 ## Getting started
 
 ```bash
 npm ci
+cp .env.example .env          # placeholders only; .env is gitignored
+docker compose up -d --wait   # PostgreSQL on 5432, Redis on 6379, both healthy
 npm run dev
+```
+
+Tests and checks:
+
+```bash
 npm test
 npm run test:cov
 npm run lint
 ```
+
+Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data` and `redis-data` volumes as well.
+
+### Configuration
+
+`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` validates the environment once at startup and fails with the name of the offending variable. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ.
+
+The compose file holds the two stores only. Issue #19 adds the application containers (api, event-handler, ingestion-worker, reconciler), the migration step and the `monitoring` and `tools` profiles on top of it, so that a single `docker compose up` brings the whole stack up.
 
 ## Project structure
 
