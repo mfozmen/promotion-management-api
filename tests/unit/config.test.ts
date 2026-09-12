@@ -120,7 +120,7 @@ describe('loadConfig', () => {
 
     it('throws naming DATABASE_URL when it is not a URL, without echoing the value', () => {
       // The exact-message assertion is the point: a connection string carries a
-      // password and this message reaches a startup log (REVIEW.md 10.3).
+      // password and this message reaches a startup log.
       expect(() =>
         loadConfig({ ...validEnv, DATABASE_URL: 'postgres//promo:hunter2@localhost/promotion' }),
       ).toThrow(new Error('Invalid environment variable DATABASE_URL: expected a URL'));
