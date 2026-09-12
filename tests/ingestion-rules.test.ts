@@ -13,6 +13,7 @@ const ruleRow = (
   over: Partial<PricingRuleRow> & Pick<PricingRuleRow, 'name' | 'conditions' | 'event'>,
 ): PricingRuleRow => ({
   id: 1,
+  type: 'ingestion',
   priority: 0,
   active: true,
   updatedAt: at('2026-09-01T00:00:00.000Z'),
@@ -64,8 +65,33 @@ describe('compileRules', () => {
     );
   });
 
-  it('gives an empty rule set version zero', async () => {
-    await expect(compileRules([])).resolves.toMatchObject({ pricingRulesVersion: 0 });
+  it('refuses an empty rule set rather than pricing a catalogue at vendor cost', async () => {
+    await expect(compileRules([])).rejects.toThrowError(/no active ingestion pricing rules/);
+  });
+
+  it('refuses a rule set whose every row is inactive', async () => {
+    await expect(
+      compileRules([
+        ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500), active: false }),
+      ]),
+    ).rejects.toThrowError(/no active ingestion pricing rules/);
+  });
+
+  it('ignores a promotion-layer rule, which this engine cannot price', async () => {
+    const compiled = await compileRules([
+      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
+      ruleRow({
+        id: 2,
+        type: 'promotion',
+        name: 'largest discount wins',
+        conditions: always,
+        event: { type: 'selectCandidate', params: { level: 'product' } },
+      }),
+    ]);
+
+    await expect(priceRow(compiled, vendorRow())).resolves.toMatchObject({
+      basePriceCents: 92_000,
+    });
   });
 
   it('rejects with a descriptive error for an unknown event type', async () => {
@@ -206,14 +232,6 @@ describe('priceRow', () => {
     });
   });
 
-  it('passes the vendor price through for an empty rule set', async () => {
-    await expect(priceRow(await compileRules([]), vendorRow())).resolves.toEqual({
-      ok: true,
-      basePriceCents: 80_000,
-      pricingRulesVersion: 0,
-    });
-  });
-
   it('applies the higher priority rule first, so priority changes the result', async () => {
     const fee = { name: 'handling-fee', conditions: always, event: cents(1000) };
     const double = { name: 'double', conditions: always, event: percent(10_000) };
@@ -317,6 +335,17 @@ describe('priceRow', () => {
 
     expect(outcome).toMatchObject({ ok: false, fault: 'row', rejectedBy: null });
     expect(outcome.ok === false && outcome.reason).toMatch(/vendorPriceCents/);
+  });
+
+  it('rejects an empty category rather than matching a rule against nothing', async () => {
+    const rules = await compileRules([
+      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
+    ]);
+
+    const outcome = await priceRow(rules, vendorRow({ category: '' }));
+
+    expect(outcome).toMatchObject({ ok: false, fault: 'row', rejectedBy: null });
+    expect(outcome.ok === false && outcome.reason).toMatch(/category/);
   });
 
   it("rejects a row missing a fact as the row's fault, not the rule set's", async () => {
