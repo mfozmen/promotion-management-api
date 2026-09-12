@@ -142,14 +142,6 @@ create table ingestion_chunks (
 
 ## 4. Promotion resolution and effective price
 
-> **Superseded in part, pending #35.** The owner reversed the calculator/registry design on #29
-> (2026-09-12). Section 3 above is current: a promotion carries `discount_type` and `value`. This
-> section's `DiscountCalculator` interface, `CalculatorFactory`, registry and every reference to
-> `promotions.calculator` / `promotions.params` — including the resolver query below — describe
-> code that does not exist and will not be written; read them as `discount_type` and `value`
-> until #35 rewrites the section. The precedence decision (which candidate wins, decided by a
-> `pricing_rules` row) is unaffected.
-
 - **Active** = `status = 'active' and starts_at <= now() < ends_at`.
 - **Applied promotion** for a product is decided by `json-rules-engine`, not by
   hard-coded precedence (owner decision, 2026-09-12). The resolver collects
@@ -162,81 +154,49 @@ create table ingestion_chunks (
 - Facts given to the engine, per candidate: `level` (`product` or `category`),
   `discountType`, `value`, `basePriceCents`, `stockQuantity`, `category`,
   `startsAt`, `endsAt`.
-- **The calculation comes from the rule, not from the code.** A matching
-  rule's event carries the name of the calculator to run and everything that
-  calculator needs:
-
-  ```json
-  {
-    "type": "applyDiscount",
-    "params": {
-      "calculator": "PercentageDiscount",
-      "valueBasisPoints": 5000
-    }
-  }
-  ```
-
-  `params` is free-form in `json-rules-engine`, so the row decides both when it
-  fires and what runs. A discount that works differently is a new row naming a
-  different calculator, never a new branch in a resolver.
-
-- **A factory turns that name into an object.** Each calculator is a class
-  implementing one interface:
-
-  ```ts
-  interface DiscountCalculator {
-    calculate(baseCents: bigint, params: unknown): bigint;
-  }
-  ```
-
-  An abstract base holds what every calculator must not get wrong: parameters
-  are validated with the calculator's own zod schema before use, arithmetic is
-  `bigint`, the result is floored to the cent and clamped into
-  `[0, baseCents]`. A subclass supplies only the formula, so a new calculator
-  cannot reintroduce a rounding or clamping bug that was already fixed once.
-
-- `CalculatorFactory.create(name)` resolves the name against a registry that
-  maps a string to a constructor. Adding `TieredDiscount` or `BuyXGetY` is a
-  new class, one registry line and rule rows that name it; no existing function
-  changes. A name the registry does not know is a defect, not a crash: the
-  promotion resolver logs it and applies no discount, so the storefront falls
-  back to the base price, and ingestion treats it as a `rules` fault that stops
-  the job rather than silently mispricing 500 000 rows.
-- **The promotion row names its own calculator.** `promotions.calculator` is
-  the registry key and `promotions.params` is its configuration, validated by
-  that calculator's schema, so a new kind of discount needs no enum migration.
-  `discount_type` and `value` are gone: `PercentageDiscount` with
-  `{ "valueBasisPoints": 5000 }` says the same thing and does not constrain
-  what the next calculator needs.
-- **Selection needs both candidates in one fact object, so the discounts are
-  computed first.** The resolver runs each candidate's calculator to get its
-  discount, then runs the engine once over a single fact set that holds both:
-  `basePriceCents`, `category`, `stockQuantity`, and per candidate its
-  `level`, `calculator`, `discountCents` and `effectivePriceCents`. A rule can
-  therefore compare them, which `json-rules-engine` supports natively by
-  giving an operator a `{ fact: ... }` value rather than a literal. The
-  largest-discount default is one such comparison; product-level precedence is
-  a rule that ignores the discounts entirely.
-- The winning event names the winner rather than recomputing it:
+- **The rule decides which promotion wins; it does not decide how one is
+  computed.** A matching rule's event names the winner and nothing else:
   `{ type: 'selectCandidate', params: { level: 'product' | 'category' } }`.
-  The resolver applies the discount it already computed for that level, so the
-  calculator runs once per candidate and never twice for the same one.
-- `applyPromotions(baseCents, calculator, params)` is the whole call site:
-  resolve from the registry, validate against the calculator's schema, run.
-  Both layers share the registry, so the percentage and fixed arithmetic has
-  exactly one implementation (REVIEW.md rule 1.3): ingestion runs every
-  matched rule in priority order to build a base price, promotion computes one
-  discount per candidate and applies the selected one.
-- Seeded calculators at launch: `PercentageDiscount` (`valueBasisPoints`) and
-  `FixedDiscount` (`valueCents`). They exist because the case names percentage
-  and fixed-amount discounts, not because the design needs exactly two.
-- **The seeded default is the largest discount, in the customer's favour**
-  (owner decision). The case requires "at most one active promotion" and says
-  conflicts must be "handled logically" without saying which wins, so this is
-  ours to choose. Whichever candidate produces the lower effective price wins;
-  a "50 % off Accessories" sale therefore also covers an accessory that
-  carries its own 5 % promotion, which is what a shopper expects a sale to
-  mean. Ties break on the lower promotion id.
+  The arithmetic is not in the rule, not in a registry and not in a parameter
+  bag — it is one pure function over a typed row.
+- **One function, one vocabulary.** `applyPromotion(basePriceCents, promotion)`
+  in `src/modules/promotion/` takes the `Promotion` the row already is —
+  `discountType` of `percentage | fixed`, `value` in basis points or minor
+  units, the window — and returns a `PricingOutcome`, a discriminated union of
+  `{ ok: true, effectivePriceCents }` or `{ ok: false, reason }`. A failure
+  carries no price, so a caller cannot publish one by mistake. Percentage is
+  `base - floor(base * bps / 10000)`, fixed is `max(base - value, 0)`,
+  arithmetic in `bigint`, the result clamped to `[0, base]`. A third kind of
+  discount is a migration that widens the enum, and that is the right cost:
+  the case names two, and a vocabulary the reader can enumerate is worth more
+  than one that can hold anything.
+- **Selection compares candidates, so each is priced first.** The resolver
+  runs `applyPromotion` for every candidate, then runs the engine once over a
+  single fact set holding `basePriceCents`, `category`, `stockQuantity` and,
+  per candidate, its `level`, `discountType`, `value` and
+  `effectivePriceCents`. A rule can therefore compare them, which
+  `json-rules-engine` supports by giving an operator a `{ fact: ... }` value
+  rather than a literal. The resolver applies the outcome it already computed
+  for the winning level, so each candidate is priced once.
+- **Pricing rules are a separate module with separate semantics.**
+  `src/modules/pricing/` holds the `json-rules-engine` rules that Scenario A's
+  ingestion uses to adjust a vendor's base price. Neither module imports the
+  other: a promotion is a row a human created with a window and a target, an
+  ingestion adjustment is a rule applied to a feed. Sharing a registry between
+  them is what this design tried and the owner reversed — the two look alike
+  only at the level of "something changes a number".
+
+- **The seeded default is product-level precedence.** A product's own
+  promotion wins over its category's, even when the category discount is
+  larger. This is not a free choice: REVIEW.md 7.4 makes it a required edge
+  case and section 3 of this document states it with its consequence for
+  admins, so the rule that ships in the migration encodes it. The alternative
+  — whichever price is lower — is the same policy as "precedence by larger
+  discount", which ADR-0004 rejects as surprising to an admin who set a
+  product price deliberately. That two names for one policy sat in a rejected
+  list and a seeded default at the same time is how the contradiction survived
+  this long.
+
 - The commercial exception has a home without a code change: a product whose
   price must not fall further, because of a margin floor, a supplier agreement
   or a minimum advertised price, gets a higher-priority rule naming it, and
@@ -306,8 +266,8 @@ create table ingestion_chunks (
 Resolution query (used by the event handler and reconciler, batched by id):
 
 ```sql
-select p.*, pp.id as pp_id, pp.name as pp_name, pp.calculator as pp_calculator, pp.params as pp_params,
-             cp.id as cp_id, cp.name as cp_name, cp.calculator as cp_calculator, cp.params as cp_params
+select p.*, pp.id as pp_id, pp.name as pp_name, pp.discount_type as pp_discount_type, pp.value as pp_value,
+             cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_discount_type, cp.value as cp_value
 from products p
 left join promotions pp on pp.product_id = p.id and pp.status = 'active'
                        and tstzrange(pp.starts_at, pp.ends_at) @> now()

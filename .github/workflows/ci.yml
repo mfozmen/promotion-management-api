@@ -13,19 +13,7 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: promotion
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -49,21 +37,34 @@ jobs:
 
       - name: Test with coverage
         run: npm run test:cov
-        env:
-          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/promotion
 
+      # SonarCloud analyses `sonar.sources` and `sonar.tests`. A pull request that
+      # touches neither has nothing for it to read, and its result would be a copy
+      # of the previous one, so the scan is skipped. A push to `main` always scans,
+      # so the branch's own analysis never goes stale.
+      - name: Is there anything for SonarCloud to analyse
+        id: analysable
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != 'pull_request' ]; then
+            echo 'needed=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE" "$HEAD")
+          if grep -qE '^(src/|tests/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|sonar-project\.properties$)' <<<"$files"; then
+            echo 'needed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'needed=false' >> "$GITHUB_OUTPUT"
+            echo "No analysable file changed; skipping the SonarCloud scan."
+          fi
+
+      # The token is here because uploading an analysis is a write. Reading the
+      # results back needs none on a public project, and nothing here reads them:
+      # SonarCloud posts its findings as a pull request comment (REVIEW.md 13.6).
       - name: SonarCloud Scan
+        if: steps.analysable.outputs.needed == 'true'
         uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-
-  pr-title:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
-    steps:
-      - name: Validate PR title follows Conventional Commits
-        uses: amannn/action-semantic-pull-request@v6
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

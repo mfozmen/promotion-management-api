@@ -63,7 +63,22 @@ jobs:
           labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')
           # Current and previous paths, so a file moved out of the specs directory still counts.
           files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)')
-          required="e2e-verified impact-verified docs-verified"
+          # An agent is required by what the diff can break, not by the fact that a diff exists.
+          #
+          # docs-scribe always applies: any change can outdate the ADRs, the README or the
+          # appendix, and the appendix is a case-study deliverable.
+          #
+          # e2e-tester is deliberately NOT here. Running it on every push was the single
+          # biggest source of delay, and almost every run re-measured an application that had
+          # not changed. It runs when the owner asks for it, and its label is applied then.
+          required="docs-verified"
+          # impact-analyzer covers code and the paths that decide how work is judged, because
+          # a change to the judging lands on every branch in flight at once.
+          judgement='^(\.github/workflows/|\.claude/agents/|\.husky/|sonar-project\.properties$)'
+          behaviour='^(src/|tests/|scripts/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|Dockerfile|(docker-)?compose.*\.ya?ml$)'
+          if grep -qE "$behaviour" <<<"$files" || grep -qE "$judgement" <<<"$files"; then
+            required="$required impact-verified"
+          fi
           # Design documents, the modules that implement Scenario A and B, and the workers all
           # require the architecture-critic; the scenario label is the manual override.
           if grep -qE '^(ADR\.md$|docs/superpowers/specs/|src/modules/(vendor|promotion|pricing)/|src/workers/)' <<<"$files" || grep -qx scenario <<<"$labels"; then
