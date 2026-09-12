@@ -111,6 +111,35 @@ all-null case; otherwise test each column null on its own.
 
 ---
 
+## 2b. Data lives in the database
+
+**Severity: critical. Blocking.**
+
+2b.1 Business data comes from the database at runtime, always. Pricing rules,
+promotions, products, categories, thresholds an operator would ever want to
+change: rows, read through a query, never a constant in a module.
+
+2b.2 A seed belongs with the migrations, not in the code that consumes it. A
+`DEFAULT_*` array of rows inside a runtime module is a finding even when
+nothing reads it: the bundle ships data it never uses, and the day the table
+arrives the same rows exist in two places with nothing keeping them equal.
+
+2b.3 Tests are the exception, and only tests. A test may build its own rows in
+memory, but a story that owns a table also has one test that reads through the
+real query against a real database, so the query is exercised at least once.
+
+2b.4 Order the work so this is possible: the table and its migration land
+before the code that reads it. A story written against a table that does not
+exist yet has to invent a constant to stand in for it, and that constant then
+has to be removed, re-tested and re-documented. Doing it in the wrong order
+means doing it twice.
+
+2b.5 What may be a constant in code: the instruction set, not the policy.
+Class names in a factory registry, zod schemas, enum members the database
+column already constrains, and physical limits such as PostgreSQL's bind
+parameter ceiling. If an operator would ever want to change it without a
+deploy, it is a row.
+
 ## 3. Concurrency and ordering
 
 **Severity: critical. Blocking.**
