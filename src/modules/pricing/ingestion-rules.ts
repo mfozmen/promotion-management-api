@@ -182,9 +182,12 @@ const runState = new WeakMap<Engine, { queue: Promise<unknown>; spentBy?: Error 
 const runSerialised = (engine: Engine, facts: VendorRowFacts) => {
   const state = runState.get(engine) ?? { queue: Promise.resolve() };
   runState.set(engine, state);
-  if (state.spentBy) return Promise.reject(state.spentBy);
-
-  const run = state.queue.then(() => engine.run(facts));
+  // Checked again inside the continuation, not only here: a row queued before
+  // the failure lands would otherwise run on the spent engine and come back
+  // short, which is the misprice the queue exists to remove.
+  const run = state.queue.then(() =>
+    state.spentBy ? Promise.reject(state.spentBy) : engine.run(facts),
+  );
   state.queue = run.catch((error: Error) => {
     state.spentBy = error;
   });
