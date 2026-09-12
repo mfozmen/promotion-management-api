@@ -144,7 +144,7 @@ Weekly vendor files of 500 000+ rows must pass through application-layer pricing
 **Pattern:** register once, then process many small, independent, resumable units.
 
 - The API streams the upload to a file store (local volume; blob storage in production, where a pre-signed upload plus a blob trigger replaces the API hop), hashes it, computes line-aligned byte-range chunks (4 MiB default) in one streaming pass, and stores `ingestion_jobs` plus one `ingestion_chunks` row per chunk. Duplicate files (`file_sha256` unique) and a second concurrent job for the same vendor are rejected with `409`.
-- Each chunk is a BullMQ job whose payload is just `{ jobId, chunkIndex }`. `processChunk` is the serverless unit: it claims the chunk with a **lease** (`lease_until`), streams its byte range, splits raw buffers on `0x0A`, parses `vendor_price` decimals to integer cents without floating point, dedupes each 1 000-row batch by SKU, runs the rows through `json-rules-engine` rules loaded from `pricing_rules`, and commits the multi-row upsert together with a **compare-and-set checkpoint** (`where next_offset = $seen`) in one transaction. It stops when its time budget is spent and re-enqueues itself; the checkpoint is already durable.
+- Each chunk is a BullMQ job whose payload is just `{ jobId, chunkIndex }`. `processChunk` is the serverless unit: it claims the chunk with a **lease** (`lease_until`), streams its byte range, splits raw buffers on `0x0A`, parses `vendor_price` decimals to integer cents without floating point, dedupes each 1 000-row batch by SKU, runs the rows through `json-rules-engine` rules loaded from `pricing_rules` where `type = 'ingestion'` (the same table also holds the promotion-precedence rules of ADR-0004, cached separately), and commits the multi-row upsert together with a **compare-and-set checkpoint** (`where next_offset = $seen`) in one transaction. It stops when its time budget is spent and re-enqueues itself; the checkpoint is already durable.
 - **Tools:** BullMQ (retries, stalled detection sized to the budget, failed set as DLQ), `json-rules-engine` for the dynamic pricing rules, Node streams, PostgreSQL `INSERT ... ON CONFLICT`.
 - **Database structures:** `ingestion_jobs` (file identity, counters, status), `ingestion_chunks` (byte range, `next_offset`, `lease_until`, `attempts` for resumptions and a separate `failures` counter that alone drives the terminal state), a partial unique index for one running job per vendor, `products.sku` unique for idempotent upserts, and `products.ingest_job_id` plus `products.ingest_source_offset` so duplicate SKUs across chunks resolve by `(job, position in file)` rather than by commit order, which keeps horizontal worker scaling safe.
 
@@ -211,7 +211,7 @@ A category promotion must affect tens of thousands of products the moment it is 
 
 - Materialised `effective_price` column on `products`: 50 000-row updates per flash sale and a scheduled sweep for expiry.
 - Read-time SQL pricing with a TTL cache: correct, but every cache miss is a sort over the category and scheduled starts are late by the TTL.
-- A `pricing_rules` layer for promotions: see ADR-0004.
+- Storing the promotions themselves as `pricing_rules` rows: see ADR-0004. The `pricing_rules` layer is used for promotions, but only to select between candidates; the promotions stay rows.
 
 ---
 

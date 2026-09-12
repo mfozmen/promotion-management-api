@@ -446,9 +446,7 @@ rewritten.
 ### 2026-09-12 — A scripted edit that matched nothing, and shipped (PR #35, `b580f4a` → `bc55689`, rule in `fd46829`)
 
 - Challenge: the commit that fixed the finding above ran a Python edit whose end
-  index came from `s.index("
-
-### Trade-offs")` — a heading that appears in
+  index came from `s.index("\n\n### Trade-offs")` — a heading that appears in
 
 five of the seven ADRs — so the slice matched an earlier ADR and came out
 empty, and `str.replace("", new)` inserts the replacement between every
