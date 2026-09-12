@@ -177,6 +177,13 @@ create table ingestion_chunks (
     `200` and one `409` with no application-side locking.
   - `POST /api/promotions/:id/cancel` sets `status = 'cancelled'`,
     `cancelled_at = now()`; cancelling a draft is allowed. Nothing is deleted.
+- Category is free text, trimmed at the boundary and matched exactly
+  (case-sensitive), because a categories table is out of scope. A category
+  promotion is not rejected when no product carries that category yet:
+  Scenario B requires products ingested later to inherit it. Instead the
+  create and assign responses include `productCount` (a `count(*)` on the
+  category at that instant) so a typo shows up as `0` in the admin's face, and
+  the API logs a warning at `productCount = 0`.
 - Storefront responses carry `basePriceCents`, `effectivePriceCents` and
   `promotion: { id, name } | null` so any price can be explained.
 - Promotion responses carry a derived `state`: `draft`, `scheduled` (before
@@ -459,7 +466,8 @@ Dockerfile           one image, command per service
 
 - Edge cases that must have a named test: cancel an unassigned draft (no
   target, allowed by the CHECKs), assign a non-draft (`409`), assign with
-  both or neither target (`400`), assigning a draft whose `endsAt` has passed
+  both or neither target (`400`), a category promotion whose category matches
+  no product (`201` with `productCount: 0` and a warning log), assigning a draft whose `endsAt` has passed
   (`409`), two concurrent assigns of one draft (one `200`, one `409`), a
   product created in a category with an active promotion is discounted on its
   first read, a budget release leaving `failures` untouched while an
