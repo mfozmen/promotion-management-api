@@ -192,7 +192,9 @@ where p.id = any($1);
 - `GET /api/products/:id` = `HGETALL product:{id}` (zero PostgreSQL reads).
 - `GET /api/products` = `ZRANGE <zset> -inf +inf BYSCORE LIMIT offset size`
   (`REV` for descending) → pipeline `HGETALL` per id; `total` = `ZCARD`.
-  Members with equal scores order by member string, which is deterministic.
+  Members with equal scores order by member string, which is deterministic
+  but not numeric (`"10"` before `"9"`); zero-pad ids if numeric tie order
+  ever matters.
 - Writing a product entry is one `MULTI`: `HSET product:{id}`,
   `ZADD category:{new}`, `ZADD products:all`, and `ZREM category:{old}` when
   the stored category differs. Bulk recomputes pipeline 1 000 entries per
@@ -268,12 +270,14 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
           lease_until = now() + $lease
    where job_id = $1 and chunk_index = $2
      and (status = 'pending' or (status = 'running' and lease_until < now()))
+     and exists (select 1 from ingestion_jobs j where j.id = $1 and j.status = 'running')
    returning *;
    ```
    Zero rows and the chunk is `done`/`failed`: return. Zero rows and the
    chunk is `running` with a live lease: another worker holds it; re-enqueue
-   this job delayed by the remaining lease and return. Also return if the job
-   is `paused` or `aborted`.
+   this job delayed by the remaining lease and return. The job-status check
+   is inside the same `UPDATE`, so a pause or abort can never race a claim;
+   a chunk of a `paused`/`aborted` job simply claims zero rows and returns.
 2. **Read** `fs.createReadStream(file, { start: next_offset, end: end_offset - 1 })`
    (ranged GET in production). Split raw `Buffer`s on `0x0A`, carry the
    partial tail, strip a trailing `0x0D`. Offsets advance by byte length. A
@@ -287,7 +291,8 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    4180 quoting within a line is supported, embedded newlines are not. A
    sample lives at `fixtures/vendor-sample.csv`.
 3. **Batch** 1 000 lines: parse, validate (zod), **dedupe by SKU in a `Map`
-   (last row wins)**, run each row through the ingestion rules
+   (last row wins) and sort by `sku`** (a consistent lock order, so
+   concurrent batches on overlapping SKUs cannot deadlock), run each row through the ingestion rules
    (`json-rules-engine`, rules loaded from `pricing_rules` and cached for
    60 s), producing `base_price_cents` and `pricing_rules_version`. Invalid
    rows are counted as rejected and logged with their byte offset; they never
