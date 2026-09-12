@@ -1,0 +1,75 @@
+name: promotion-management-api
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    command: ['postgres', '-c', 'log_lock_waits=on', '-c', 'deadlock_timeout=200ms']
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-promo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-promo}
+      POSTGRES_DB: ${POSTGRES_DB:-promotion}
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - promotion
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'psql --quiet --no-align --tuples-only -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis-data:/data
+    networks:
+      - promotion
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  adminer:
+    image: adminer:4
+    profiles: [tools]
+    ports:
+      - '127.0.0.1:8081:8080'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - promotion
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    profiles: [tools]
+    environment:
+      REDIS_HOSTS: 'read-model:redis:6379:0,queue:redis:6379:1'
+    ports:
+      - '127.0.0.1:8082:8081'
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - promotion
+
+networks:
+  promotion:
+
+volumes:
+  postgres-data:
+  redis-data:
