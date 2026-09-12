@@ -584,6 +584,16 @@ endpoint, job, cache or store.
 
 13.5 An architectural change without a matching `ADR.md` update is a finding.
 
+13.6 Files are named for what they contain: kebab-case nouns, `<subject>-<role>`
+where a role exists (`error-handler.ts`, `request-validator.ts`,
+`capture-logger.ts`). A file with one main export is named after it, and the
+name says what the thing is, not what it does. A verb-named module, or a file
+whose name disagrees with its main export, is a finding. Where the two
+disagree, fix the one that is wrong rather than the one that is easier: a type
+whose fields are `status`, `code` and `details` is an HTTP-boundary error, and
+renaming its file to match a wrong class name resolves the mismatch by keeping
+the mistake.
+
 ---
 
 ## 14. Reviewer's quick pass

@@ -1,36 +1,68 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
-import { AppError } from '../shared/app-error.js';
+import { HttpError, type ErrorCode } from '../shared/http-error.js';
 import { logger, serializeError } from '../shared/logger.js';
 
 interface ErrorMapping {
   status: number;
-  code: string;
+  code: ErrorCode;
   message: string;
   details?: unknown;
 }
 
 /** Messages are ours, not body-parser's: body-parser's quote the input back. */
-const CLIENT_ERRORS = new Map<number, { code: string; message: string }>([
+const CLIENT_ERRORS = new Map<number, { code: ErrorCode; message: string }>([
   [400, { code: 'VALIDATION_ERROR', message: 'Request body could not be read' }],
   [413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' }],
   [415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Request body encoding is not supported' }],
 ]);
 
-const OTHER_CLIENT_ERROR = { code: 'BAD_REQUEST', message: 'Request could not be processed' };
+const OTHER_CLIENT_ERROR = {
+  code: 'BAD_REQUEST',
+  message: 'Request could not be processed',
+} as const;
+
+const SERVER_FAULT = { status: 500, code: 'INTERNAL', message: 'Internal server error' } as const;
+
+/**
+ * Express 5 throws a `RangeError` for a status outside [100, 999], so an
+ * unbounded one turns the error handler itself into the failure.
+ */
+const isClientStatus = (status: unknown): status is number =>
+  typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 499;
+
+const isServerStatus = (status: unknown): status is number =>
+  typeof status === 'number' && Number.isInteger(status) && status >= 500 && status <= 599;
 
 /** Every error marked the http-errors way keeps its status, not an enumerated few (ADR-0008). */
 function clientError(err: unknown): ErrorMapping | undefined {
   const { status, expose } = err as { status?: unknown; expose?: unknown };
-  if (expose !== true || typeof status !== 'number' || status >= 500) {
+  if (expose !== true || !isClientStatus(status)) {
     return undefined;
   }
 
   return { status, ...(CLIENT_ERRORS.get(status) ?? OTHER_CLIENT_ERROR) };
 }
 
+/**
+ * Being our own type is not the same as being safe: a 5xx message is written
+ * for an operator, so only its status and code cross. `503
+ * READ_MODEL_NOT_READY` stays branchable by the client without its prose.
+ */
+function raisedError(err: HttpError): ErrorMapping {
+  if (isClientStatus(err.status)) {
+    return err;
+  }
+
+  return {
+    ...SERVER_FAULT,
+    status: isServerStatus(err.status) ? err.status : SERVER_FAULT.status,
+    code: err.code,
+  };
+}
+
 export const notFoundHandler: RequestHandler = (_req, _res, next) => {
   // The path is not echoed back: it is untrusted input.
-  next(new AppError(404, 'NOT_FOUND', 'Route not found'));
+  next(new HttpError(404, 'NOT_FOUND', 'Route not found'));
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express recognises an error handler by its arity
@@ -48,10 +80,15 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
 
-  const known: ErrorMapping | undefined = err instanceof AppError ? err : clientError(err);
+  const known: ErrorMapping | undefined =
+    err instanceof HttpError ? raisedError(err) : clientError(err);
 
   if (known) {
-    log.warn({ code: known.code, status: known.status }, 'request rejected');
+    if (isClientStatus(known.status)) {
+      log.warn({ code: known.code, status: known.status }, 'request rejected');
+    } else {
+      log.error({ error: serializeError(err) }, 'server fault raised by a handler');
+    }
     const body: { error: Omit<ErrorMapping, 'status'> } = {
       error: { code: known.code, message: known.message },
     };
@@ -64,5 +101,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   }
 
   log.error({ error: serializeError(err) }, 'unhandled error');
-  res.status(500).json({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+  res
+    .status(SERVER_FAULT.status)
+    .json({ error: { code: SERVER_FAULT.code, message: SERVER_FAULT.message } });
 };

@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import express, { type Express, type RequestHandler } from 'express';
 import request from 'supertest';
 import { z } from 'zod';
-import { validate } from '../src/middleware/validate.js';
+import { validate } from '../src/middleware/request-validator.js';
 import { errorHandler } from '../src/middleware/error-handler.js';
 import { httpLogger } from '../src/shared/logger.js';
-import { captureLogger } from './capture-logger.js';
+import { captureLogger, type CapturedLogger } from './capture-logger.js';
 
 /** A one-route app so the helper can be exercised through real HTTP. */
-function appWith(path: string, ...handlers: RequestHandler[]): Express {
+function appLogging(
+  path: string,
+  captured: CapturedLogger,
+  ...handlers: RequestHandler[]
+): Express {
   const app = express();
-  app.use(httpLogger(captureLogger().logger));
+  app.use(httpLogger(captured.logger));
   app.use(express.json());
   app.all(path, ...handlers, (req, res) => {
     res.status(200).json({ body: req.body, query: req.query, params: req.params });
@@ -19,6 +23,9 @@ function appWith(path: string, ...handlers: RequestHandler[]): Express {
 
   return app;
 }
+
+const appWith = (path: string, ...handlers: RequestHandler[]): Express =>
+  appLogging(path, captureLogger(), ...handlers);
 
 const createProduct = z.object({
   sku: z.string().min(1),
@@ -40,16 +47,40 @@ describe('validate: body', () => {
     expect(res.body.body).toEqual({ sku: 'SKU-1', basePriceCents: 1999 });
   });
 
-  it('rejects an unknown field so a client typo is visible', async () => {
-    const res = await request(app)
+  it('rejects an unknown field without quoting it back, and logs it instead', async () => {
+    const captured = captureLogger();
+    const res = await request(appLogging('/products', captured, validate({ body: createProduct })))
       .post('/products')
       .send({ sku: 'SKU-1', basePriceCents: 1999, basePrice: 19.99 });
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
-    expect(res.body.error.message).toBe('Invalid request body');
-    expect(res.body.error.details).toContainEqual(
-      expect.objectContaining({ message: expect.stringContaining('basePrice') }),
+    // Where, not what: the path is ours and the client needs it; the key is
+    // theirs and does not come back.
+    expect(res.body.error.details).toContainEqual({
+      path: 'body',
+      message: 'Unrecognized fields are not accepted here: 1',
+    });
+    expect(res.text).not.toContain('basePrice');
+
+    expect(captured.lines).toContainEqual(
+      expect.objectContaining({ keys: ['basePrice'], msg: 'unrecognized fields rejected' }),
+    );
+  });
+
+  it('counts every unknown field, and logs them all', async () => {
+    const captured = captureLogger();
+    const res = await request(appLogging('/products', captured, validate({ body: createProduct })))
+      .post('/products')
+      .send({ sku: 'SKU-1', basePriceCents: 1999, basePrice: 19.99, vendorSecret: 'abc' });
+
+    expect(res.body.error.details).toContainEqual({
+      path: 'body',
+      message: 'Unrecognized fields are not accepted here: 2',
+    });
+    expect(res.text).not.toContain('vendorSecret');
+    expect(captured.lines).toContainEqual(
+      expect.objectContaining({ keys: ['basePrice', 'vendorSecret'] }),
     );
   });
 
@@ -112,6 +143,25 @@ describe('validate: body', () => {
     const res = await request(app).post('/products').send({ sku: 1 });
 
     expect(res.text).not.toMatch(/at Object|node_modules|\.ts:/);
+  });
+});
+
+describe('validate: mounted without the http logger', () => {
+  it('still rejects, instead of throwing while trying to log', async () => {
+    const app = express();
+    app.use(express.json());
+    app.post('/products', validate({ body: createProduct }), (_req, res) => {
+      res.status(200).end();
+    });
+    app.use(errorHandler);
+
+    const res = await request(app)
+      .post('/products')
+      .send({ sku: 'SKU-1', basePriceCents: 1, oops: 1 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.text).not.toContain('oops');
   });
 });
 
@@ -203,9 +253,11 @@ describe('validate: nested objects', () => {
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.details).toContainEqual(
-      expect.objectContaining({ message: expect.stringContaining('endAt') }),
-    );
+    expect(res.body.error.details).toContainEqual({
+      path: 'window',
+      message: 'Unrecognized fields are not accepted here: 1',
+    });
+    expect(res.text).not.toContain('endAt');
   });
 });
 

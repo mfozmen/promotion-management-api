@@ -3,7 +3,7 @@ import express, { type Express } from 'express';
 import request from 'supertest';
 import { errorHandler } from '../src/middleware/error-handler.js';
 import { httpLogger } from '../src/shared/logger.js';
-import { AppError } from '../src/shared/app-error.js';
+import { HttpError } from '../src/shared/http-error.js';
 import { DrizzleQueryError } from 'drizzle-orm';
 import { captureLogger, type CapturedLogger } from './capture-logger.js';
 
@@ -40,25 +40,69 @@ const overlap = () => {
   );
 };
 
-describe('AppError mapping', () => {
+describe('HttpError mapping', () => {
   it.each([
-    [400, 'VALIDATION_ERROR', 'Invalid request body'],
-    [404, 'NOT_FOUND', 'Product not found'],
-    [409, 'CONFLICT', 'An active promotion already covers this product'],
-    [429, 'BACKPRESSURE', 'Too many pending imports'],
-    [503, 'READ_MODEL_NOT_READY', 'The read model is still being built'],
-  ])('answers %i with its code', async (status, code, message) => {
-    const res = await request(appThrowing(new AppError(status, code, message))).get('/boom');
+    [400, 'VALIDATION_ERROR' as const, 'Invalid request body'],
+    [404, 'NOT_FOUND' as const, 'Product not found'],
+    [409, 'CONFLICT' as const, 'An active promotion already covers this product'],
+    [429, 'BACKPRESSURE' as const, 'Too many pending imports'],
+  ])('answers %i with its code and message', async (status, code, message) => {
+    const res = await request(appThrowing(new HttpError(status, code, message))).get('/boom');
 
     expect(res.status).toBe(status);
     expect(res.type).toBe('application/json');
     expect(res.body).toEqual({ error: { code, message } });
   });
 
+  it('never returns the message of a 5xx a handler raised', async () => {
+    // Written for an operator, and this one carries a credential and a host.
+    const leaky = new HttpError(500, 'INTERNAL', 'password hunter2 rejected by 10.0.0.5');
+    const res = await request(appThrowing(leaky)).get('/boom');
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    expect(res.text).not.toContain('hunter2');
+    expect(res.text).not.toContain('10.0.0.5');
+  });
+
+  it('keeps a designed 5xx branchable by its code, without its prose', async () => {
+    const res = await request(
+      appThrowing(
+        new HttpError(503, 'READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5'),
+      ),
+    ).get('/boom');
+
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('READ_MODEL_NOT_READY');
+    expect(res.text).not.toContain('10.0.0.5');
+  });
+
+  it('logs a handler-raised 5xx as a server fault, with its message', async () => {
+    const captured = captureLogger();
+    await request(
+      appThrowing(new HttpError(503, 'READ_MODEL_NOT_READY', 'rebuild running'), captured),
+    ).get('/boom');
+
+    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
+      error: { message: 'rebuild running' },
+    });
+  });
+
+  it.each([
+    ['below any status', 42],
+    ['above what Express accepts', 1000],
+    ['not an integer', 404.5],
+  ])('masks a status %s rather than throwing inside the handler', async (_name, status) => {
+    const res = await request(appThrowing(new HttpError(status, 'CONFLICT', 'nope'))).get('/boom');
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Internal server error' } });
+  });
+
   it('includes details when the error carries them', async () => {
     const details = [{ path: 'page', message: 'Too small' }];
     const res = await request(
-      appThrowing(new AppError(400, 'VALIDATION_ERROR', 'Invalid request query', details)),
+      appThrowing(new HttpError(400, 'VALIDATION_ERROR', 'Invalid request query', details)),
     ).get('/boom');
 
     expect(res.body.error.details).toEqual(details);
@@ -66,7 +110,7 @@ describe('AppError mapping', () => {
 
   it('logs the rejection with the correlation id', async () => {
     const captured = captureLogger();
-    await request(appThrowing(new AppError(409, 'CONFLICT', 'Overlap'), captured))
+    await request(appThrowing(new HttpError(409, 'CONFLICT', 'Overlap'), captured))
       .get('/boom')
       .set('x-request-id', 'trace-1');
 
@@ -232,6 +276,18 @@ describe('exposed client errors that body-parser did not raise', () => {
     expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
   });
 
+  it.each([
+    ['below 400', 42],
+    ['at the 5xx boundary', 500],
+    ['not an integer', 404.5],
+  ])('ignores an exposed status %s rather than letting Express throw', async (_name, status) => {
+    const err = Object.assign(new Error('x'), { expose: true, status });
+    const res = await request(appThrowing(err)).get('/boom');
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+  });
+
   it('ignores an exposed error with no status', async () => {
     const res = await request(appThrowing(Object.assign(new Error('x'), { expose: true }))).get(
       '/boom',
@@ -245,7 +301,7 @@ describe('mounted without the http logger', () => {
   it('still answers, instead of throwing inside the error handler', async () => {
     const app = express();
     app.get('/boom', (_req, _res, next) => {
-      next(new AppError(409, 'CONFLICT', 'Overlap'));
+      next(new HttpError(409, 'CONFLICT', 'Overlap'));
     });
     app.use(errorHandler);
 
