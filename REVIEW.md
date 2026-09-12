@@ -739,7 +739,8 @@ route, and is a finding for the same reason.
 This rule is carried by review, not enforced by a check, and that is a
 deliberate stopping point rather than an oversight: the free plan's quality
 gate judges ratings, coverage, duplication and hotspot review, so a CRITICAL
-code smell passes it, and a gate condition on issue count is a paid feature.
+code smell passes it, and a gate condition on issue count is not available on
+this project's plan (owner, PR #56).
 The alternative — a CI step querying SonarCloud's issue API — was built,
 reviewed twice and deleted in PR #56 as machinery that restated what
 SonarCloud's pull request comment already says. Before rebuilding it, read that

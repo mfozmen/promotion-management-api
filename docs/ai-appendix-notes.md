@@ -171,6 +171,26 @@ rewritten.
   five: PR #44 rewrote the e2e tester's own definition and would have
   shipped without a single e2e run.
 
+### 2026-09-12 — SonarCloud scanned only when it has something to read (PR #56, `abf5ca9`, `cd87e86`)
+
+- Strategy: every documentation or workflow pull request was paying for a
+  SonarCloud analysis of an unchanged `sonar.sources`/`sonar.tests`, producing a
+  copy of the previous result. A step in `ci.yml` now decides from the pull
+  request's changed files whether anything analysable moved (sources, tests, a
+  build or tool configuration, `sonar-project.properties`) and gates the scan on
+  it; a push to `main` always scans, so the branch analysis never goes stale.
+- Human refinement: the owner drew out the consequence the patch did not state —
+  SonarCloud's own check cannot stay a required check once it can legitimately
+  never report, because a required check that never reports blocks such a merge
+  forever. Commit `cd87e86` removed `SonarCloud Code Analysis` from the hand-off
+  list in CONTRIBUTING.md; `ci`, which carries the scan and waits for the quality
+  gate, is the required check instead. README.md's merge rule was corrected in
+  the same round, since it still named the quality gate as a separate merge
+  condition. Later the same day the issue-gate script this branch was opened for
+  was deleted (commit `b91db0d`); what the earlier PR #56 entry in this section
+  describes is therefore history, not the shipped state — see "A CI gate built,
+  reviewed twice, then deleted" under Judgement.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -239,20 +259,24 @@ rewritten.
   (`scripts/sonar-issues.mjs`) that queried three SonarCloud APIs and failed the
   build on anything they returned. The gap it addressed is real: the free plan's
   quality gate judges ratings, coverage, duplication and hotspot review, so a
-  CRITICAL code smell passes it — three did exactly that on PR #50, behind a
-  green badge. Two review rounds hardened the script (a retry loop that did not
-  retry a thrown `fetch`; a bypass through the SonarCloud web interface). Neither
-  round, AI or human, asked the prior question: does anything already say this?
+  CRITICAL code smell passes it — three sat on a green gate when this branch
+  started, as commit `6a0a9c1` records. Two review rounds hardened the script (a
+  retry loop that did not retry a thrown `fetch`; a bypass through the SonarCloud
+  web interface). Neither round, AI or human, asked the prior question: does
+  anything already say this?
 - Verification: it does. SonarCloud posts its findings as a pull request comment
   without being asked, which is the same list the script was re-printing as
   GitHub annotations. The configuration alternative was checked and rejected on
-  evidence rather than assumed: `api/qualitygates/get_by_project` reports the
-  project on the built-in Sonar way, and a custom gate with an issue-count
-  condition is a paid feature on this plan, so the gate cannot be made to fail on
-  findings. A third check found that every endpoint the script called answers
-  anonymously on this public project, so the `SONAR_TOKEN` it demanded was never
-  needed — the AI wrote authenticated calls by default and two review rounds
-  passed over the authentication without comment.
+  evidence rather than assumed: `api/qualitygates/get_by_project` reports that
+  the project uses the built-in Sonar way gate, and the owner established that a
+  custom gate with an issue-count condition is not available on this plan — that
+  one is the owner's finding, not an API result — so the gate cannot be made to
+  fail on findings. A third check found that every endpoint the script called
+  answers anonymously on this public project: `issues/search`, the same call with
+  `issueStatuses`, and `hotspots/search` each answer 200 with no credential. So
+  the `SONAR_TOKEN` the script demanded was never needed — the AI wrote
+  authenticated calls by default and two review rounds passed over the
+  authentication without comment.
 - Resolution: the script, its six tests, its ESLint globals block, its CI step
   and the `scripts/` directory were deleted. What the branch keeps is
   configuration and a rule: `sonar.qualitygate.wait=true` with a 300 s bound, the
