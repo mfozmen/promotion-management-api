@@ -122,9 +122,17 @@ jobs:
 
             Review the diff for:
             - Bugs, security issues, and performance problems.
-            - Comments: a comment that restates the code, narrates a named
-              function, or retells the design spec is a Warning (REVIEW.md 8b).
-              A clear function has no comment at all.
+            - Comments (REVIEW.md 8b, Critical): a comment that restates the
+              code, narrates a named function, retells the design spec or
+              records how a defect was found is a finding. A clear function
+              has no comment at all. Count them: a source file where a third
+              of the lines are comments is a finding on its own.
+            - Structure and names (REVIEW.md 8c, Critical): one class,
+              interface or type declaration per file, the file named after it
+              as a kebab-case noun; a module carrying several types plus the
+              functions that use them is a finding even when it works. Types
+              that describe a row live apart from the functions that operate
+              on them.
             - TDD discipline: production code backed by tests that assert real
               behavior; minimal implementations, no speculative features.
             - Conventions: TypeScript strict mode; English-only code,
@@ -138,8 +146,10 @@ jobs:
             working code with tests and numbers, not on prose. So report only
             what would break something or mislead someone: a bug, a security or
             performance problem, a statement that contradicts another statement
-            or the code, a factual error, or an example that does not run.
-            Nothing else. No wording, no structure, no "consider rephrasing",
+            or the code, a factual error, an example that does not run, or a
+            violation of 8b or 8c above — those two are the owner's rules and
+            they were passed silently twice when this paragraph excluded
+            "structure". Nothing else. No wording, no "consider rephrasing",
             no restating a rule the diff already follows, and no Suggestions at
             all unless the suggestion prevents a defect.
 
