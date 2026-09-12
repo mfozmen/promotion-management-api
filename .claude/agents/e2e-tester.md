@@ -21,9 +21,8 @@ routes under `src/`.
 ## Setup
 
 This agent runs when the owner asks for it, not before every push. Running it
-on every pull request measured an unchanged application over and over and was
-the biggest single source of delay. So when you are asked to run, run
-properly: the numbers are the point.
+on every pull request measured an unchanged application over and over. So when
+you are asked to run, run properly: the numbers are the point.
 
 The application comes up through Docker Compose, one command. Nothing comes up
 without the compose file, so the system under test is the compose project, not
@@ -36,99 +35,24 @@ a server you launched by hand.
    docker compose up -d --wait   # exits non-zero if any service is unhealthy
    ```
 
-3. **The host port is fixed at 3000.** The compose file publishes it, and the
-   health check and every measurement use it. Only one run can hold it at a
-   time, which is deliberate: two runs measuring the same machine at once
-   produce numbers neither of them can trust, so serialising is correct rather
-   than a limitation to engineer around. If another session holds the port,
-   ask that session to finish rather than starting a second stack beside it.
-4. Wait until `curl -sf localhost:3000/health` returns 200 (max 30 s). PR #30
-   moves the route to `/api/health`; follow whichever path is on the tree you
-   are testing rather than failing a healthy stack over a prefix. If it
-   never does, print `docker compose logs --tail 40 api` and FAIL.
+3. **The host port is 3000**, published by the compose file. Every health check
+   and every measurement uses it. Only one run can hold it at a time, which is
+   deliberate: two runs measuring the same machine at once produce numbers
+   neither of them can trust, so runs serialise. If another session holds the
+   port, ask that session to finish rather than starting a second stack.
+4. Wait until `curl -sf localhost:3000/api/health` returns 200, at most 30
+   seconds. If it never does, print `docker compose logs --tail 40 api` and
+   FAIL.
 5. **If something else holds port 3000, stop and say so; never kill it.** The
-   process you did not start may be another run mid-measurement or a server
-   the owner is using, and you cannot tell an orphan from a live server.
-   Reaping one is a person's decision, not yours.
+   process you did not start may be another run mid-measurement or a server the
+   owner is using, and you cannot tell an orphan from a live server. Reaping one
+   is a person's decision, not yours.
 
 Teardown is `docker compose down`. Leave the `db` and `redis` volumes alone
 unless you created them.
 
-### Exception until issue #19 lands (dated 2026-09-12)
-
-There is no `api` service and no `Dockerfile` yet — the compose
-file carries the database and Redis only, which came from issue #34. Issue #19
-owns the `api` service and the Dockerfile. Until
-#19 lands, run the host-launch path below, which has been executed and
-verified on this machine; the load numbers it produced stay valid. **Delete
-this whole section, and nothing else, when #19 lands.**
-
-1. Start dependencies if a compose file exists: `docker compose up -d --wait`.
-2. **Build, then run the built server.** Never `npm run dev`: that is `tsx watch`,
-   which spawns a child for the server and respawns it, so killing the PID you
-   launched leaves the child holding the port. Eighteen orphans on one machine
-   came from exactly that. Use the production path instead:
-
-   ```
-   npm run build
-   PORT=<port> node dist/server.js > e2e-server.log 2>&1 &
-   ```
-
-   Two commands, not `npm run build && ... &`: `&` backgrounds the whole `&&`
-   list, so `$!` would be the subshell and `kill $!` would leave node running.
-
-   Run the built entry point directly, not `npm start`. On Windows `npm start`
-   is npm -> `cmd.exe /d /s /c node dist/server.js` -> node, so the PID your
-   shell records in `$!` is the wrapper: killing it leaves the node grandchild
-   listening and still answering `/health`, which is the same orphan
-   `npm run dev` produces. `node dist/server.js` is one process, `$!` is its
-   PID, `kill` ends it and frees the port. If a run must exercise TypeScript
-   directly, `tsx src/server.ts` without `watch` has the same single-process
-   shape.
-
-3. **Prove the port is free before binding it**, with a command that runs in
-   your own shell, which is Bash:
-
-   ```
-   netstat -ano | grep -E ":<port> .*LISTENING"   # Windows; empty means free, last column is the PID
-   ss -ltnp "sport = :<port>"                     # Linux and macOS
-   ```
-
-   If something listens, pick another port and check again; give up after ten
-   and FAIL. If the check itself cannot run, FAIL: an unverified port is how a
-   stale server went unnoticed once.
-
-4. **If a listener appears on your port anyway, move; never kill it** — the
-   same rule as step 6 above, discovered one step later. Pick another port and
-   re-verify.
-5. **Prove you are talking to the server you started.** Take the PID from the
-   listener check and confirm it is the process you launched or its child:
-
-   ```
-   powershell -NoProfile -c "Get-CimInstance Win32_Process -Filter 'ProcessId=<pid>' | Select-Object ParentProcessId, CommandLine"   # Windows
-   ps -o ppid=,args= -p <pid>                                                                                                       # Linux and macOS
-   ```
-
-   A stale server answers `/health` exactly like yours and makes every number
-   after it false evidence. Compare the `CommandLine`, not the number: in Git
-   Bash `$!` is a shell pseudo-PID, not the Windows PID of the listener, so
-   the two never match even when the process is yours.
-
-6. Wait until `curl -sf localhost:<port>/health` returns 200 (max 30 s). If it
-   never does, print the last 40 lines of `e2e-server.log` and FAIL.
-
-Tear down this path and verify it: `kill` the shell job, then confirm nothing
-listens on the port any more with the same command from step 3. If the port is
-still held, kill the listener PID that check printed — it is yours, you proved
-that in step 5 — with `taskkill //PID <pid> //F //T` on Windows or
-`kill -9 <pid>` elsewhere, and check the port once more. A teardown you did not
-verify is how the next run inherits an orphan. Leave docker services up unless
-you started them. Delete `e2e-server.log` after quoting what matters.
-
 Windows notes: `jq` may be missing, so use a `node -e` one-liner for JSON
-assertions — and give it a `C:/...` path, because node does not resolve Git
-Bash's `/c/...` or `/tmp/...` mount aliases. `ss` is not available in Git Bash;
-the `netstat -ano` form is the one that runs here.
+assertions.
 
 ## What to test, in this order
 
