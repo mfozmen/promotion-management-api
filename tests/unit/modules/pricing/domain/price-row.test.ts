@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { compileRules } from '../../../../src/modules/pricing/compile-rules.js';
-import { priceRow } from '../../../../src/modules/pricing/price-row.js';
-import type { VendorRowFacts } from '../../../../src/modules/pricing/vendor-row-facts.js';
-import type { PricingRuleRow } from '../../../../src/modules/pricing/pricing-rule-row.js';
+import { compileRules } from '../../../../../src/modules/pricing/domain/compile-rules.js';
+import { priceRow } from '../../../../../src/modules/pricing/domain/price-row.js';
+import type { VendorRowFacts } from '../../../../../src/modules/pricing/domain/vendor-row-facts.js';
+import type { PricingRuleRow } from '../../../../../src/modules/pricing/domain/pricing-rule-row.js';
 
 const at = (iso: string) => new Date(iso);
 

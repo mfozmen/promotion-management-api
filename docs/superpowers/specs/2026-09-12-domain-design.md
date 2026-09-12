@@ -691,7 +691,9 @@ src/
       db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
       jobs/      scheduling.ts
-    pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
+    pricing/
+      domain/    pricing-rule-row.ts, vendor-row-facts.ts, adjustment-event.ts, compiled-rule-set.ts, pricing-outcome.ts, compile-rules.ts, price-row.ts (pure: types and the rule engine over already-loaded rows)
+      db/        rule-set-loader.ts (loads the type='ingestion' rules, holds their cache), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)

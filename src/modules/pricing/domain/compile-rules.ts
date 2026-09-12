@@ -11,10 +11,9 @@ const PROBE_ROW: VendorRowFacts = { category: 'probe', vendorPriceCents: 0, stoc
 
 /**
  * The conditions with every `priority` removed, for the compile-time probe
- * only. The engine evaluates one condition priority set at a time and stops at
- * the first that decides the rule, so a typo'd operator behind a condition the
- * probe row does not match would never be reached. With the priorities gone
- * every leaf is evaluated. The engine runs the untouched conditions.
+ * only: the engine stops at the first priority set that decides the rule, so a
+ * typo’d operator behind an unmatched condition would never be reached. The
+ * engine runs the untouched conditions.
  */
 const withoutPriorities = (node: unknown): unknown => {
   if (Array.isArray(node)) return node.map(withoutPriorities);
@@ -28,15 +27,13 @@ const withoutPriorities = (node: unknown): unknown => {
 
 /** A malformed row is a descriptive error, never a silently skipped rule. */
 export async function compileRules(rows: readonly PricingRuleRow[]): Promise<CompiledRuleSet> {
-  // Sorted so the evaluation order is total: `pricing_rules.priority` defaults
-  // to 0, and two rules sharing a priority would otherwise be evaluated in
-  // parallel by the engine. The adjustments do not commute, so that would make
-  // the price depend on insertion order. The stored id breaks the tie.
+  // Total order: the adjustments do not commute, and two rules sharing a
+  // priority would otherwise evaluate in parallel. The stored id breaks the tie.
   const active = rows
     .filter((row) => row.active && row.type === 'ingestion')
     .sort((a, b) => b.priority - a.priority || a.id - b.id);
-  // Without a rule the wrapper would price 500 000 rows at the raw vendor
-  // price, with no markup and no commission, and report the job completed.
+  // An empty set would price the whole catalogue at vendor cost and report the
+  // job completed (ADR-0005).
   if (active.length === 0) {
     throw new Error('no active ingestion pricing rules (none seeded, or every rule deactivated)');
   }
