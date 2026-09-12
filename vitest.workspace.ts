@@ -19,7 +19,10 @@ export default defineWorkspace([
       name: 'integration',
       include: ['tests/integration/**/*.test.ts'],
       globalSetup: ['tests/integration/global-setup.ts'],
-      testTimeout: 30_000, // creating and cloning databases is seconds, not milliseconds
+      // Creating and cloning databases is seconds, not milliseconds, and the clone and drop
+      // live in beforeAll/afterAll, which `testTimeout` does not govern.
+      testTimeout: 30_000,
+      hookTimeout: 30_000,
     },
   },
 ]);
