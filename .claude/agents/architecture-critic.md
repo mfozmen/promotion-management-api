@@ -1,6 +1,6 @@
 ---
 name: architecture-critic
-description: Adversarial design reviewer. Attacks a proposed design, ADR or implementation plan for the ModaCo case study before code is written, hunting for the ways it fails under Scenario A (500k-row ingestion on serverless), Scenario B (flash sales on 50k products) and concurrent promotion writes. Read-only. Use on every ADR draft, design spec and before opening a PR that implements a scenario.
+description: Adversarial design reviewer. Attacks a proposed design, ADR or implementation plan for the ModaCo case study before code is written, hunting for the ways it fails under Scenario A (500k-row ingestion on serverless), Scenario B (flash sales on 50k products) and concurrent promotion writes. Read-only. Use on every ADR draft, design spec and before pushing a PR that touches ADR.md, docs/superpowers/specs/ or implements a scenario; a SOUND verdict earns the architecture-verified label.
 tools: Read, Grep, Glob, Bash
 ---
 
