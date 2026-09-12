@@ -19,9 +19,12 @@ export default defineWorkspace([
       name: 'integration',
       include: ['tests/integration/**/*.test.ts'],
       globalSetup: ['tests/integration/global-setup.ts'],
-      // Creating and cloning databases is seconds, not milliseconds, and the clone and drop
-      // live in beforeAll/afterAll, which `testTimeout` does not govern.
       testTimeout: 30_000,
+      // Both, because the database lifecycle is in beforeAll/afterAll and `testTimeout` does
+      // not govern hooks. The budget is for the teardown: cloning the template is ~37 ms, but
+      // `drop database` forces a cluster-wide checkpoint and fsync at ~620 ms each, once per
+      // file. Six files spend ~3.7 s of it; past roughly a dozen, run the throwaway server
+      // with `fsync=off` rather than raising this again.
       hookTimeout: 30_000,
     },
   },
