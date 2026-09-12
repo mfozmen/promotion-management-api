@@ -6,11 +6,12 @@ rewritten.
 
 ## Tool manifest
 
-| Model / Tool                      | Primary purpose                                                               | Effectiveness (1-5) and why |
-| --------------------------------- | ----------------------------------------------------------------------------- | --------------------------- |
-| Claude Code (Claude Fable 5.1)    | Infrastructure design, scaffolding, CI, agent definitions, TDD implementation | pending                     |
-| Claude Code Action (subscription) | Advisory review on every pull request                                         | pending                     |
-| Local agents (`.claude/agents/`)  | Pre-push e2e and impact verification, design critique, documentation          | pending                     |
+| Model / Tool                            | Primary purpose                                                               | Effectiveness (1-5) and why |
+| --------------------------------------- | ----------------------------------------------------------------------------- | --------------------------- |
+| Claude Code (Claude Fable 5.1)          | Infrastructure design, scaffolding, CI, agent definitions, TDD implementation | pending                     |
+| Claude Code Action (subscription)       | Advisory review on every pull request                                         | pending                     |
+| Local agents (`.claude/agents/`)        | Pre-push e2e and impact verification, design critique, documentation          | pending                     |
+| Claude Code (Claude Opus 5, 1M context) | Test-first implementation of the pricing core (issue #8)                      | pending                     |
 
 ## AI tool usage approach
 
@@ -88,6 +89,11 @@ rewritten.
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
 - Human refinement: none needed — `impact-analyzer` confirmed no doc or config referenced the removed sections and every named script (`dev`, `test`, `test:cov`, `lint`) still exists in `package.json`.
 
+### 2026-09-12 — Pricing core (issue #8, branch `feat/pricing-core`)
+
+- Strategy: Claude Opus 5 (1M context) via Claude Code, test-first. The prompt gave the already-recorded decisions (ADR-0004 and `docs/superpowers/specs/2026-09-12-domain-design.md` section 4) and REVIEW.md rules 1.1 to 1.7 as the contract, and scoped the work to a pure module: no endpoint, job, cache or store. `tests/pricing/effective-price.test.ts` was written and run red first, then `src/modules/pricing/effective-price.ts` (`applyPromotion`, `isActive`, `resolveApplied`) was written to make it green.
+- Human refinement: kept the module pure and free of `new Date()` so the clock is injected by the caller, and held the scope to the formula plus window and precedence resolution instead of pulling the read path forward. No new architectural decision was introduced, so ADR.md and the spec were deliberately left untouched.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -119,6 +125,79 @@ rewritten.
 - Challenge: the four verification labels (`e2e-verified`, `impact-verified`, `docs-verified`, `architecture-verified`) had only ever been created by hand in the repo's label set; `gh pr edit --remove-label` on a label that does not exist fails, so a fresh clone would break on the first `synchronize` strip. The fix step (`gh label create --force`) was first added to run unconditionally, over-creating the labels on every `labeled`/`unlabeled`/`reopened` event too.
 - Verification: caught by the `impact-analyzer` agent reasoning through the workflow's `on.pull_request.types` list against the create step's `if` condition.
 - Resolution: scoped the create step to `if: contains(fromJSON('["opened", "synchronize"]'), github.event.action)`, the only events that precede the strip step, so labels are created idempotently once per event that needs them instead of on every label change.
+
+### 2026-09-12 — Pricing core verification (issue #8)
+
+- Challenge: no AI mistake needed correction in this change; the risk was a silently wrong money or boundary rule rather than a broken build.
+- Verification: 24 unit tests written before the implementation cover integer flooring, the zero clamp on an over-large fixed discount, the half-open `[startsAt, endsAt)` boundaries, draft and cancelled promotions, and product-over-category precedence including the case where the category discount is larger. `npm run lint`, `npm run typecheck` and `npm run test:cov` all pass, with 100 % statement, branch, function and line coverage. The local pre-push agents (`e2e-tester`, `impact-analyzer`, `docs-scribe`) gate the push as required by the `local-gates` check.
+- Resolution: no correction required; the module shipped as first written against the red tests.
+
+### 2026-09-12 — Pricing core: two AI defects caught before merge (issue #8, commit `9465bcc`)
+
+- Supersedes the entry above ("Pricing core verification"): its sentence "no AI
+  mistake needed correction in this change" is wrong and is corrected here. Two
+  defects in the AI-written first implementation were found by the local agents
+  and fixed before the branch was pushed; a third was recorded and deferred.
+- Challenge 1 — precision loss in the percentage discount. The first
+  implementation computed `Math.floor((basePriceCents * promotion.value) / 10000)`
+  in JavaScript numbers. The `impact-analyzer` agent returned FAIL: the product
+  `basePriceCents * value` leaves the exact-integer range of an IEEE-754 double
+  once it exceeds 2^53, which the `bigint` price columns allow, so the floor
+  returns the wrong cent.
+- Verification 1: the agent produced a concrete counter-example and checked it
+  against BigInt as the oracle — base 4 171 863 899 102 minor units at 7 049
+  basis points gave a discount of 2 940 746 862 477 where the exact floor is
+  2 940 746 862 476. That is one cent in the direction REVIEW.md 1.4 promises
+  cannot happen. The same report noted that REVIEW.md 7.4's "largest price the
+  column allows" case was missing from the test file.
+- Challenge 2 — one-sided clamp. The `architecture-critic` and `e2e-tester`
+  agents independently flagged that only the lower bound was clamped, so a
+  negative `value` returned a price ABOVE the base price, contradicting
+  REVIEW.md 1.5.
+- Resolution: the percentage step now multiplies in `bigint` (truncating
+  division is the floor for non-negative operands) and the result is clamped
+  into `[0, basePriceCents]`. Three tests were added first and seen to fail
+  before the fix: the largest price the representation allows, the
+  `impact-analyzer`'s counter-example, and never-above-base.
+- Deferred, not fixed: the `architecture-critic` pointed out that two clocks
+  decide whether a promotion is active — the SQL
+  `tstzrange(starts_at, ends_at) @> now()` filter in the design spec's
+  resolution query, and the injected `Date` passed to `isActive` — which is
+  REVIEW.md 1.7. No query exists on this branch, so nothing is inconsistent
+  yet; it is recorded as GitHub issue #28 for an ADR-0004 decision rather than
+  decided here.
+- Verification of the fix: `npm run lint`, `npm run typecheck` and
+  `npm run test:cov` all pass with 25 tests and 100 % statement, branch,
+  function and line coverage, and all four local agents were re-run on the
+  final commit `9465bcc`.
+
+### 2026-09-12 — Pricing core: deferred two-clocks item sharpened (issue #8, commit `2322c4d`)
+
+- Note on hashes: the branch was amended, so the entry above should be read
+  against commit `2322c4d`, not `9465bcc`.
+- Challenge: an `architecture-critic` re-run on the final branch state found
+  that the deferred two-clocks item recorded above was written with one wrong
+  assumption and one missing half. (1) Its "take `now` from `select now()`"
+  option does not close the gap: a JavaScript `Date` holds whole
+  milliseconds while `timestamptz` holds microseconds, so a boundary such as
+  `ends_at = 2026-09-13T00:00:00.000400Z` still has PostgreSQL and `isActive`
+  disagree after the driver truncates it; only making PostgreSQL
+  authoritative removes the disagreement. (2) The design spec's resolution
+  query projects `id`, `name`, `discount_type` and `value` per level and no
+  window columns, so it cannot build the `Promotion` the pricing core takes
+  without widening a query that runs over a whole category — the type shape
+  is part of the same decision, not a separate one.
+- Verification: the microsecond counter-example was checked against
+  `timestamptz` precision and the JavaScript `Date` representation; the
+  projection gap was traced column by column from section 4 of
+  `docs/superpowers/specs/2026-09-12-domain-design.md` to the exported
+  `Promotion` interface.
+- Resolution: both points were appended as a comment on issue #28 so the
+  ADR-0004 decision is taken with them, and the one part that needed no
+  decision was applied on the branch — `id` and `name` were dropped from the
+  exported `Promotion` interface, since the caller keeps the resolved row for
+  the response and no rule in the module reads them. The remaining gap
+  (`status`, `startsAt`, `endsAt`) stays with issue #28.
 
 ## Overall reflection
 
