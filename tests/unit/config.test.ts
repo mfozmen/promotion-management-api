@@ -266,6 +266,24 @@ describe('loadConfig', () => {
       );
     });
 
+    it.each([
+      ['no path at all', 'postgres://promo:promo@localhost:5432'],
+      ['a bare slash', 'postgres://promo:promo@localhost:5432/'],
+    ])('rejects a DATABASE_URL with %s', (_label, databaseUrl) => {
+      // node-postgres would fall back to the OS user name and connect to
+      // something, so the mistake would surface later as missing tables.
+      expect(() => loadConfig({ ...validEnv, DATABASE_URL: databaseUrl })).toThrow(
+        'Invalid environment variable DATABASE_URL: the URL has no database name',
+      );
+    });
+
+    it('accepts a REDIS_URL with no path, because the index replaces it', () => {
+      const config = loadConfig({ ...validEnv, REDIS_URL: 'redis://localhost:6379' });
+
+      expect(config.redisReadModelUrl).toBe('redis://localhost:6379/0');
+      expect(config.redisQueueUrl).toBe('redis://localhost:6379/1');
+    });
+
     it('accepts the postgresql: and rediss: spellings', () => {
       const config = loadConfig({
         DATABASE_URL: 'postgresql://promo:promo@localhost:5432/promotion',

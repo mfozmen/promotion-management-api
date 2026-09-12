@@ -49,7 +49,12 @@ const requireString = (env: Env, key: string): string => {
  *  `garbage:`, which parse but cannot be connected to. No message echoes the
  *  value, because a connection string carries a password and this reaches a
  *  startup log. */
-const parseUrl = (key: string, value: string, protocols: readonly string[]): URL => {
+const parseUrl = (
+  key: string,
+  value: string,
+  protocols: readonly string[],
+  requireDatabaseName = false,
+): URL => {
   let url: URL;
   try {
     url = new URL(value);
@@ -63,6 +68,14 @@ const parseUrl = (key: string, value: string, protocols: readonly string[]): URL
   }
   if (url.hostname === '') {
     throw new Error(`Invalid environment variable ${key}: the URL has no host`);
+  }
+  // node-postgres falls back to PGDATABASE, then the user name, then the OS
+  // user, so an omitted database name connects to something rather than failing,
+  // and the mistake surfaces much later as missing tables. Redis needs no such
+  // check: `redisUrlForDb` overwrites the path with the validated index, so a
+  // path here cannot decide anything.
+  if (requireDatabaseName && url.pathname.length <= 1) {
+    throw new Error(`Invalid environment variable ${key}: the URL has no database name`);
   }
   return url;
 };
@@ -94,7 +107,7 @@ export const loadConfig = (env: Env = process.env): Config => {
   const databaseUrl = requireString(env, 'DATABASE_URL');
   const redisUrl = requireString(env, 'REDIS_URL');
   // The raw strings are what the drivers receive; these are the checks on them.
-  parseUrl('DATABASE_URL', databaseUrl, ['postgres:', 'postgresql:']);
+  parseUrl('DATABASE_URL', databaseUrl, ['postgres:', 'postgresql:'], true);
   const redisBase = parseUrl('REDIS_URL', redisUrl, ['redis:', 'rediss:']);
 
   const redisReadModelDb = readInt(env, 'REDIS_READ_MODEL_DB', 0, 0, 15);

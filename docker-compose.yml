@@ -8,9 +8,10 @@ name: promotion-management-api
 #     by service name (`postgres`, `redis`);
 #   - both carry a healthcheck, so an application service can wait on
 #     `depends_on: { condition: service_healthy }`;
-#   - every tunable lives in the .env file next to this one, so a container
-#     reads the same variables a host process does. The defaults below only
-#     keep `docker compose up -d --wait` working on a clean checkout, before
+#   - every tunable lives in the .env file next to this one, so a container will
+#     read the same variables a host process does once an application service
+#     exists to read them. The defaults below only keep
+#     `docker compose up -d --wait` working on a clean checkout, before
 #     .env.example has been copied.
 #
 # Host processes (`npm run dev`, the tests) reach the stores on localhost
