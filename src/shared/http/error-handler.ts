@@ -2,15 +2,21 @@ import type { ErrorRequestHandler } from 'express';
 import { CLIENT_ERRORS } from './client-errors.js';
 import type { ErrorCode } from './error-code.js';
 import { MAX_DETAILS } from './max-details.js';
-import { MAX_MESSAGE } from './max-message.js';
+import { MAX_MESSAGE } from '../max-message.js';
 import { OTHER_CLIENT_ERROR } from './other-client-error.js';
 import type { ErrorMapping } from './error-mapping.js';
 import { HttpError } from './http-error.js';
-import { logger, serializeError } from './logger.js';
+import { logger, serializeError } from '../logger.js';
 
 /** The two codes whose whole meaning is "come back later". Without a number a
  *  client retries as fast as it can, which amplifies the outage it met. */
-const RETRY_AFTER_SECONDS = '5';
+/** A band rather than a number: a flat hint has every client that met the
+ *  outage returning in the same second, so the read model's first healthy
+ *  moment takes the whole backlog at once. */
+const RETRY_AFTER_MIN = 5;
+const RETRY_AFTER_SPREAD = 6;
+const retryAfter = (): string =>
+  String(RETRY_AFTER_MIN + Math.floor(Math.random() * RETRY_AFTER_SPREAD));
 // An array rather than a `ReadonlySet`: freezing a Set does not stop `.add`,
 // so the readonly type would be the only guard, and it is erased at build time.
 const RETRIABLE: readonly ErrorCode[] = Object.freeze(['BACKPRESSURE', 'READ_MODEL_NOT_READY']);
@@ -93,7 +99,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       error: { code: known.code, message: known.message.slice(0, MAX_MESSAGE) },
     };
     if (RETRIABLE.includes(known.code)) {
-      res.set('Retry-After', RETRY_AFTER_SECONDS);
+      res.set('Retry-After', retryAfter());
     }
     if (known.details !== undefined) {
       body.error.details = known.details.slice(0, MAX_DETAILS);

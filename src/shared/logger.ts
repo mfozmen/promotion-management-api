@@ -1,8 +1,9 @@
-import { randomUUID } from 'node:crypto';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import { pino, type Logger } from 'pino';
+import { pino } from 'pino';
 import { MAX_MESSAGE } from './max-message.js';
-import { pinoHttp, type HttpLogger } from 'pino-http';
+
+/** Below this a bound value is too short to reveal anything and too common to
+ *  search for. */
+const MIN_SECRET = 8;
 
 /** The whole chain, not one step: a repository that interpolates a driver
  *  message into its own sits between the handler's error and the statement,
@@ -10,8 +11,14 @@ import { pinoHttp, type HttpLogger } from 'pino-http';
  *  recognise it by. */
 function causeChain(err: Error): Error[] {
   const chain = [err];
-  for (let current = err.cause; current instanceof Error; current = current.cause) {
+  // Stops on a cycle: a retry wrapper that re-attaches the error it caught
+  // makes one, and an uncapped walk allocates until it throws — inside the
+  // error handler, which is how Express's HTML page reaches a client.
+  const seen = new Set<Error>([err]);
+  for (let current = err.cause; current instanceof Error && !seen.has(current);) {
     chain.push(current);
+    seen.add(current);
+    current = current.cause;
   }
   return chain;
 }
@@ -36,19 +43,26 @@ function secrets(chain: readonly Error[]): string[] {
   return chain.flatMap((err) => {
     const { query, params } = err as Error & { query?: unknown; params?: unknown };
     return [query, ...(Array.isArray(params) ? params : [params])].filter(
-      (value): value is string => typeof value === 'string' && value.length > 0,
+      // Long enough to be worth hiding. A statement is always long; a bound
+      // value of one or two characters appears in any English sentence, so
+      // searching for it would replace the constraint name that diagnoses the
+      // failure — and the caller chooses that length.
+      (value): value is string => typeof value === 'string' && value.length >= MIN_SECRET,
     );
   });
 }
 
 function safeMessage(err: Error, held: readonly string[]): string {
   // Cut at the first quoted value: a driver quotes what the caller sent.
-  const message = err.message.split(': "')[0]!.slice(0, MAX_MESSAGE);
+  const message = err.message.split(': "')[0]!;
 
-  // A message that repeats a statement or a bound value is the wrapper's own
-  // work, and no part of it can be trusted; the constraint name a driver's own
-  // message carries is what diagnoses the failure, so it survives.
-  return held.some((secret) => message.includes(secret)) ? 'database query failed' : message;
+  // Compared before the bound is applied, not after: a statement quoted past
+  // the bound is absent from the truncated string, so the check would miss it
+  // and the prefix would go to the log.
+  if (held.some((secret) => message.includes(secret))) {
+    return 'database query failed';
+  }
+  return message.slice(0, MAX_MESSAGE);
 }
 
 /**
@@ -76,33 +90,3 @@ export function serializeError(err: unknown): Record<string, unknown> {
 }
 
 export const logger = pino();
-
-/** An id carrying a newline forges log lines; one carrying CR injects a header. */
-const SAFE_REQUEST_ID = /^[A-Za-z0-9._-]{1,128}$/;
-
-function correlationId(req: IncomingMessage, res: ServerResponse): string {
-  const incoming = req.headers['x-request-id'];
-  const id =
-    typeof incoming === 'string' && SAFE_REQUEST_ID.test(incoming) ? incoming : randomUUID();
-  res.setHeader('x-request-id', id);
-
-  return id;
-}
-
-export function httpLogger(instance: Logger): HttpLogger {
-  return pinoHttp({
-    logger: instance,
-    genReqId: correlationId,
-    // Binds the id as `reqId` on `req.log`, so a handler's own lines carry it.
-    quietReqLogger: true,
-    // Headers, body and query string never reach a line (ADR-0009).
-    serializers: {
-      req: (req: IncomingMessage) => ({
-        id: req.id,
-        method: req.method,
-        path: String(req.url).split('?')[0],
-      }),
-      res: (res: ServerResponse) => ({ statusCode: res.statusCode }),
-    },
-  });
-}

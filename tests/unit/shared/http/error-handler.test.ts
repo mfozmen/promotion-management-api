@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import express, { type Express } from 'express';
 import request from 'supertest';
 import { errorHandler } from '../../../../src/shared/http/error-handler.js';
-import { httpLogger } from '../../../../src/shared/http/logger.js';
+import { httpLogger } from '../../../../src/shared/http/http-logger.js';
 import { HttpError } from '../../../../src/shared/http/http-error.js';
 import { DrizzleQueryError } from 'drizzle-orm';
 import { captureLogger, type CapturedLogger } from '../../../capture-logger.js';
@@ -206,7 +206,23 @@ describe('unexpected errors', () => {
     );
 
     expect(res.status).toBe(429);
-    expect(res.headers['retry-after']).toBe('5');
+    // A band, not a constant: every client that met the outage retrying in the
+    // same second hands the recovering read model its whole backlog at once.
+    const after = Number(res.headers['retry-after']);
+    expect(after).toBeGreaterThanOrEqual(5);
+    expect(after).toBeLessThanOrEqual(10);
+  });
+
+  it('spreads the retry hint across clients rather than synchronising them', async () => {
+    const hints = new Set<string>();
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const res = await request(appThrowing(new HttpError('BACKPRESSURE', 'queue is full'))).get(
+        '/boom',
+      );
+      hints.add(String(res.headers['retry-after']));
+    }
+
+    expect(hints.size).toBeGreaterThan(1);
   });
 
   it('sends no retry hint on an error retrying cannot fix', async () => {
@@ -311,6 +327,56 @@ describe('log hygiene for driver errors', () => {
         stack: expect.stringContaining('at '),
       },
     });
+  });
+
+  it('keeps a statement out even when the message is longer than the bound', async () => {
+    const captured = captureLogger();
+    const statement =
+      'insert into products (sku, name, base_price_cents, vendor_token) values ($1)';
+    // The check used to run on the already-truncated message, so a statement
+    // quoted past the 200-character bound was compared against a string that
+    // no longer held it, and the prefix went to the log.
+    const err = Object.assign(new Error(`${'x'.repeat(150)} failed query: ${statement}`), {
+      query: statement,
+      params: ['A1'],
+    });
+
+    await request(appThrowing(err, captured)).get('/boom');
+
+    expect(JSON.stringify(captured.lines)).not.toContain('insert into products');
+  });
+
+  it('keeps the constraint name when a bound value is one character', async () => {
+    const captured = captureLogger();
+    // 'a' appears in almost any sentence, so treating every bound value as a
+    // secret to search for blinds the log for the caller who sent a short one.
+    const err = Object.assign(
+      new Error('duplicate key value violates unique constraint "products_sku_key"'),
+      { query: 'insert into products (sku) values ($1)', params: ['a'] },
+    );
+
+    await request(appThrowing(err, captured)).get('/boom');
+
+    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
+      error: { message: expect.stringContaining('products_sku_key') },
+    });
+  });
+
+  it('answers rather than hanging when a cause chain loops', async () => {
+    const captured = captureLogger();
+    // A retry wrapper that re-attaches the original error makes a cycle. The
+    // walk had no cap, so it allocated until it threw inside the error
+    // handler, which is how the HTML page this layer exists to prevent
+    // reaches a client.
+    const first = new Error('retry exhausted');
+    const second = new Error('connection lost');
+    first.cause = second;
+    second.cause = first;
+
+    const res = await request(appThrowing(first, captured)).get('/boom');
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
   });
 
   it('does not let a bound value pose as a stack frame', async () => {

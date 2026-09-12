@@ -521,8 +521,11 @@ a timeout. A flaky test is a finding, not a retry.
 parallel. Shared mutable fixtures across files are a finding.
 
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
-the tree mirrors `src/` and one test file per source file. Nothing at `tests/`
-root, no per-module top-level directories.
+the tree mirrors `src/` and one test file per source file. No test file at
+`tests/` root, no per-module top-level directories. A helper that more than one
+layer imports — a fake, a capture, a builder — is not a test file and lives at
+`tests/<subject>-<role>.ts`, because both layers import it and it belongs to
+neither; `helpers/` and `utils/` are still banned (8c.4).
 
 Evidence: `tests/promotion/`, `tests/unit/` and a root-level test file on three
 open branches at once (PRs #29, #39).

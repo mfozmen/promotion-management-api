@@ -667,9 +667,9 @@ src/
     pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
-  middleware/    error-handler.ts (the one JSON error envelope), request-validator.ts (zod at the boundary)
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
-  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids), http-error.ts (HttpError, ErrorCode)
+  shared/        config.ts, logger.ts (pino root logger and the error whitelist every log site uses), db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues)
+    http/        the HTTP boundary: error-code.ts, status-by-code.ts, http-error.ts, client-errors.ts, other-client-error.ts, error-mapping.ts, error-handler.ts, not-found-handler.ts, request-schemas.ts, request-validator.ts, validation-detail.ts, http-logger.ts (correlation id)
 tests/
   capture-logger.ts  and any other helper both kinds import: neither a unit nor an integration test
   unit/          effective-price, csv-lines, ingestion-rules, schemas, the HTTP boundary
