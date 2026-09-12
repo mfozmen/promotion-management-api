@@ -40,6 +40,7 @@ jobs:
           create e2e-verified 0E8A16 "e2e-tester agent passed locally on the latest push"
           create impact-verified 0E8A16 "impact-analyzer agent passed locally on the latest push"
           create docs-verified 0E8A16 "docs-scribe agent updated the docs for the latest push"
+          create cases-verified 0E8A16 "test-case-generator wrote the story's cases for the latest push"
           create architecture-verified 0E8A16 "architecture-critic agent returned SOUND on the latest push"
           create scenario 5319E7 "Implements Scenario A or B; architecture-critic required"
       # Label writes (this step and the create step above) are what fail with 403 on a fork PR, where
@@ -50,7 +51,7 @@ jobs:
         run: |
           gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" \
             --remove-label e2e-verified --remove-label impact-verified \
-            --remove-label docs-verified --remove-label architecture-verified
+            --remove-label docs-verified --remove-label architecture-verified \n            --remove-label cases-verified
           echo "::error::New commits pushed; re-run the local agents and re-apply their labels."
           exit 1
 
@@ -78,6 +79,12 @@ jobs:
           behaviour='^(src/|tests/|scripts/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|Dockerfile|(docker-)?compose.*\.ya?ml$)'
           if grep -qE "$behaviour" <<<"$files" || grep -qE "$judgement" <<<"$files"; then
             required="$required impact-verified"
+          fi
+          # A pull request that adds behaviour owes the cases that decide whether the behaviour
+          # is the one the story asked for. They are derived from the story, so they can fail;
+          # cases derived from the code assert what was built and pass by construction.
+          if grep -qE '^src/' <<<"$files"; then
+            required="$required cases-verified"
           fi
           # Design documents, the modules that implement Scenario A and B, and the workers all
           # require the architecture-critic; the scenario label is the manual override.
