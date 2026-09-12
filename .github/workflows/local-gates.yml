@@ -1,0 +1,47 @@
+name: Local gates
+
+# The e2e-tester and impact-analyzer agents run locally before every push
+# (see CONTRIBUTING.md). Their verdicts are recorded as PR labels, and this
+# required check passes only while both labels are present. A new push strips
+# the labels so a stale verdict never covers new commits.
+#
+# Lives in its own workflow so label events do not re-run the full CI job.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+# Serialise runs per PR so a synchronize run cannot be overtaken by a labeled run.
+concurrency:
+  group: local-gates-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  local-gates:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Strip verification labels on new commits
+        if: github.event.action == 'synchronize'
+        run: |
+          gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --remove-label e2e-verified --remove-label impact-verified
+          echo "::error::New commits pushed; re-run the e2e-tester and impact-analyzer agents and re-apply the labels."
+          exit 1
+
+      - name: Require e2e-verified and impact-verified labels
+        run: |
+          labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')
+          missing=0
+          for l in e2e-verified impact-verified; do
+            if ! grep -qx "$l" <<<"$labels"; then
+              echo "::error::missing label $l"
+              missing=1
+            fi
+          done
+          exit $missing
