@@ -48,14 +48,13 @@ create table products (
 );
 create index products_category_id_idx on products (category, id);   -- keyset scans per category
 
-create type discount_type    as enum ('percentage', 'fixed');
 create type promotion_status as enum ('draft', 'active', 'cancelled');
 
 create table promotions (
   id             bigint generated always as identity primary key,
   name           text not null,
-  discount_type  discount_type not null,
-  value          bigint not null check (value > 0),              -- basis points or cents
+  calculator     text not null,                                  -- registry key, e.g. 'PercentageDiscount'
+  params         jsonb not null,                                 -- validated by that calculator's schema
   starts_at      timestamptz not null,
   ends_at        timestamptz not null,
   product_id     bigint references products (id),
@@ -64,7 +63,6 @@ create table promotions (
   created_at     timestamptz not null default now(),
   cancelled_at   timestamptz,
   check (ends_at > starts_at),
-  check (discount_type <> 'percentage' or value <= 10000),
   check (status <> 'active' or (product_id is null) <> (category is null)), -- active = exactly one target
   check (status <> 'draft' or (product_id is null and category is null)),  -- draft = no target
   -- cancelled keeps whatever shape it had (a cancelled draft has no target)
@@ -191,12 +189,31 @@ create table ingestion_chunks (
   promotion resolver logs it and applies no discount, so the storefront falls
   back to the base price, and ingestion treats it as a `rules` fault that stops
   the job rather than silently mispricing 500 000 rows.
-- `applyPromotions(baseCents, event)` is the whole call site: resolve the
-  calculator from `event.params.calculator`, validate `event.params` against
-  its schema, run it. Both layers share the registry, so the percentage and
-  fixed arithmetic has exactly one implementation (REVIEW.md rule 1.3):
-  ingestion runs every matched rule in priority order to build a base price,
-  promotion applies the single winning rule to it.
+- **The promotion row names its own calculator.** `promotions.calculator` is
+  the registry key and `promotions.params` is its configuration, validated by
+  that calculator's schema, so a new kind of discount needs no enum migration.
+  `discount_type` and `value` are gone: `PercentageDiscount` with
+  `{ "valueBasisPoints": 5000 }` says the same thing and does not constrain
+  what the next calculator needs.
+- **Selection needs both candidates in one fact object, so the discounts are
+  computed first.** The resolver runs each candidate's calculator to get its
+  discount, then runs the engine once over a single fact set that holds both:
+  `basePriceCents`, `category`, `stockQuantity`, and per candidate its
+  `level`, `calculator`, `discountCents` and `effectivePriceCents`. A rule can
+  therefore compare them, which `json-rules-engine` supports natively by
+  giving an operator a `{ fact: ... }` value rather than a literal. The
+  largest-discount default is one such comparison; product-level precedence is
+  a rule that ignores the discounts entirely.
+- The winning event names the winner rather than recomputing it:
+  `{ type: 'selectCandidate', params: { level: 'product' | 'category' } }`.
+  The resolver applies the discount it already computed for that level, so the
+  calculator runs once per candidate and never twice for the same one.
+- `applyPromotions(baseCents, calculator, params)` is the whole call site:
+  resolve from the registry, validate against the calculator's schema, run.
+  Both layers share the registry, so the percentage and fixed arithmetic has
+  exactly one implementation (REVIEW.md rule 1.3): ingestion runs every
+  matched rule in priority order to build a base price, promotion computes one
+  discount per candidate and applies the selected one.
 - Seeded calculators at launch: `PercentageDiscount` (`valueBasisPoints`) and
   `FixedDiscount` (`valueCents`). They exist because the case names percentage
   and fixed-amount discounts, not because the design needs exactly two.
@@ -235,11 +252,6 @@ create table ingestion_chunks (
   the candidate set small enough that resolution stays a two-row decision.
   Relaxing it later is a constraint drop plus a priority rule, with no change
   to the resolver.
-- Effective price is one pure function `applyPromotion(baseCents, promotion)`
-  in `src/modules/pricing/effective-price.ts`, called by the winning rule's
-  action and by the event handler, the reconciler and tests:
-  - percentage: `base - floor(base * value / 10000)`
-  - fixed: `max(base - value, 0)`
 - Validation on create: `endsAt > startsAt`, `endsAt > now()` (a promotion
   that is already over is a `400`); `startsAt` in the past is allowed and
   means "now".
