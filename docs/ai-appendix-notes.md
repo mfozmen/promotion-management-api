@@ -40,6 +40,29 @@ rewritten.
   boundaries, failure handling, observability, migrations, scope hygiene,
   repository hygiene, and a six-question reviewer quick pass).
 
+### 2026-09-12 — Review process rework (PR #23, process/review-policy, commit `df45910`)
+
+- Strategy: the owner asked why recent PRs needed so many review rounds.
+  Reviewed the PR history end to end instead of assuming one cause, and found
+  five contributing habits: the Claude review re-analysed the whole diff on
+  every push instead of picking up only the commits pushed since the last
+  summary; Warning-severity findings were being fixed in the PR as if they
+  were blocking, same as Critical; some of my own fixes were made in the
+  working tree but not committed before the next push; a PR sometimes
+  referenced work that only landed in a later, still-open PR; and pushing a
+  new commit while a review run was in flight cancelled it and forced a full
+  restart.
+- Human refinement: owner asked for one policy PR rather than five scattered
+  fixes. This PR is that change: `claude-review.yml`'s prompt now reads prior
+  summary comments (`gh pr view --comments`) and reviews only new commits;
+  `CONTRIBUTING.md` and `CLAUDE.md` now state the same severity policy
+  (Critical and REVIEW.md-blocking findings fixed before hand-off, Warnings
+  answered and deferrable to a linked issue, Suggestions answered) so a
+  Warning stops defaulting to "fix everything"; and the batched-fix rule now
+  waits for the review run to finish before committing findings in one
+  commit, instead of reacting mid-run, which also closes the uncommitted-fix
+  and mid-review-push gaps.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
