@@ -66,7 +66,7 @@ Money is stored as integer minor units, percentages as basis points, timestamps 
 - Every read-model write is a recompute from PostgreSQL, so handlers are idempotent and retry-safe; the event-handler runs with concurrency 1 to keep them ordered.
 - The read model is eventually consistent: a write is visible after the handler runs, typically well under a second for single products and a few seconds for a 50 000-product category.
 - Redis is a hard runtime dependency; an empty read model answers `503` until the cold-start rebuild completes.
-- "Emission after commit" is enforced at runtime, not only by convention: `src/shared/queue.ts` marks a transaction body with an `AsyncLocalStorage` scope (`withinTransaction`) and `enqueue()` throws when called inside one, so the ordering mistake fails loudly in a test instead of surfacing as a rare stale read (REVIEW.md 3.4; issue #7, branch `feat/queue-contracts`, based on PR #27).
+- "Emission after commit" is enforced at runtime, not only by convention: `src/shared/queue.ts` marks a transaction body with an `AsyncLocalStorage` scope (`withinTransaction`) and `enqueue()` throws when called inside one, so the ordering mistake fails loudly in a test instead of surfacing as a rare stale read (REVIEW.md 3.4; issue #7, commit `829d6bb`).
 
 ### Trade-offs
 
@@ -104,6 +104,7 @@ The rule "at most one active promotion per product" is implemented as **at most 
 - A separate `assign` step exists because the case lists create, cancel and assign as distinct operations; keeping the target on the promotion row (one target per promotion) makes assign a single constrained `UPDATE` rather than a join table.
 - Cancelled promotions stay in the table for audit; the partial `WHERE` on the constraints ignores them, so cancel-then-create works.
 - Scheduled starts and expiries change prices at the boundary, not on a cache TTL.
+- Cancel reports what it removed: `removePromotionBoundaries` returns BullMQ's removal code per boundary, so a cancel that races a boundary job already running is visible to the caller instead of a silent no-op (commit `829d6bb`).
 
 ### Trade-offs
 
@@ -228,6 +229,7 @@ Alarms: the API and workers expose Prometheus metrics (`prom-client`); a `monito
 ### Trade-offs
 
 - The promotion boundary sweep runs from a persisted watermark (`reconciler_state.last_boundary_sweep_at`), so an outage of any length is caught up on the first run back, at the cost of one extra row and one write per run.
+- `removeOnComplete: 1000` keeps a fired boundary job resident and BullMQ ignores an `add` for a job id it still holds, so the sweep re-emits `promotion.changed` without a job id; the deterministic `promo:{id}:{activate,expire}` ids are used only to schedule and to cancel a future boundary (commit `829d6bb`).
 - The price check in the reconciler is sampled (`max(50, 1 %)` of a category per run, capped at 500), so a single wrong price can survive a run; the exact count comparison and the resampling on every run bound that exposure to minutes, and the manual rebuild remains the override.
 - A five-minute reconciler period is the worst-case repair time for a lost event. Shorter periods cost PostgreSQL reads; the sampled check keeps each run cheap.
 - A drain deletes waiting work; it requires an explicit confirmation parameter.

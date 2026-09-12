@@ -88,10 +88,11 @@ rewritten.
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
 - Human refinement: none needed — `impact-analyzer` confirmed no doc or config referenced the removed sections and every named script (`dev`, `test`, `test:cov`, `lint`) still exists in `package.json`.
 
-### 2026-09-12 — Event contracts and BullMQ setup (issue #7, branch `feat/queue-contracts`, based on PR #27)
+### 2026-09-12 — Event contracts and BullMQ setup (issue #7, commit `829d6bb`)
 
 - Strategy: gave section 6 of `docs/superpowers/specs/2026-09-12-domain-design.md` (the event table, queue split, job defaults and boundary job ids) plus REVIEW.md as the contract, and asked for exactly that and nothing more — one zod schema and type per event, the `queueOfEvent` routing map, `createQueues` on Redis DB 1 with the agreed `defaultJobOptions`, and the deterministic `promo:{id}:{activate|expire}` job ids. No worker, no handler, no admin surface: those are later issues.
 - Human refinement: two rules from REVIEW.md were turned from prose into enforced code rather than left as review checklist items — 3.4 (enqueue after commit) became the `withinTransaction` `AsyncLocalStorage` guard that makes `enqueue()` throw inside a transaction, and 7.3 (no mocks) kept the queue tests on a real Redis (`docker run -p 6399:6379 redis:7-alpine`) instead of an in-memory double. `now` is injected into `schedulePromotionBoundary` so one clock decides the delay (REVIEW.md 1.7).
+- Follow-up in the same commit, after the `impact-analyzer` run: `removePromotionBoundaries` returns BullMQ's per-boundary removal code so a cancel racing a running activate is observable; `readmodel.rebuild.category` is trimmed because it becomes a `SCAN` prefix; `events.ts` records that the REVIEW.md 10.1 correlation id rides in the BullMQ job options, not in the strict payload; and `promotionBoundaryJobId` and `withinTransaction` carry comments naming their ceilings (retained completed job ids, opt-in transaction scope).
 
 ## Judgement, challenges and verification
 
@@ -118,6 +119,12 @@ rewritten.
 - Challenge: two omissions surfaced in review of the domain-design spec. (1) `assign` moved a promotion from `draft` to `active` without producing a `promotion.changed` event, so an assigned promotion would never reach the Redis read model. (2) The `assign` guard checked only `status = 'draft'`, so a draft whose `endsAt` had already passed could still be activated dead, silently violating the "at least one applied promotion is currently valid" assumption.
 - Verification: traced every producer of `promotion.changed` against the events table (section 6) and found `assign` missing; traced the assign `UPDATE` against the create-time validation (`endsAt > now()`) and found it absent from the assign guard.
 - Resolution: commit `1352e88` added `assign` as a `promotion.changed` producer alongside create and cancel; commit `f03d09a` added `and ends_at > now()` to the assign guard, documented the three zero-row cases (not a draft, a concurrent assign won, or the window has already ended), named the two additional required tests (assigning an expired draft; a product created in a promoted category discounted on first read), and mirrored the "or assigning" clause into ADR-0006.
+
+### 2026-09-12 — Queue tests needed a Redis that CI did not have (issue #7, commit `829d6bb`)
+
+- Challenge: the queue integration tests were written against a real Redis on port 6399 (no mocks, REVIEW.md 7.3) and passed locally, but `.github/workflows/ci.yml` ran `npm test` with no Redis at all. The whole integration suite would have failed on the first push, and the local-only green run had hidden it.
+- Verification: caught by the `impact-analyzer` agent before push, which traced the new tests' runtime dependency against the CI job definition rather than only re-running the tests locally.
+- Resolution: the CI job gained a `redis:7-alpine` service on 6399 with a `redis-cli ping` health check, so the same command runs against the same dependency locally and in CI; the README getting-started block documents the local `docker run` equivalent.
 
 ### 2026-09-12 — `local-gates` labels only existed by hand (PR #21, 846f04f, 465aac9)
 
