@@ -637,13 +637,13 @@ it is.
 Evidence: `http-error.ts` exported a class called `AppError`. The fields were
 `status`, `code` and `details`, so the file was right and the class was renamed.
 
-8c.2 One declaration per file. Every `class`, `interface`, `abstract class`,
-`enum` and exported `type` alias lives in its own file named after it, together
-with the private helpers only it uses. A second exported declaration in the same
-file is a finding, and "they are all about one concept" is not a defence: a
-concept is what a directory is for. A type alias counts: a union of string
-literals is a declaration a caller imports by name, not punctuation on the
-interface beside it.
+8c.2 One exported declaration per file — `class`, `interface`, `abstract class`,
+`enum`, `type` alias or function — in a file named after it, together with the
+private helpers only it uses. A second exported declaration in the same file is
+a finding, and "they are all about one concept" is not a defence: a concept is
+what a directory is for. A type alias counts: a union of string literals is a
+declaration a caller imports by name, not punctuation on the interface beside
+it.
 
 Evidence: a 199-line module held two interfaces, an abstract base, two classes,
 a registry and a factory, all of them sharing the concept "discount
