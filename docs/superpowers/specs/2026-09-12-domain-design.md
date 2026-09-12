@@ -156,7 +156,11 @@ create table ingestion_chunks (
   one and its category's), builds a fact object, and runs the promotion rules
   loaded from `pricing_rules` where `type = 'promotion'`. The rule that fires
   with the highest priority names the winning candidate; ties break on the
-  lower promotion id so the result is deterministic. The rules are data, so
+  lower promotion id — applied by the **resolver, after the engine**, because
+  the event vocabulary is `level` alone and no rule can express "the lower id".
+  That one step is code, so it is the one piece of precedence a row edit cannot
+  change; without it two candidates that price identically would be decided by
+  whichever comparison the seed happens to use. The rules are data, so
   the precedence policy changes without a deploy.
 - **The rule decides which promotion wins; it does not decide how one is
   computed.** A matching rule's event names the winner and nothing else:
@@ -248,6 +252,17 @@ create table ingestion_chunks (
   arity one explicitly — one candidate present means that candidate wins — and
   section 12 runs the seed over a one-candidate product for exactly this
   reason.
+- **The seeded rule set, as it ships.** Three rules at distinct priorities, so
+  no two ever land in one bucket: `product-only` (priority 30, category slot
+  `null` → `{ level: 'product' }`), `category-only` (priority 30 is taken, so
+  20, product slot `null` → `{ level: 'category' }`), and `lower-price`
+  (priority 10, both slots present, comparing the two `effectivePriceCents`
+  facts). Distinct priorities are the contract, not a convention:
+  `json-rules-engine` evaluates rules of equal priority concurrently and the
+  order of `results` is not guaranteed, so two seeded rules sharing a priority
+  make the winner depend on promise resolution order. The resolver takes the
+  first event in engine order and logs a priority collision at load, which is a
+  seed defect rather than a policy choice.
 - If no rule fires, no promotion is applied and the base price stands. A rule
   that names a candidate which is not in the fact set is a defect, logged and
   ignored rather than thrown, so a bad rule cannot take the storefront down.
@@ -309,7 +324,9 @@ Resolution query (used by the event handler and reconciler, batched by id):
 
 ```sql
 select p.*, pp.id as pp_id, pp.name as pp_name, pp.discount_type as pp_discount_type, pp.value as pp_value,
-             cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_discount_type, cp.value as cp_value
+             pp.starts_at as pp_starts_at, pp.ends_at as pp_ends_at,
+             cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_discount_type, cp.value as cp_value,
+             cp.starts_at as cp_starts_at, cp.ends_at as cp_ends_at
 from products p
 left join promotions pp on pp.product_id = p.id and pp.status = 'active'
                        and tstzrange(pp.starts_at, pp.ends_at) @> now()
@@ -600,24 +617,20 @@ Dockerfile           one image, command per service
   first read, a budget release leaving `failures` untouched while an
   error increments it, and a reconciler catch-up after an outage longer than
   its period (watermark sweep re-emits the missed boundary).
-- Named case: the **seeded** rule set selects a winner for a two-candidate
-  product **and for a one-candidate product**, the second because a category
-  sale over products with no promotion of their own is the ordinary case and a
-  rule that only compares pairs matches nothing for it. Run the seeded rules
-  twice over the same two-candidate fixture with the candidates' values
-  swapped and assert the winning level _changes_: that proves the seed reads
-  the candidates rather than naming one unconditionally, without asserting
-  which policy it implements.
-- Named case: the **seeded** rule set selects a winner for a two-candidate
-  product. It asserts that a winner exists, never which one — so a seed whose
-  condition matches nothing cannot ship green, while the policy stays editable.
-  Without it, a typo in a fact name means no rule fires, the base price stands
-  and a flash sale sells at full price with every test passing.
+- Named case: the **seeded** rule set, read from the migrated database, applies
+  `min(candidates)` for a two-candidate product and the only candidate for a
+  one-candidate one. It asserts the seed's policy, not merely that a winner
+  exists — a seed whose comparison is inverted would still name _a_ winner and
+  would charge the higher of the two discounted prices through every flash
+  sale. The one-candidate case is there because a category sale over products
+  with no promotion of their own is the ordinary case, and a rule that only
+  compares pairs matches nothing for it: without that assertion, 50 000
+  products publish base prices with the suite green.
 - Named case, required by REVIEW.md 7.4: two candidates active on one product,
   the lower effective price is applied, and a higher-priority rule overrides
-  it. The test inserts both rule rows itself; none of the suite asserts the
-  seeded production default, because a policy that lives in a row is not one a
-  test may freeze.
+  it. That test inserts the rule rows it asserts against. No test reads the row
+  a **running** database holds — the seed is code and is tested as code; the
+  runtime row is data and an operator editing it must not turn CI red.
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
 - Integration: real PostgreSQL and Redis from `docker compose`, database

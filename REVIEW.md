@@ -263,8 +263,14 @@ read-model database only. `KEYS` in any code path is a finding.
 databases; no maintenance operation can reach the queue.
 
 5.5 Pagination is bounded: page size has a hard cap, the cap is enforced server
-side, and the sort is total (a tiebreaker column) so pages cannot repeat or skip
-rows within one version.
+side, and the sort is total — a tiebreaker column — so a single snapshot cannot
+repeat or skip a row. Where the sort key can change under a reader, say so: the
+storefront's ZSET scores are rewritten progressively while a category is
+rescanned, so an offset page taken during a sale can repeat a row or miss one,
+and the route states that window rather than claiming it cannot happen. The
+cursor form (`ZRANGEBYSCORE` with an exclusive `(score, id)` cursor) is the
+upgrade, and "within one version" is not a guarantee this design offers,
+because it has no version.
 
 5.6 A cache entry whose freshness depends on another key states how the two are
 kept consistent. A key that can be written without its index (`HSET` without the
