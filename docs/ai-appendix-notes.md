@@ -29,10 +29,16 @@ rewritten.
   `e2e-tester` and `impact-analyzer` agent definitions, `CLAUDE.md` and
   `CONTRIBUTING.md` so every reviewer (AI or human) cites rule numbers
   instead of restating them.
-- Human refinement: none needed; rules were transcribed from the approved
-  design spec and PR review requirements rather than decided fresh.
+- Human refinement: the first draft of rule 3 was corrected after the
+  `impact-analyzer` run (see the entry below, commit `2f271fa`).
 
 ## Judgement, challenges and verification
+
+### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
+
+- Challenge: the first draft of rule 3 demanded that a category recompute never let a listing show mixed prices, and described per-category serialisation. The approved design (ADR-0006) deliberately accepts a short mixed-price window during a pipelined keyset recompute and serialises with one event-handler instance at concurrency 1. Left as written, the rulebook would have blocked the very implementation the design prescribes.
+- Verification: caught by the `impact-analyzer` agent run before push, which compared every REVIEW.md rule against the design spec on the open design PR.
+- Resolution: rule 3 now names the actual serialisation mechanism and accepts the window, while still flagging unretried half-way stops and per-product round trips (commit `2f271fa`).
 
 ### 2026-09-12 — `local-gates` check masked its own failure (PR #1)
 
