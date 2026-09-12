@@ -190,14 +190,22 @@ create table ingestion_chunks (
   in its own `DiscountCalculator` (`percentage-discount.ts`,
   `fixed-discount.ts`) together with its own value check — the 10 000
   basis-point ceiling belongs to percentage, not to the guard.
-  `effectivePrice` looks one up in `discountCalculators`, a
-  `Record<DiscountType, DiscountCalculator>`, instead of branching on the type;
+  `effectivePrice` looks one up instead of branching on the type;
   arithmetic in `bigint`, the result clamped to `[0, base]` by
   `effectivePrice`. A third kind of
   discount is a migration that widens the enum plus a calculator file the
-  `Record` will not typecheck without, and that is the right cost:
+  `Record<DiscountType, DiscountCalculator>` will not typecheck without, and
+  that is the right cost:
   the case names two, and a vocabulary the reader can enumerate is worth more
   than one that can hold anything.
+- **The union is exhaustive; the database is not.** The enum can widen a deploy
+  before the union does, so the map is reached only through
+  `discountCalculatorFor(discountType: string)`, which checks own properties —
+  a `discountType` of `toString` resolves nothing — and returns
+  `DiscountCalculator | undefined`. `effectivePrice` turns `undefined` into
+  `{ ok: false, reason: 'unknown discount type' }`, so a row the code does not
+  understand yet is a defective row and a log line, not a throwing event
+  handler that retries and leaves the product unpriced.
 - **Selection compares candidates, so each is priced first.** The resolver
   runs `effectivePrice` for every candidate, then runs the engine once over a
   single fact set — the only one, so a rule author has one list to read, and it
@@ -678,7 +686,7 @@ src/
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
     promotion/
-      domain/    promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), effective-price.ts (effectivePrice, pure), pricing-input-error.ts (pricingInputError, the guards), discount-calculator.ts (the DiscountCalculator interface: valueError + discountCents), percentage-discount.ts and fixed-discount.ts (one calculator each, formula and value check together), discount-calculators.ts (Record<DiscountType, DiscountCalculator>, the only lookup), candidate-selection.ts (runs the engine over already-loaded rules, pure)
+      domain/    promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), effective-price.ts (effectivePrice, pure), pricing-input-error.ts (pricingInputError, the guards), discount-calculator.ts (the DiscountCalculator interface: valueError + discountCents), percentage-discount.ts and fixed-discount.ts (one calculator each, formula and value check together), discount-calculators.ts (Record<DiscountType, DiscountCalculator>), discount-calculator-for.ts (the only lookup; undefined for a type the union does not have), candidate-selection.ts (runs the engine over already-loaded rules, pure)
       db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
       jobs/      scheduling.ts
@@ -727,8 +735,10 @@ Dockerfile           one image, command per service
   directories deep does not carry a relative path that breaks silently when a
   file moves. Production code under `src/` keeps relative specifiers: `tsc`
   does not rewrite path aliases on emit, so an alias in `src/` would compile to
-  an import Node cannot resolve. Tests are never emitted, so nothing reaches
-  the runtime through the alias.
+  an import Node cannot resolve — and it fails at container start, not at
+  build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts`
+  enforces that (`40cf7ba`). Tests are never emitted, so nothing reaches the
+  runtime through the alias.
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
 - Integration: real PostgreSQL and Redis from `docker compose`, database
