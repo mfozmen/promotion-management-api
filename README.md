@@ -69,8 +69,8 @@ Further endpoints are documented as they land.
 - **TDD**: every change starts with a failing test (red-green-refactor).
 - **Conventional Commits** for all commit messages.
 - All changes land through pull requests — no direct pushes to `main`.
-- A PR merges only once CI is green — CI runs the SonarCloud scan and waits for its quality gate, and the scan is skipped on a PR that touches nothing SonarCloud reads, which is why SonarCloud's own check is not a required check — every SonarCloud finding on the PR is fixed before hand-off (see [CONTRIBUTING.md](./CONTRIBUTING.md)), the advisory Claude AI review has run, the applicable local-agent labels are present (`local-gates`, PR #21; which of them apply is computed from the PR's changed paths, PR #46), and the owner has approved the `needs-human-check` hand-off in a comment — the owner cannot approve their own PR, so that comment is the merge signal, not a GitHub review approval.
-- Merges to `main` are squash merges.
+- A PR merges only once the required checks `ci` and `claude-review` are green. `ci` runs the SonarCloud scan and waits for its quality gate; the scan is skipped on a PR that touches nothing SonarCloud reads, which is why SonarCloud's own check is not required. Every SonarCloud finding on the PR is fixed before hand-off (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
+- `local-gates` runs on every PR and computes which local-agent labels apply; it does not block the merge, but its labels are read at hand-off. When the checks are green, the threads are resolved and the labels are on, the PR is labelled `needs-human-check` and the owner is mentioned; merge happens only after the owner's approving comment, as a squash.
 - Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check.
 
 See [ADR.md](./ADR.md) for architectural decisions, [Form 5 — AI Appendix](./Form%205_AI%20Appendix.docx) for AI usage documentation, and [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution process.
