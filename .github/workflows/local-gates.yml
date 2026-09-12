@@ -1,8 +1,9 @@
 name: Local gates
 
-# The e2e-tester and impact-analyzer agents run locally before every push
-# (see CONTRIBUTING.md). Their verdicts are recorded as PR labels, and this
-# required check passes only while both labels are present. A new push strips
+# The local agents (e2e-tester, impact-analyzer, docs-scribe and, for design
+# or scenario work, architecture-critic) run before every push (see
+# CONTRIBUTING.md). Their verdicts are recorded as PR labels, and this required
+# check passes only while every applicable label is present. A new push strips
 # the labels so a stale verdict never covers new commits.
 #
 # Lives in its own workflow so label events do not re-run the full CI job.
@@ -30,15 +31,23 @@ jobs:
       - name: Strip verification labels on new commits
         if: github.event.action == 'synchronize'
         run: |
-          gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --remove-label e2e-verified --remove-label impact-verified
-          echo "::error::New commits pushed; re-run the e2e-tester and impact-analyzer agents and re-apply the labels."
+          gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" \
+            --remove-label e2e-verified --remove-label impact-verified \
+            --remove-label docs-verified --remove-label architecture-verified
+          echo "::error::New commits pushed; re-run the local agents and re-apply their labels."
           exit 1
 
-      - name: Require e2e-verified and impact-verified labels
+      - name: Require the applicable verification labels
         run: |
           labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')
+          files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
+          required="e2e-verified impact-verified docs-verified"
+          if grep -qE '^(ADR\.md|docs/superpowers/specs/)' <<<"$files" || grep -qx scenario <<<"$labels"; then
+            required="$required architecture-verified"
+          fi
+          echo "required: $required"
           missing=0
-          for l in e2e-verified impact-verified; do
+          for l in $required; do
             if ! grep -qx "$l" <<<"$labels"; then
               echo "::error::missing label $l"
               missing=1
