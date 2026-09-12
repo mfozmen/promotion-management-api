@@ -168,7 +168,7 @@ create table ingestion_chunks (
   `{ type: 'selectCandidate', params: { level: 'product' | 'category' } }`.
   The arithmetic is not in the rule, not in a registry and not in a parameter
   bag — it is one pure function over a typed row.
-- **One function, one vocabulary.** `applyPromotion(basePriceCents, promotion)`
+- **One function, one vocabulary.** `effectivePrice(basePriceCents, promotion)`
   in `src/modules/promotion/` takes
   `Pick<Promotion, 'discountType' | 'value'>` — `discountType` of
   `percentage | fixed`, `value` in basis points or minor units — and returns a
@@ -187,7 +187,7 @@ create table ingestion_chunks (
   the case names two, and a vocabulary the reader can enumerate is worth more
   than one that can hold anything.
 - **Selection compares candidates, so each is priced first.** The resolver
-  runs `applyPromotion` for every candidate, then runs the engine once over a
+  runs `effectivePrice` for every candidate, then runs the engine once over a
   single fact set — the only one, so a rule author has one list to read, and it
   is the flat shape given below. The candidates' windows are not in it: the
   resolution query already filters to active promotions, so a window fact could
@@ -251,7 +251,7 @@ create table ingestion_chunks (
   and the highest-priority match wins, which is what keeps the case's "at most
   one active promotion" true at the applied level. Letting several stack would
   be a change to that one selection step, not to the pricing function.
-- **A failed computation is not a silent base price.** `applyPromotion` returns
+- **A failed computation is not a silent base price.** `effectivePrice` returns
   `{ ok: false, reason }` for a row the boundary should have rejected — a value
   above 10 000 basis points, a base price outside the safe-integer range. The
   event handler logs it with the `promotionId` and writes the price the
@@ -281,7 +281,7 @@ create table ingestion_chunks (
 - **The slot is the effective price.** "Slot non-null" in the table below means
   `productEffectivePriceCents` / `categoryEffectivePriceCents`, never the
   discount type or the value. A candidate that exists but cannot be priced —
-  `applyPromotion` returned `{ ok: false }` — is `null` in **all three** of its
+  `effectivePrice` returned `{ ok: false }` — is `null` in **all three** of its
   keys plus a defect log carrying the `promotionId`, so it is absent to the
   rules rather than half-present. Without this the two readings diverge on a
   real customer: null the keys and the category discount applies with the
@@ -662,7 +662,7 @@ src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
-    promotion/   promotion.ts (the Promotion row as a type), effective-price.ts (applyPromotion, pure), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
+    promotion/   promotion.ts (the Promotion row as a type), active-promotion.ts (the narrowed type and isActive, which reads the window), effective-price.ts (effectivePrice, pure), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
     pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts

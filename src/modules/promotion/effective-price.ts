@@ -1,4 +1,3 @@
-import type { ActivePromotion } from './active-promotion.js';
 import type { Promotion } from './promotion.js';
 
 /** A failure carries no price, so a caller cannot publish one by mistake. */
@@ -7,7 +6,7 @@ export type PricingOutcome =
 
 const BASIS_POINTS_PER_UNIT = 10_000n;
 
-export function applyPromotion(
+export function effectivePrice(
   basePriceCents: number,
   promotion: Pick<Promotion, 'discountType' | 'value'>,
 ): PricingOutcome {
@@ -33,18 +32,4 @@ export function applyPromotion(
 
   // A discount larger than the price is a free product, not a defect.
   return { ok: true, effectivePriceCents: Number(discount > base ? 0n : base - discount) };
-}
-
-/**
- * `now` is PostgreSQL's `now()`, read and injected by the caller: the database
- * clock decides activity, and nothing re-evaluates the window on the Node clock.
- */
-export function isActive(promotion: Promotion, now: Date): promotion is ActivePromotion {
-  const nowMs = now.getTime();
-
-  return (
-    promotion.status === 'active' &&
-    promotion.startsAt.getTime() <= nowMs &&
-    nowMs < promotion.endsAt.getTime()
-  );
 }
