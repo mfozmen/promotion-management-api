@@ -140,6 +140,16 @@ two nodes both accept writes. Its nearest relative is divergence between the
 write model and the read model, which the reconciler and the drift metric
 already cover under the read-path checks.
 
+## How a number is taken
+
+A single reading that straddles a pass criterion is noise, not a result: the
+same build on the same machine produced a p99 of 106 ms and then 63 ms against
+a route that serialises one small object. So every number compared against a
+criterion below is the median of at least three runs, and a run whose readings
+disagree across the threshold reports the spread and the median rather than
+picking one. Report the concurrency you used; a p99 at `-c 50` and at `-c 100`
+are different measurements and only the second is the flash-sale case.
+
 ## Pass criteria (fail the run if any is violated)
 
 - Zero non-2xx responses under read load, zero timeouts.
