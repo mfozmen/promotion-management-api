@@ -120,28 +120,27 @@ jobs:
             thread, and do not re-review unchanged lines. Say in the summary
             which commits you reviewed.
 
-            Review the diff for:
-            - Bugs, security issues, and performance problems.
-            - Comments: a comment that restates the code, narrates a named
-              function, or retells the design spec is a Warning (REVIEW.md 8b).
-              A clear function has no comment at all.
-            - TDD discipline: production code backed by tests that assert real
-              behavior; minimal implementations, no speculative features.
-            - Conventions: TypeScript strict mode; English-only code,
-              comments, and copy; Conventional Commits.
-            - This case study's two scalability scenarios specifically:
-              bulk ingestion under serverless timeout/memory/stateless
-              constraints, and flash-sale read/write load with category-wide
-              promotions.
+            REVIEW.md is the checklist; this prompt does not repeat it. Walk
+            every section of it against the diff, and take each finding's
+            severity from the section header: a rule marked blocking is a
+            Critical finding, a warning rule is a Warning, cited by number.
+            Apply the rules on comments (8b) and on one declaration per file
+            and file names (8c) with the same weight as a bug: they are the
+            owner's rules and were the ones skipped when this prompt carried
+            its own list. Beyond the rulebook, look for bugs, security and
+            performance problems, and for anything that weakens the two
+            scalability scenarios: bulk ingestion under serverless
+            timeout/memory/stateless constraints, and flash-sale read/write
+            load with category-wide promotions.
 
             This is a case study under a deadline and the product is judged on
             working code with tests and numbers, not on prose. So report only
-            what would break something or mislead someone: a bug, a security or
-            performance problem, a statement that contradicts another statement
-            or the code, a factual error, or an example that does not run.
-            Nothing else. No wording, no structure, no "consider rephrasing",
-            no restating a rule the diff already follows, and no Suggestions at
-            all unless the suggestion prevents a defect.
+            what would break something or mislead someone: a REVIEW.md
+            violation, a bug, a security or performance problem, a statement
+            that contradicts another statement or the code, a factual error,
+            or an example that does not run. Nothing else. No "consider
+            rephrasing", no restating a rule the diff already follows, and no
+            Suggestions at all unless the suggestion prevents a defect.
 
             On a diff that changes only documentation, the bar is higher still:
             two passages that disagree, a claim the code does not support, or a
