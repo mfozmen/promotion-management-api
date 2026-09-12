@@ -198,6 +198,30 @@ describe('unexpected errors', () => {
     });
   });
 
+  it('bounds a 4xx message, so a handler cannot mirror a long id back', async () => {
+    const res = await request(
+      appThrowing(new HttpError('NOT_FOUND', `Product ${'9'.repeat(4_000)} not found`)),
+    ).get('/boom');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.message.length).toBeLessThanOrEqual(200);
+  });
+
+  it('tells a client when to come back on the two codes that mean come back later', async () => {
+    const res = await request(appThrowing(new HttpError('BACKPRESSURE', 'queue is full'))).get(
+      '/boom',
+    );
+
+    expect(res.status).toBe(429);
+    expect(res.headers['retry-after']).toBe('5');
+  });
+
+  it('sends no retry hint on an error retrying cannot fix', async () => {
+    const res = await request(appThrowing(new HttpError('NOT_FOUND', 'nope'))).get('/boom');
+
+    expect(res.headers['retry-after']).toBeUndefined();
+  });
+
   it('masks a thrown non-error value and still logs its type', async () => {
     const captured = captureLogger();
     const res = await request(appThrowing('something went wrong', captured)).get('/boom');

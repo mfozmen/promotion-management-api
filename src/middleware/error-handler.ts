@@ -15,13 +15,23 @@ interface ErrorMapping {
 }
 
 const MAX_DETAILS = 20;
+/** A 4xx message crosses verbatim, so the bound belongs here rather than in
+ *  every handler that writes one. Matches the bound on the log side. */
+const MAX_MESSAGE = 200;
+/** The two codes whose whole meaning is "come back later". Without a number a
+ *  client retries as fast as it can, which amplifies the outage it met. */
+const RETRY_AFTER_SECONDS = '5';
+const RETRIABLE: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
+  'BACKPRESSURE',
+  'READ_MODEL_NOT_READY',
+]);
 
 const SERVER_FAULT = { status: 500, code: 'INTERNAL', message: 'Internal server error' } as const;
 
 /** Public wording for a 5xx. A code without an entry says nothing to a client. */
-const SERVER_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = {
+const SERVER_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = Object.freeze({
   READ_MODEL_NOT_READY: 'The read model is not ready yet; retry shortly',
-};
+});
 
 /**
  * Express 5 throws a `RangeError` for a status outside [100, 999], so an
@@ -37,7 +47,7 @@ function clientError(err: unknown): ErrorMapping | undefined {
     return undefined;
   }
 
-  return { status, ...(CLIENT_ERRORS.get(status) ?? OTHER_CLIENT_ERROR) };
+  return { status, ...(CLIENT_ERRORS[status] ?? OTHER_CLIENT_ERROR) };
 }
 
 /**
@@ -92,8 +102,11 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       );
     }
     const body: { error: Omit<ErrorMapping, 'status'> } = {
-      error: { code: known.code, message: known.message },
+      error: { code: known.code, message: known.message.slice(0, MAX_MESSAGE) },
     };
+    if (RETRIABLE.has(known.code)) {
+      res.set('Retry-After', RETRY_AFTER_SECONDS);
+    }
     if (known.details !== undefined) {
       // Bounded at the envelope every producer crosses, not at one of them: a
       // 100kb body of array items is thousands of zod issues, and an

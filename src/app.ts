@@ -8,6 +8,8 @@ const BODY_LIMIT = '100kb';
 
 export function createApp(logger: Logger = rootLogger): Express {
   const app = express();
+  // Free to remove, and every response including a 404 carries it otherwise.
+  app.disable('x-powered-by');
   app.use(httpLogger(logger));
   app.use(express.json({ limit: BODY_LIMIT }));
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import express, { type Express, type RequestHandler } from 'express';
+import express, { type Express, type Request, type RequestHandler, type Response } from 'express';
 import request from 'supertest';
 import { z } from 'zod';
 import { validate } from '../../src/middleware/request-validator.js';
@@ -400,5 +400,38 @@ describe('validate: nothing configured', () => {
     const res = await request(appWith('/ping', validate({}))).get('/ping');
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe('where a params schema may be mounted', () => {
+  const idIsNumber = validate({ params: z.object({ id: z.coerce.number() }) });
+  const handler = (req: Request, res: Response) => {
+    res.json({ id: req.params.id, type: typeof req.params.id });
+  };
+
+  it('parses on the route it is attached to', async () => {
+    const app = express();
+    app.get('/things/:id', idIsNumber, handler);
+    app.use(errorHandler);
+
+    const res = await request(app).get('/things/7');
+
+    expect(res.body).toEqual({ id: 7, type: 'number' });
+  });
+
+  it('rejects every request when mounted on the router instead', async () => {
+    // Express fills req.params per layer match, so at router level there is no
+    // :id yet and the schema sees {}. The mistake fails loudly on the first
+    // request rather than quietly handing the handler an unparsed string.
+    const app = express();
+    const router = express.Router();
+    router.use(idIsNumber);
+    router.get('/things/:id', handler);
+    app.use(router);
+    app.use(errorHandler);
+
+    const res = await request(app).get('/things/7');
+
+    expect(res.status).toBe(400);
   });
 });

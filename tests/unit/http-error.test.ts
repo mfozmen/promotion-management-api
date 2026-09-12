@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HttpError } from '../../src/shared/http-error.js';
+import { CLIENT_ERRORS, HttpError, STATUS } from '../../src/shared/http-error.js';
 
 describe('HttpError', () => {
   it('keeps its status, code and message', () => {
@@ -19,5 +19,19 @@ describe('HttpError', () => {
     expect(new HttpError('VALIDATION_ERROR', 'Invalid request body', details).details).toEqual(
       details,
     );
+  });
+});
+
+describe('the error tables', () => {
+  // The readonly types are erased at build time, so without the freeze a
+  // consumer of the built JavaScript could rewrite one row and change the
+  // error body of every concurrent request in the process.
+  it('cannot be rewritten at runtime', () => {
+    expect(() => {
+      (STATUS as Record<string, number>).NOT_FOUND = 500;
+    }).toThrow(TypeError);
+    expect(() => {
+      (CLIENT_ERRORS as Record<number, unknown>)[413] = { code: 'INTERNAL', message: 'leaked' };
+    }).toThrow(TypeError);
   });
 });

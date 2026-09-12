@@ -6,6 +6,12 @@ import { captureLogger } from '../capture-logger.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe('unknown routes', () => {
+  it('does not advertise the framework it runs on', async () => {
+    const res = await request(createApp()).get('/api/health');
+
+    expect(res.headers['x-powered-by']).toBeUndefined();
+  });
+
   it('answers with the JSON error shape instead of Express HTML', async () => {
     const res = await request(createApp()).get('/api/does-not-exist');
 

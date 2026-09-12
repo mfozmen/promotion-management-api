@@ -513,11 +513,12 @@ never repeats a free-form value the caller sent: a value is not an identifier
 and there is nothing to fix by seeing it again, so a 404 does not echo the path
 and a parser's message is replaced rather than forwarded.
 
-A schema's own message is part of the response, so a custom or refinement
-message must not interpolate the value it rejected. The validator forwards what
-the schema produced, so a refinement whose message is built from the received
-input puts the caller's value back in the body with nothing in the middleware
-to stop it.
+This binds every message that reaches a response, not only the ones a
+middleware writes. A handler's own 4xx message crosses as written: the envelope
+bounds its length and inspects nothing, so a message naming a row the caller
+never saw is a finding wherever it was built. A schema's message is the same
+case one layer down — a custom or refinement message must not interpolate the
+value it rejected, because the validator forwards what the schema produced.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
 another row's fields, which they never had. `Unrecognized key: "discountTyp"` is

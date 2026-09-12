@@ -66,6 +66,11 @@ const rejectedKeys = (error: ZodError): string[] =>
 /**
  * Declared parts only: a part with no schema reaches the handler raw.
  *
+ * A `params` schema attaches to the route, never to the router: Express fills
+ * `req.params` per layer match, so at router level there is no placeholder yet
+ * and the schema sees an empty object. That rejects every request rather than
+ * passing one through unparsed, which is the better of the two failures.
+ *
  * Callers own nested strictness — `.strict()` reaches the top level only, so a
  * nested object declares `z.strictObject(...)` itself or a field misspelled
  * inside it is dropped in silence (ADR-0008).
