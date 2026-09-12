@@ -213,11 +213,6 @@ rewritten.
   the response and no rule in the module reads them. The remaining gap
   (`status`, `startsAt`, `endsAt`) stays with issue #28.
 
-## Overall reflection
-
-- Estimated ratio: pending.
-- Key takeaway: pending.
-
 ### 2026-09-12 — Pricing core: advisory AI review caught a defect four local agents missed (issue #8, PR #29, commit `a60877d`)
 
 - Challenge: `applyPromotion` called `BigInt()` on its two `number` parameters
@@ -297,3 +292,40 @@ rewritten.
   and the rules it cited, which is a closed loop — none of them checked it
   against the architecture the design intended. Validation that never leaves the
   artefact under review cannot detect a wrong shape.
+
+### 2026-09-12 — Pricing core: the reshaped module rounded the wrong way (issue #8, PR #29, commit `eb1abb9`)
+
+- Corrects the entry above: the rounding direction it recorded as an open
+  question deferred to issue #45 was a defect, and is fixed here.
+- Challenge 1 — the reshaped percentage strategy floored the PRICE,
+  `(cents * (10000 + value)) / 10000`, contradicting ADR-0004 and REVIEW.md 1.4,
+  which floor the DISCOUNT so the customer pays at most one minor unit more than
+  the ideal. Base 999 at 25 % off gave 749 where the design says 750.
+- Verification 1: the `impact-analyzer` (FAIL) and the `architecture-critic`
+  (REVISE) caught it independently, and the critic supplied the form that
+  satisfies the design and the shared-with-ingestion requirement at once:
+  `cents + (cents * value) / 10000`. bigint division truncates toward zero, which
+  floors the adjustment for a discount and is provably identical to the old
+  expression for any non-negative value, so ingestion's markups keep the prices
+  they were reviewed against. Issue #45 is updated — the rounding question is
+  settled rather than deferred, and only the mechanical `priceRow` refactor
+  remains.
+- Challenge 2 — a markup on the promotion path was silently clamped to the base
+  price and reported `ok: true`, indistinguishable from no promotion firing. It
+  is now a returned rejection naming the value. The lower clamp stays silent: a
+  discount larger than the price is a free product, not a defect.
+- Challenge 3 — the `e2e-tester` found that an event with missing or non-numeric
+  `params` threw a TypeError; a rule row is not a TypeScript value, so that is a
+  returned rejection now too.
+- Verification of the fix: 29 tests pass at 100 % statement, branch, function and
+  line coverage; `npm run lint` and `npm run typecheck` are clean and the four
+  local agents were re-run.
+- Honest lesson: the previous entry recorded the rounding direction as an open
+  question deferred to a follow-up issue. The agents' verdict was that deferring
+  a contradiction with a blocking rule is not a remedy — the correct expression
+  existed and cost one line.
+
+## Overall reflection
+
+- Estimated ratio: pending.
+- Key takeaway: pending.

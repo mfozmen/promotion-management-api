@@ -3,9 +3,9 @@
  * ADR-0004).
  *
  * The vocabulary is shared with the ingestion rules deliberately: the
- * percentage and cents arithmetic has one implementation (REVIEW.md 1.3), and
- * `priceRow` is to be refactored onto this registry rather than keeping its
- * own copy.
+ * percentage and cents arithmetic is to have one implementation
+ * (REVIEW.md 1.3). Ingestion still carries its own copy on an unmerged
+ * branch; issue #45 moves it onto this registry.
  */
 
 export type PromotionStatus = 'draft' | 'active' | 'cancelled';
@@ -41,9 +41,10 @@ export type PricingOutcome =
 const BASIS_POINTS_PER_UNIT = 10_000n;
 
 /**
- * One arithmetic step, in whole minor units. `cents` is non-negative and
- * `params.value` is a safe integer by the time a strategy sees them, so
- * `BigInt` cannot raise inside one and truncating division is a floor.
+ * One arithmetic step, in whole minor units. Every caller — `applyPromotions`
+ * here, the ingestion wrapper once issue #45 lands — owes a strategy a non-negative
+ * `cents` and a `value` that passed `validate`, which is what lets `apply`
+ * skip the `BigInt` guards and treat truncating division as a floor.
  */
 export interface Adjustment {
   /** Names the parameter it cannot price, or `null` when it can. */
@@ -100,12 +101,14 @@ export function adjustmentFor(type: string): Adjustment | undefined {
  *
  * Every rejection returns the base price with a reason instead of throwing:
  * `BigInt` raises a `RangeError` on a fractional, `NaN` or infinite number,
- * and one unusable product must not take down the batch around it — the same
- * contract `priceRow` keeps for a vendor row.
+ * and one unusable product must not take down the batch around it.
+ *
+ * Only this path rejects a price-raising adjustment. Ingestion calls the
+ * strategies directly, where a markup is the whole point.
  */
 export function applyPromotions(
   basePriceCents: number,
-  event: AdjustmentEvent | UncheckedEvent | null,
+  event: UncheckedEvent | null,
 ): PricingOutcome {
   if (!Number.isSafeInteger(basePriceCents) || basePriceCents < 0) {
     return {
@@ -131,19 +134,22 @@ export function applyPromotions(
   // without `params` type-checks nowhere and reaches here all the same.
   const value: unknown = event.params?.value;
   if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
-    return rejected(`adjustment value ${String(value)} is not a whole number in range`);
+    // Quoted when it is a string, or `"-2500"` and `-2500` would produce the
+    // same message and the second would read as a contradiction.
+    const shown = typeof value === 'string' ? `"${value}"` : String(value);
+    return rejected(`adjustment value ${shown} is not a whole number in range`);
   }
   const invalid = adjustment.validate(value);
   if (invalid !== null) return rejected(invalid);
-
-  const base = BigInt(basePriceCents);
-  const adjusted = adjustment.apply(base, { value });
-
   // A markup is legitimate for ingestion and a rule-authoring defect here, and
   // the two are told apart only by which layer ran the rule — so it is
   // reported rather than quietly clamped, or a stray `+1500` copied from the
-  // seeded ingestion rules would look exactly like no promotion at all.
-  if (adjusted > base) return rejected(`adjustment ${value} raises the price above the base`);
+  // seeded ingestion rules would look exactly like no promotion at all. On the
+  // sign, not on the result: a markup too small to move a cheap product's
+  // price is the same defect and must not slip through rounding.
+  if (value > 0) return rejected(`adjustment ${value} would raise the price above the base`);
+
+  const adjusted = adjustment.apply(BigInt(basePriceCents), { value });
 
   // A discount larger than the whole price is not a defect, it is a free
   // product: clamped, never negative (REVIEW.md 1.5).

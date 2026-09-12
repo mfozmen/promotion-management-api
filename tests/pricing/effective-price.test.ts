@@ -103,12 +103,27 @@ describe('applyPromotions', () => {
     expect(applyPromotions(10_000, percent(1500))).toEqual({
       ok: false,
       effectivePriceCents: 10_000,
-      reason: 'adjustment 1500 raises the price above the base',
+      reason: 'adjustment 1500 would raise the price above the base',
     });
     expect(applyPromotions(10_000, cents(500))).toEqual({
       ok: false,
       effectivePriceCents: 10_000,
-      reason: 'adjustment 500 raises the price above the base',
+      reason: 'adjustment 500 would raise the price above the base',
+    });
+  });
+
+  it('reports a markup too small to move a cheap price', () => {
+    // 15 % of 6 minor units floors to nothing, so testing the result rather
+    // than the sign would let exactly the defect above through unreported.
+    expect(applyPromotions(6, percent(1500))).toEqual({
+      ok: false,
+      effectivePriceCents: 6,
+      reason: 'adjustment 1500 would raise the price above the base',
+    });
+    expect(applyPromotions(0, cents(500))).toEqual({
+      ok: false,
+      effectivePriceCents: 0,
+      reason: 'adjustment 500 would raise the price above the base',
     });
   });
 
@@ -157,7 +172,7 @@ describe('applyPromotions', () => {
     expect(applyPromotions(10_000, { type: 'adjustCents', params: { value: '-500' } })).toEqual({
       ok: false,
       effectivePriceCents: 10_000,
-      reason: 'adjustment value -500 is not a whole number in range',
+      reason: 'adjustment value "-500" is not a whole number in range',
     });
   });
 
