@@ -452,8 +452,12 @@ _Promotions and inheritance_
 
 - A product created in a category with an active promotion is discounted on
   its first read, with no extra event.
-- A product carrying both a product-level and a category-level promotion gets
-  the product-level price, even when the category discount is larger.
+- A product carrying both a product-level and a category-level active promotion
+  gets the lower of the two effective prices, in the customer's favour, and a
+  higher-priority rule overrides that default. The test inserts the rule row it
+  asserts against: a test that pinned the seeded production default would be
+  asserting a configuration value, and a policy that lives in a row is not a
+  policy a test may freeze.
 - Cancelling the category promotion restores base price for every product
   that had no promotion of its own, and leaves the others untouched.
 

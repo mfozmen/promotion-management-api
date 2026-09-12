@@ -192,23 +192,18 @@ create table ingestion_chunks (
   them is what this design tried and the owner reversed — the two look alike
   only at the level of "something changes a number".
 
-- **The seeded default is product-level precedence.** A product's own
-  promotion wins over its category's, even when the category discount is
-  larger. This is not a free choice: REVIEW.md 7.4 makes it a required edge
-  case and this section states it with its consequence for
-  admins, so the rule that ships in the migration encodes it. The alternative
-  — whichever price is lower — is the same policy as "precedence by larger
-  discount", which ADR-0004 rejects as surprising to an admin who set a
-  product price deliberately. That two names for one policy sat in a rejected
-  list and a seeded default at the same time is how the contradiction survived
-  this long.
+- **The seeded default is the lower effective price, in the customer's favour**
+  (owner decision). Whichever candidate prices the product lower is applied, so
+  a 50 % category sale also covers an accessory carrying its own 5 % promotion,
+  which is what a shopper expects a sale to mean. Ties break on the lower
+  promotion id. A higher-priority rule overrides the default for a product
+  whose price must not fall further.
+- **No test asserts that default.** A test pinning it would be asserting a
+  configuration value, and the row would then be unchangeable without turning
+  CI red — a policy that cannot change is not data. Tests insert the rule row
+  they assert against and check the mechanism: given this rule, the engine
+  selects this candidate.
 
-- The commercial exception has a home without a code change: a product whose
-  price must not fall further, because of a margin floor, a supplier agreement
-  or a minimum advertised price, gets a higher-priority rule naming it, and
-  that rule wins over the product-level default rule. This is why the policy is a
-  row: the default serves the customer, the exception serves the contract, and
-  neither is a branch in a resolver.
 - Exactly one rule applies per product. Rules are evaluated in priority order
   and the highest-priority match wins, which is what keeps the case's "at most
   one active promotion" true at the applied level. Letting several stack would
@@ -573,11 +568,11 @@ Dockerfile           one image, command per service
   first read, a budget release leaving `failures` untouched while an
   error increments it, and a reconciler catch-up after an outage longer than
   its period (watermark sweep re-emits the missed boundary).
-- Named case, required by REVIEW.md 7.4: a product carrying both a
-  product-level and a category-level active promotion is priced by the
-  product-level one, **even when the category discount is larger**. It is named
-  here because it is the one test that pins the precedence policy, and a policy
-  no test pins is a policy that drifts.
+- Named case, required by REVIEW.md 7.4: two candidates active on one product,
+  the lower effective price is applied, and a higher-priority rule overrides
+  it. The test inserts both rule rows itself; none of the suite asserts the
+  seeded production default, because a policy that lives in a row is not one a
+  test may freeze.
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
 - Integration: real PostgreSQL and Redis from `docker compose`, database
