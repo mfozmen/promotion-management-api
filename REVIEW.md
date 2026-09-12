@@ -527,6 +527,11 @@ not a neighbouring record, not anything the caller did not already have. Cap
 the echoed identifier at 64 characters and truncate rather than omit, so a
 long value cannot turn an error body into a mirror.
 
+Evidence: forbidding the echo outright would have left a client unable to tell
+which of its own rows a bulk request rejected, and the first draft of the
+exception had no bound at all, so a multi-kilobyte key would have come straight
+back in the error body.
+
 8.4 No internal detail escapes: no stack trace, no SQL text, no connection
 string, no secret, in a response or a log line.
 
