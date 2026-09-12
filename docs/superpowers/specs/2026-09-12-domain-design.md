@@ -187,7 +187,7 @@ create table ingestion_chunks (
   the one that prices lower for the customer is applied, so a category flash
   sale deeper than a product's own promotion wins (owner decision,
   2026-09-12). This is not a free choice: REVIEW.md 7.4 makes it a required
-  edge case and section 3 of this document states it with its consequence for
+  edge case and section 4 of this document states it with its consequence for
   admins, so the rule that ships in the migration encodes it. The alternative
   — unconditional product-level precedence — would show a customer a worse
   price than the campaign advertises, which is why ADR-0004 now lists it as a
@@ -196,7 +196,7 @@ create table ingestion_chunks (
 - The commercial exception has a home without a code change: a product whose
   price must not fall further, because of a margin floor, a supplier agreement
   or a minimum advertised price, gets a higher-priority rule naming it, and
-  that rule wins over the largest-discount rule. This is why the policy is a
+  that rule wins over the lower-price rule. This is why the policy is a
   row: the default serves the customer, the exception serves the contract, and
   neither is a branch in a resolver.
 - Exactly one rule applies per product. Rules are evaluated in priority order
@@ -458,7 +458,7 @@ on its first read; expiry and scheduled starts happen on time.
    Writes are progressive by design; building `category:{c}:new` and switching with `RENAME` is the upgrade if the mixed window ever matters.
 3. Storefront reads are pure Redis: `ZRANGE ... BYSCORE` for listings, `HGETALL` for detail. PostgreSQL load during the sale is the handler's scan only.
 4. New product in the category: `POST /api/products` → `product.upserted` → recompute finds the active category promotion → discounted entry written before the product is visible at all (a product exists in the storefront only once its hash exists).
-5. Cancel: `status = 'cancelled'` → delayed jobs removed → immediate `promotion.changed` → category rescanned → base prices restored.
+5. Cancel: `status = 'cancelled'` → delayed jobs removed → immediate `promotion.changed` → category rescanned → each product falls back to its own active promotion if it has one, else to base price.
 6. Scheduled start/end: the delayed `activate`/`expire` jobs fire at the boundary; the read model changes within the handler's scan time, not on a cache TTL.
 
 Base-price changes during a sale (vendor ingestion, the only update channel) go through

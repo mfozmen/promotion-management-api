@@ -454,9 +454,10 @@ _Promotions and inheritance_
   its first read, with no extra event.
 - A product carrying both a product-level and a category-level promotion gets
   whichever of the two prices lower, so a deeper category discount wins over
-  the product's own.
+  the product's own; an exact tie goes to the lower promotion id.
 - Cancelling the category promotion restores base price for every product
-  that had no promotion of its own, and leaves the others untouched.
+  that had no promotion of its own, and returns every product that has one to
+  its own promotion's price.
 
 _Concurrency_
 
