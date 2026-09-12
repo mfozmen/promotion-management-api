@@ -20,20 +20,39 @@ routes under `src/`.
 
 ## Setup
 
+This agent runs when the owner asks for it, not before every push. Running it
+on every pull request measured an unchanged application over and over. So when
+you are asked to run, run properly: the numbers are the point.
+
+The application comes up through Docker Compose, one command. Nothing comes up
+without the compose file, so the system under test is the compose project, not
+a server you launched by hand.
+
 1. `npm ci` only if `node_modules` is missing.
-2. Start dependencies if a `docker-compose.yml` exists: `docker compose up -d --wait`.
-3. Pick a free port (e.g. 3100 + random) and start the API in the background:
-   `PORT=<port> npm run dev > e2e-server.log 2>&1 &`. Record the PID.
-4. Wait until `curl -sf localhost:<port>/api/health` returns 200 (max 30 s). If it
-   never does, print the last 40 lines of `e2e-server.log` and FAIL.
+2. Bring the stack up and wait for it to be healthy:
 
-Always tear down at the end (kill the server PID; leave docker services up
-unless you started them). Delete `e2e-server.log` after quoting what matters.
+   ```
+   docker compose up -d --wait   # exits non-zero if any service is unhealthy
+   ```
 
-Windows notes: `jq` may be missing, use a `node -e` one-liner for JSON
-assertions. `kill` on the npm PID does not stop the tsx/node child; find the
-listener PID with `Get-NetTCPConnection -LocalPort <port>` and run
-`taskkill //PID <pid> //F //T`.
+3. **The host port is 3000**, published by the compose file. Every health check
+   and every measurement uses it. Only one run can hold it at a time, which is
+   deliberate: two runs measuring the same machine at once produce numbers
+   neither of them can trust, so runs serialise. If another session holds the
+   port, ask that session to finish rather than starting a second stack.
+4. Wait until `curl -sf localhost:3000/api/health` returns 200, at most 30
+   seconds. If it never does, print `docker compose logs --tail 40 api` and
+   FAIL.
+5. **If something else holds port 3000, stop and say so; never kill it.** The
+   process you did not start may be another run mid-measurement or a server the
+   owner is using, and you cannot tell an orphan from a live server. Reaping one
+   is a person's decision, not yours.
+
+Teardown is `docker compose down`. Leave the `db` and `redis` volumes alone
+unless you created them.
+
+Windows notes: `jq` may be missing, so use a `node -e` one-liner for JSON
+assertions.
 
 ## What to test, in this order
 
@@ -52,15 +71,10 @@ listener PID with `Get-NetTCPConnection -LocalPort <port>` and run
    that category, cancel while reading. Verify invariants afterwards by
    reading the state back. Exactly one winner where the rule says one.
 4. **Load** with `npx autocannon@8` (no global install):
-   - `GET /api/products/:id` (hottest endpoint) at `-c 100 -d 15`.
-   - `GET /api/products?category=...&sort=effectivePrice` at `-c 50 -d 15`.
+   - `GET /products/:id` (hottest endpoint) at `-c 100 -d 15`.
+   - `GET /products?category=...&sort=effectivePrice` at `-c 50 -d 15`.
    - Mixed read load while a promotion is created and cancelled in a loop.
      Record requests/s, p50/p99 latency, non-2xx count, and errors/timeouts.
-   - **Any number compared against a pass criterion is the median of at least
-     three runs.** A single reading that straddles a threshold is noise: the
-     same build on the same box has produced p99 of 39 ms and 81 ms at `-c 50`
-     minutes apart. If the readings disagree across the criterion, report the
-     spread rather than picking one, and say how many runs it took.
 5. **Resource usage** during load. Sample the server process every 2 s:
    `powershell -NoProfile -c "(Get-Process -Id <pid>).WorkingSet64"` on
    Windows, `ps -o rss= -p <pid>` elsewhere. Report peak RSS in MB and whether
@@ -69,10 +83,63 @@ listener PID with `Get-NetTCPConnection -LocalPort <port>` and run
    fixture file the caller names, kill it midway with SIGTERM, run it again,
    and verify the final row count and no duplicates. Report peak RSS.
 
+7. **Deadlocks** (REVIEW.md 3.7). Provoke two concurrent writers that touch
+   the same rows in opposite orders: a category recompute against a
+   product-level assign on a product in that category, and two ingestion
+   chunks upserting overlapping SKU sets. Observe that no request exceeds its
+   timeout and that the PostgreSQL log carries no `40P01 deadlock_detected`.
+   The compose file needs `command: postgres -c log_min_messages=warning` for
+   the log to carry it at all; `-c log_lock_waits=on -c deadlock_timeout=200ms`
+   also reports the waits that precede one.
+8. **N+1 queries** (REVIEW.md 6.4). Call the product list at `pageSize=10` and
+   again at `pageSize=100`, plus the promotion list and the storefront read
+   that resolves the applied promotion. Count statements per request from
+   `log_statement=all` (or `log_min_duration_statement=0`). The count must not
+   scale with the page size: a list of 100 that issues 101 statements is a
+   FAIL whatever its p99 says.
+9. **Cache stampede** on both caches the design has, the Redis read model
+   (ADR-0006) and the 60 s pricing rule set (ADR-0005). Expire the hot key or
+   sit on the TTL boundary, then run `autocannon -c 100` against it. Observe
+   one rebuild rather than a hundred: PostgreSQL statement count during the
+   window near one, and one `select` from `pricing_rules` per worker per
+   window. The in-flight promise cache is the intended mechanism and this is
+   the test that proves it holds under concurrency.
+10. **Memory leaks**, as a pass condition rather than an observation. Run
+    60 seconds of load on the storefront read, then 60 seconds idle, three
+    times. Heap used must return within 10 % of the pre-load baseline each
+    cycle; a monotonic climb across the three is a FAIL. Do the same for a
+    worker after N ingestion chunks. Name the usual suspects when it fails:
+    BullMQ workers and event listeners not closed on teardown, a rule-set
+    loader promise never released, an unbounded `Map` used as a cache.
+
+Split-brain is deliberately not here. This stack has one PostgreSQL, one
+Redis, no replicas and no leader election, so there is no partition in which
+two nodes both accept writes. Its nearest relative is divergence between the
+write model and the read model, which the reconciler and the drift metric
+already cover under the read-path checks.
+
+## How a number is taken
+
+A single reading that straddles a pass criterion is noise, not a result: the
+same build on the same machine produced a p99 of 106 ms and then 63 ms against
+a route that serialises one small object. So every _measured_ number — latency,
+throughput, RSS — is the median of at least three runs, and a run whose readings
+disagree across the threshold reports the spread and the median rather than
+picking one. Report the concurrency you used; a p99 at `-c 50` and at `-c 100`
+are different measurements and only the second is the flash-sale case.
+
+Presence checks are not measurements and run once: a deadlock is in the log or
+it is not, a statement count either scales with page size or it does not, a
+cache expiry either rebuilds once or a hundred times. Repeating those three
+times only multiplies the runtime of items 7 to 10. Re-run one only when its
+first result is ambiguous, and say so.
+
 ## Pass criteria (fail the run if any is violated)
 
 - Zero non-2xx responses under read load, zero timeouts.
-- p99 latency for `GET /api/products/:id` under 100 ms locally.
+- No deadlock in the PostgreSQL log, no statement count that scales with page
+  size, one rebuild per cache expiry, and heap returning to its baseline.
+- p99 latency for `GET /products/:id` under 100 ms locally.
 - Peak RSS under 256 MB for the API, under 128 MB for an ingestion run.
 - Every invariant in section 2 holds after every race scenario in section 3.
 
@@ -93,3 +160,9 @@ Findings: <bulleted, most severe first, with reproduction command>
 
 Be economical: do not re-run passing scenarios, do not test endpoints out of
 scope, quote logs only where they explain a failure.
+
+Never open a GitHub issue. A finding that this branch can fix is fixed here; a
+finding that belongs to another branch goes in your report as one line for the
+coordinator to route. Filing moves the work sideways and makes the pull request
+look cleaner than it is; thirty-nine open issues in one day came from exactly
+that.

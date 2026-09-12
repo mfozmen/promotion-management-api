@@ -709,7 +709,8 @@ change.
 12.2 A deliberate shortcut carries a comment naming its ceiling and the upgrade
 path, so the reviewer can tell a decision from an oversight.
 
-12.3 A PR delivers one story. Scope creep is a finding; open another issue.
+12.3 A PR delivers one story. Scope creep is a finding; the extra work goes in
+its own pull request, not in an issue to be dealt with later.
 
 12.4 Dependencies: prefer the standard library, then something already
 installed. A new dependency for a few lines of code is a finding.
@@ -735,6 +736,36 @@ and names the `.claude/agents/*.md` definitions updated when the change adds an
 endpoint, job, cache or store.
 
 13.5 An architectural change without a matching `ADR.md` update is a finding.
+
+13.6 A SonarCloud finding is fixed before the pull request goes to the owner.
+Read the findings in SonarCloud's own pull request comment; an unreviewed
+security hotspot counts as a finding. Silencing one instead needs the
+repository owner's approval and an entry in `sonar.issue.ignore.multicriteria`
+in `sonar-project.properties` whose comment names the rule, the scope and why
+the rule cannot apply there. Widening an existing scope so that a new finding
+falls inside it is a finding. Accepting a finding, or marking it won't-fix or
+false-positive, in the SonarCloud web interface is the same bypass by another
+route, and is a finding for the same reason.
+
+This rule is carried by review, not enforced by a check, and that is a
+deliberate stopping point rather than an oversight: the free plan's quality
+gate judges ratings, coverage, duplication and hotspot review, so a CRITICAL
+code smell passes it, and a gate condition on issue count needs a
+custom gate, which SonarCloud asks to be paid for on this project's plan. The
+owner reported that from the SonarCloud interface on PR #56; no API answers it.
+The alternative — a CI step querying SonarCloud's issue API — was built,
+reviewed twice and deleted in PR #56 as machinery that restated what
+SonarCloud's pull request comment already says. Before rebuilding it, read that
+entry in `docs/ai-appendix-notes.md`. What follows from the rule being a rule:
+a finding that disappears between two analyses without a matching change in
+this repository is asked about, and `impact-analyzer` checks the comment on
+every pre-push round.
+
+Evidence: the one approved ignore is `plsql:S1192` on
+`src/shared/db/migrations/*.sql`. The repeated literals there are a schema
+qualifier and an enum value in DDL: SQL has no constant to declare for either
+(PR #56, `6a0a9c1`).
+
 ---
 
 ## 13b. The rulebook learns

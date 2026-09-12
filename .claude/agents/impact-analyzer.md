@@ -44,6 +44,17 @@ use `gh pr diff <n>`.
    Coverage must remain 100 % on lines, branches, functions and statements.
    For every dependent found in steps 2 and 3, name the test that covers the
    interaction, or say "uncovered".
+   Then read SonarCloud's own pull request comment
+   (`gh pr view <n> --comments`, the comment from `sonarqubecloud`) and list
+   every finding it reports, an unreviewed security hotspot included. No CI
+   step enforces this — REVIEW.md 13.6 is a rule, not a check, because a gate
+   condition on issue count needs a custom gate, which SonarCloud asks to be
+   paid for on this project's plan; the owner reported that from the
+   SonarCloud interface on PR #56, and no API answers it — so this round is
+   where an open finding is caught. A finding silenced without an approved
+   `sonar.issue.ignore.multicriteria` entry in `sonar-project.properties`
+   counts as open. If the pull request skipped the scan (it touched nothing
+   under `sonar.sources`/`sonar.tests`), say so instead.
 7. **Case-study lens.** Ask explicitly:
    - Scenario A: does the change keep ingestion chunked, resumable and
      idempotent under a timeout and a memory cap? Could it load a whole file
@@ -65,13 +76,20 @@ Direct dependents: <symbol -> callers (file:line) -> risk: none/low/high + why>
 Async/indirect dependents: <path -> effect -> covered by <test> | uncovered>
 Data/contract changes: <table/endpoint -> breaking? -> consumers>
 Docs: <ADR/README updates needed, or none>
-Verification: lint/typecheck/tests status, coverage %
+Verification: lint/typecheck/tests status, coverage %, SonarCloud findings on the PR
 Scenario A / B / concurrency: <one line each: safe | risk + why>
 Blockers: <anything that must change before push; empty if PASS>
 Suggestions: <optional, short>
 ```
 
 FAIL if any dependent is uncovered and plausibly broken, if coverage drops
-below 100 %, if a breaking contract change is undocumented, or if a
+below 100 %, if SonarCloud reports an open finding on the pull request
+(REVIEW.md 13.6), if a breaking contract change is undocumented, or if a
 scenario-lens question has a concrete "risk" answer. Be economical: no
 speculation without a file:line, no restating the diff.
+
+Never open a GitHub issue. A finding that this branch can fix is fixed here; a
+finding that belongs to another branch goes in your report as one line for the
+coordinator to route. Filing moves the work sideways and makes the pull request
+look cleaner than it is; thirty-nine open issues in one day came from exactly
+that.
