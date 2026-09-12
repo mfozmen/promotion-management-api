@@ -64,7 +64,9 @@ jobs:
           # Current and previous paths, so a file moved out of the specs directory still counts.
           files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)')
           required="e2e-verified impact-verified docs-verified"
-          if grep -qE '^(ADR\.md$|docs/superpowers/specs/)' <<<"$files" || grep -qx scenario <<<"$labels"; then
+          # Design documents, the modules that implement Scenario A and B, and the workers all
+          # require the architecture-critic; the scenario label is the manual override.
+          if grep -qE '^(ADR\.md$|docs/superpowers/specs/|src/modules/(vendor|promotion|pricing)/|src/workers/)' <<<"$files" || grep -qx scenario <<<"$labels"; then
             required="$required architecture-verified"
           fi
           echo "required: $required"
