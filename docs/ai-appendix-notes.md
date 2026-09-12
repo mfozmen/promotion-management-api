@@ -111,7 +111,11 @@ rewritten.
     in the code while the identical claim stood unchanged in the ADR.
   - 8c (names match, commit `ef1d8e5`): `src/shared/http-error.ts` exported
     one class, `AppError`; a reader who saw the name in a stack trace grepped
-    for `app-error` and found nothing.
+    for `app-error` and found nothing. Renumbering the section after the
+    owner's ruling then dropped the "same thing is called the same thing
+    everywhere" rule instead of moving it, which the owner's next review
+    caught; it is back as 8c.6, with ADR-0004 stating the promotion
+    precedence rule three different ways in one section as its evidence.
   - 7.4b (a control is proved in the configuration production runs, commit
     `936ab84`): twice in one pull request a control passed review while never
     firing in production — Express prints a raw stack on every environment
