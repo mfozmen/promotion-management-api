@@ -16,3 +16,7 @@ this repository. Two stories never touch the same file here.
 Ids are permanent. A reworded criterion keeps its id, and a deleted one retires
 it rather than freeing it for reuse, so a report line from an old run still
 means something.
+
+Ids follow the order the criteria appear in the story, so they are stable. The
+order cases run in is a separate thing: cheapest first, so a run fails early.
+The file says both, and they do not have to agree.

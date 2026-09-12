@@ -50,8 +50,7 @@ jobs:
         if: github.event.action == 'synchronize'
         run: |
           gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" \
-            --remove-label e2e-verified --remove-label impact-verified \
-            --remove-label docs-verified --remove-label architecture-verified \n            --remove-label cases-verified
+            --remove-label e2e-verified,impact-verified,docs-verified,architecture-verified,cases-verified
           echo "::error::New commits pushed; re-run the local agents and re-apply their labels."
           exit 1
 

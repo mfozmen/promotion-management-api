@@ -27,8 +27,11 @@ story uses and let it skip.
 
 ## Inputs
 
-- The issue number the pull request implements. If the pull request implements
-  no story, say so and stop: there is nothing to derive.
+- The issue number the pull request implements. A pull request can legitimately
+  touch `src/` without implementing a story — a refactor, a fix to something
+  already shipped. Report `CASES RESULT: NO STORY`, name what the diff does, and
+  write no file. That is a pass: the gate wants to know the question was asked,
+  not to invent cases for work no story describes.
 - The issue's acceptance criteria, its Covers line, and any owner decision
   recorded in its comments. A decision in a comment outranks the original body.
 
@@ -64,14 +67,19 @@ about someone's need.
 
 ## What a case looks like
 
-Each acceptance criterion becomes exactly one case. Never merge two criteria
-into one case, and never split one into two: the mapping has to stay readable
-in both directions.
+Every criterion maps to at least one case id, and every case says which criteria
+it covers. That is the property to protect: a reader holding a criterion can find
+the case that verifies it, and a reader holding a failed case can find the
+criterion it broke. A journey case covering consecutive steps lists all of them.
+
+What that rules out is a criterion with no case at all, and a case that covers
+nothing the story asked for.
 
 ```
 ### 13-1
 
 - Actor: shopper browsing a category
+- Covers: criterion 1 of #13
 - Precondition: GET /api/products
 - Given: the read model holds 40 products in category Accessories
 - When: GET /api/products?category=Accessories&sort=effectivePrice&order=asc&page=2&pageSize=20
@@ -100,7 +108,7 @@ Order the cases cheapest-first, so a run fails early.
 ## Report format
 
 ```
-CASES RESULT: PASS | FAIL
+CASES RESULT: PASS | FAIL | NO STORY
 Story: #<n>, <title>
 File: docs/e2e-cases/<n>.md
 Cases: <n> written, <n> unchanged
