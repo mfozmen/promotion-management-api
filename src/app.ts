@@ -3,8 +3,7 @@ import type { Logger } from 'pino';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { httpLogger, logger as rootLogger } from './shared/logger.js';
 
-// JSON routes carry a single entity. This guards them only: a multipart vendor
-// upload is not parsed here and brings its own byte limit.
+// JSON only: a multipart vendor upload brings its own byte limit (ADR-0008).
 const BODY_LIMIT = '100kb';
 
 export function createApp(logger: Logger = rootLogger): Express {

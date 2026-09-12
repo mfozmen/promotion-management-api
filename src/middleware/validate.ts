@@ -14,17 +14,12 @@ const details = (error: ZodError): { path: string; message: string }[] =>
   error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message }));
 
 /**
- * Parses each declared part and replaces it with the typed result, so a handler
- * reads raw input only where it declared no schema.
- *
- * Schemas are made strict here rather than per request, both to keep the hot
- * path free of schema work and because an unknown field must be a 400: a
- * misspelled `catgeory` filter returning the unfiltered catalogue is the worse
- * failure. `.strict()` reaches the top level only — a nested object declares
- * `z.strictObject(...)` itself, or a field misspelled inside it is dropped in
- * silence.
+ * Callers own nested strictness: `.strict()` reaches the top level only, so a
+ * nested object declares `z.strictObject(...)` itself or a field misspelled
+ * inside it is dropped in silence (ADR-0008).
  */
 export function validate(schemas: RequestSchemas): RequestHandler {
+  // Strict once, at construction: never per request.
   const strict = PARTS.flatMap((part) => {
     const schema = schemas[part];
 

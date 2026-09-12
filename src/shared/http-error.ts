@@ -1,8 +1,4 @@
-/**
- * An error a handler raises on purpose: the middleware turns it into the API
- * error shape. The status and code are for the client to branch on, the message
- * for a human.
- */
+/** Status and code are the client's to branch on; the message is for a human. */
 export class AppError extends Error {
   constructor(
     readonly status: number,

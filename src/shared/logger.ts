@@ -3,24 +3,16 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { pino, type Logger } from 'pino';
 import { pinoHttp, type HttpLogger } from 'pino-http';
 
-/**
- * The error a wrapper wraps. drizzle-orm builds its message out of the failing
- * statement and its bound parameters; the driver error underneath names the
- * constraint without the values, and carries the SQLSTATE.
- */
+/** drizzle-orm composes its message from the statement; the cause names the constraint and carries the SQLSTATE. */
 function rootCause(err: Error): Error {
   return err.cause instanceof Error ? err.cause : err;
 }
 
-/** A stack frame, so a value carrying a newline and `at ` cannot pose as one. */
+/** Anchored so a bound value carrying a newline and `at ` cannot pose as a frame. */
 const FRAME = /^\s+at .*:\d+:\d+\)?$/;
 
-/**
- * Frames only. The message is dropped by counting its lines rather than by
- * matching them, because it is the part an ORM builds out of the failing
- * statement and the bound row.
- */
 function stackFrames(err: Error): string {
+  // The message is skipped by line count, not by pattern: it is attacker-shaped.
   return String(err.stack)
     .split('\n')
     .slice(String(err.message).split('\n').length)
@@ -28,14 +20,8 @@ function stackFrames(err: Error): string {
     .join('\n');
 }
 
-/**
- * An error that carries a statement composed its message out of it, so its own
- * words are never safe. The driver error underneath names what failed, and most
- * such messages name only the constraint — but some quote the offending value
- * (`invalid input syntax for type uuid: "..."`), so everything from the first
- * quoted value on is dropped, and the rest bounded.
- */
 function safeMessage(err: Error): string {
+  // One carrying a statement composed its message from it; others quote values.
   const { query, params } = err as Error & { query?: unknown; params?: unknown };
   if (query !== undefined || params !== undefined) {
     return 'database query failed';
@@ -45,20 +31,14 @@ function safeMessage(err: Error): string {
 }
 
 /**
- * Errors reach the log as a whitelist, under an `error` key. pino's own `err`
- * serializer writes an error's own fields, and a driver error keeps the
- * statement and the bound row there and in its message — which is the request
- * body with the customer's data in it. Frames locate the bug; the statement
- * belongs in the database's log.
- *
- * The `err` key is avoided rather than reconfigured: pino-http wraps a custom
- * `err` serializer around pino's own, so the same function would run on an
- * already-flattened object here and on a real Error elsewhere. One key, one
- * shape.
+ * Contract for every log site (ADR-0009): errors go through this, under an
+ * `error` key, never handed to a logger as an object — a driver error carries
+ * the statement and bound row in its fields and its message, and pino-http
+ * wraps a custom `err` serializer, so registering it there feeds it two shapes.
  */
 export function serializeError(err: unknown): Record<string, unknown> {
   if (!(err instanceof Error)) {
-    // Not stringified: an unknown thrown value may itself be the leak.
+    // Never the value itself: an unknown thrown object may be the leak.
     return { type: typeof err };
   }
 
@@ -75,11 +55,7 @@ export function serializeError(err: unknown): Record<string, unknown> {
 
 export const logger = pino();
 
-/**
- * An incoming id is untrusted: a value carrying a newline forges whole log
- * lines, one carrying CR injects a response header. Anything that is not a
- * short safe token is replaced rather than rejected.
- */
+/** An id carrying a newline forges log lines; one carrying CR injects a header. */
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._-]{1,128}$/;
 
 export function correlationId(req: IncomingMessage, res: ServerResponse): string {
@@ -97,9 +73,7 @@ export function httpLogger(instance: Logger): HttpLogger {
     genReqId: correlationId,
     // Binds the id as `reqId` on `req.log`, so a handler's own lines carry it.
     quietReqLogger: true,
-    // Headers, body and query string are never serialised, so no credential or
-    // personal data can reach a line. pino's `redact` would have nothing left
-    // to match and is deliberately not set.
+    // Headers, body and query string never reach a line (ADR-0009).
     serializers: {
       req: (req: IncomingMessage) => ({
         id: req.id,
