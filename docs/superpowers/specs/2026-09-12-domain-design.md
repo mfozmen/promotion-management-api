@@ -151,23 +151,55 @@ create table ingestion_chunks (
 - Facts given to the engine, per candidate: `level` (`product` or `category`),
   `discountType`, `value`, `basePriceCents`, `stockQuantity`, `category`,
   `startsAt`, `endsAt`.
-- **The formula comes from the rule, not from the code.** A matching rule's
-  event is `{ type, params }` in the same vocabulary the ingestion rules use:
-  `adjustPercentBps` with `params.value` in basis points, `adjustCents` with
-  `params.value` in minor units. The rule row therefore carries both the
-  condition and the arithmetic to apply, and a promotion whose discount works
-  differently is a new rule row, not a new branch in a resolver.
-- What stays in code is the instruction set, not the policy: one strategy per
-  event type behind a single `Adjustment` interface
-  (`apply(cents: bigint, params): bigint`), registered by type name. A new kind
-  of discount is a new strategy class plus rules that emit it; no existing
-  function grows a branch. An event naming an unregistered type is a defect,
-  logged and skipped, never a crash and never a silently wrong price.
-- `applyPromotions(basePriceCents, event)` looks the strategy up by
-  `event.type` and applies it. Both layers share the registry, so the
-  percentage and fixed arithmetic has exactly one implementation
-  (REVIEW.md rule 1.3): ingestion runs several matched rules in priority order
-  to build a base price, promotion applies the single winning rule to it.
+- **The calculation comes from the rule, not from the code.** A matching
+  rule's event carries the name of the calculator to run and everything that
+  calculator needs:
+
+  ```json
+  {
+    "type": "applyDiscount",
+    "params": {
+      "calculator": "PercentageDiscount",
+      "valueBasisPoints": 5000
+    }
+  }
+  ```
+
+  `params` is free-form in `json-rules-engine`, so the row decides both when it
+  fires and what runs. A discount that works differently is a new row naming a
+  different calculator, never a new branch in a resolver.
+
+- **A factory turns that name into an object.** Each calculator is a class
+  implementing one interface:
+
+  ```ts
+  interface DiscountCalculator {
+    calculate(baseCents: bigint, params: unknown): bigint;
+  }
+  ```
+
+  An abstract base holds what every calculator must not get wrong: parameters
+  are validated with the calculator's own zod schema before use, arithmetic is
+  `bigint`, the result is floored to the cent and clamped into
+  `[0, baseCents]`. A subclass supplies only the formula, so a new calculator
+  cannot reintroduce a rounding or clamping bug that was already fixed once.
+
+- `CalculatorFactory.create(name)` resolves the name against a registry that
+  maps a string to a constructor. Adding `TieredDiscount` or `BuyXGetY` is a
+  new class, one registry line and rule rows that name it; no existing function
+  changes. A name the registry does not know is a defect, not a crash: the
+  promotion resolver logs it and applies no discount, so the storefront falls
+  back to the base price, and ingestion treats it as a `rules` fault that stops
+  the job rather than silently mispricing 500 000 rows.
+- `applyPromotions(baseCents, event)` is the whole call site: resolve the
+  calculator from `event.params.calculator`, validate `event.params` against
+  its schema, run it. Both layers share the registry, so the percentage and
+  fixed arithmetic has exactly one implementation (REVIEW.md rule 1.3):
+  ingestion runs every matched rule in priority order to build a base price,
+  promotion applies the single winning rule to it.
+- Seeded calculators at launch: `PercentageDiscount` (`valueBasisPoints`) and
+  `FixedDiscount` (`valueCents`). They exist because the case names percentage
+  and fixed-amount discounts, not because the design needs exactly two.
 - The seeded default rules reproduce the case's requirement: a product-level
   candidate outranks a category-level one, and each emits the adjustment its
   promotion describes. They are rows, not an `if`, so "largest discount wins"
