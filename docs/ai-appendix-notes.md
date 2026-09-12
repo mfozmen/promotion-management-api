@@ -366,6 +366,12 @@ rewritten.
 - Verification: raised by the `architecture-critic` on its third pass and recorded rather than closed at the time; the fallback chain was read against node-postgres's documented defaults instead of assumed, and both failing shapes are pinned in `tests/unit/config.test.ts`.
 - Resolution: `parseUrl` now rejects an empty path and a bare `/` with "the URL has no database name". `REDIS_URL` is deliberately exempt, because `redisUrlForDb` overwrites the path with the validated `REDIS_READ_MODEL_DB`/`REDIS_QUEUE_DB` index, so a path there decides nothing; a test pins that a pathless `REDIS_URL` still derives `/0` and `/1`. ADR-0003 records both halves of the asymmetry. 55 tests, 100 % on all four metrics.
 
+### 2026-09-12 — A contract recorded in halves (PR #34, `1031af6`)
+
+- Challenge: the fifth `architecture-critic` pass (verdict **SOUND**) found that the previous commit had written down one half of the contract `.claude/agents/e2e-tester.md` states. The agent's deadlock step also requires `log_lock_waits=on` and `deadlock_timeout=200ms` on the `postgres` service, which this branch owns — not on issue #19's `api` service. With the defaults (off, one second) the first branch to add a write endpoint would have read a log with no lock waits and reported "no deadlock detected" from a stack that could not have shown one: a green result proving nothing.
+- Verification: the critic read the agent definition end to end rather than the half the previous commit had quoted, and `docker compose config` was re-run against the changed service.
+- Resolution: the two knobs are set on the `postgres` service with the reason in a comment. The same pass also caught a commit hash quoted in `README.md` — CLAUDE.md mandates squash merge, so the hash would not survive it (REVIEW.md 8b.5); the parenthetical is gone and the sentence is complete without it. One finding was routed rather than fixed here: `e2e-tester.md` has no not-applicable path for a compose project that publishes no `api` service, so the gate it defines cannot pass on an infrastructure-only branch. That file is owned by main and belongs to the issue #19 branch.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
