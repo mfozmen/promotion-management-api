@@ -99,7 +99,7 @@ per vendor. A rule enforced only in zod is a finding when the same rule protects
 an invariant. The one exception is `promotions.params`, whose shape the database
 cannot know: each calculator's zod schema is the boundary, so a row edited
 straight in `psql` can carry a parameter no API request could. That is the price
-of policy in data (ADR-0004); the calculators clamp, and the admin path is the
+of policy in data (ADR-0004); the calculators clamp the result into `[0, baseCents]`, and the admin path is the
 only supported writer.
 
 2.5 A concurrency claim in a comment or a PR description must have a test that

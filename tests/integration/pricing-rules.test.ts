@@ -50,7 +50,7 @@ describe('seeded pricing rules', () => {
   it('stamps updated_at on an edit, because the writer is a person at a psql prompt', async () => {
     const [edited] = await db()
       .update(pricingRules)
-      .set({ priority: 40 })
+      .set({ priority: 10 }) // the value it already holds, so no other test's premise moves
       .where(eq(pricingRules.name, 'vendor commission'))
       .returning({ createdAt: pricingRules.createdAt, updatedAt: pricingRules.updatedAt });
 
