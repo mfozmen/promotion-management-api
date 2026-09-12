@@ -211,6 +211,32 @@ rewritten.
   describes is therefore history, not the shipped state — see "A CI gate built,
   reviewed twice, then deleted" under Judgement.
 
+### 2026-09-12 — Rewritten base merged into the pricing branch, two conflicts resolved (PR #29, merge `4e1a650`)
+
+- Strategy: the design base `origin/docs/promotion-rule-engine` was rewritten
+  (its tip is the merge `c769001`), so it was merged into `feat/pricing-core`
+  rather than rebased onto, keeping the review trail of the four reshapes this
+  pull request already carries. Two files conflicted: `REVIEW.md` and
+  `docs/ai-appendix-notes.md`.
+- Human refinement, `REVIEW.md`: the branch's own one-declaration-per-file
+  block, numbered 13.6 there, was dropped and the base's file taken, because
+  that rule reached `main` as 8c.2 and 13.6 is now the SonarCloud rule. The branch's other
+  edit was kept deliberately — rule 1.3 points at
+  `src/modules/promotion/effective-price.ts` (commit `2d9004c`), since
+  `src/modules/pricing/` does not exist after the revert `1e624f5` and PR #39
+  owns that directory. Taking the base wholesale would have pointed the
+  single-implementation rule at a path with nothing in it.
+- Numbering note for readers of the older entries below: the entry "the
+  abstraction did not match the domain" (`1e624f5`) records one-declaration-
+  per-file as REVIEW.md 13.6, which was true when it was written. The rule is
+  now 8c.2. History in this file is not rewritten, so the pointer is given here
+  instead.
+- Human refinement, `docs/ai-appendix-notes.md`: both sides had appended
+  different entries about different pull requests, which is the expected shape
+  of a conflict in an append-only file. Both sides were kept, ordered by date,
+  and the seam re-read so the result is two entries rather than one spliced
+  paragraph. No entry from either side was edited or dropped.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -691,6 +717,32 @@ rewritten.
 - Ratio note: this episode is the clearest case so far of AI-generated work being
   net negative until a human asked what the tool already did. The script was
   well-tested, well-reviewed and unnecessary; the value came from deleting it.
+
+### 2026-09-12 — Pricing core: an error message named a unit that was wrong half the time (issue #8, PR #29, commit `a0d7277`)
+
+- Challenge: `applyPromotion`'s second guard rejects a `value` that is not a
+  whole positive number. It runs before the discount type is branched on, and
+  `Promotion.value` is basis points for a `percentage` promotion and minor units
+  only for a `fixed` one — the type's own doc comment says so. The AI-written
+  message claimed minor units for both, so an operator debugging a rejected
+  percentage promotion would have been told the wrong unit.
+- Verification: read, not run — the defect is in a string, so no test could fail
+  on it. It was found by reading the guard against `src/modules/promotion/promotion.ts`
+  while checking the ADR's claim that the retired calculator shape is
+  unconstructible. The test for that branch already described the check without
+  a unit, so the message and its own test disagreed.
+- Resolution, before and after:
+  - before: `discount value ${promotion.value} is not a whole, positive number of minor units`
+  - after: `discount value ${promotion.value} is not a whole, positive number`
+- The check is unit-agnostic, so the message states no unit. The two messages
+  that do name a unit keep it, because each sits behind a type check: the base
+  price guard says minor units and the percentage ceiling guard says basis
+  points. `tests/promotion/effective-price.test.ts` was updated in the same
+  commit. 21 tests pass at 100 % statement, branch, function and line coverage.
+- Lesson: the units convention is carried by one doc comment on a field and then
+  restated in prose in three places. Every restatement is a copy that can go
+  stale, and the guard that runs before the branch is the one place where no
+  single unit is correct.
 
 ## Overall reflection
 
