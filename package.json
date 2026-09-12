@@ -16,6 +16,8 @@
     "test:cov": "vitest run --coverage",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
     "prepare": "husky"
   },

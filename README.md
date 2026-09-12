@@ -54,8 +54,8 @@ parallel. The template is named after the checkout and clones carry a timestamp,
 worktrees can share one server without dropping each other's databases. Run one integration
 suite per worktree at a time, though: the template is rebuilt at the start of each run, so two
 runs in the same checkout would pull it out from under each other. Regenerate the
-migrations with `npx drizzle-kit generate` after changing `src/shared/db/schema.ts`, and apply
-them to a running database with `DATABASE_URL=... npx drizzle-kit migrate` (drizzle-kit reads
+migrations with `npm run db:generate` after changing `src/shared/db/schema.ts`, and apply
+them to a running database with `DATABASE_URL=... npm run db:migrate` (drizzle-kit reads
 `DATABASE_URL`, not `TEST_DATABASE_URL`, and defaults to port 5432).
 
 ## Project structure

@@ -89,7 +89,7 @@ create table promotions (
 
 create type pricing_rule_type as enum ('ingestion', 'promotion');
 
-create table pricing_rules (                    -- json-rules-engine rules, both layers; seeded by migration 0001
+create table pricing_rules (                    -- json-rules-engine rules, both layers; migration 0001 seeds type='ingestion' only
   id          bigint generated always as identity primary key,
   type        pricing_rule_type not null,
   name        text not null unique,             -- lets the seed re-apply without doubling a rule
@@ -401,12 +401,12 @@ where p.id = any($1);
 
 ## 5. Read model (Redis DB 0)
 
-| Key                   | Type | Content                                                                                                                                     |
-| --------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, ingestionRulesVersion, updatedAt` |
-| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                          |
-| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                             |
-| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                        |
+| Key                   | Type | Content                                                                                                                                   |
+| --------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, pricingRulesVersion, updatedAt` |
+| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                        |
+| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                           |
+| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                      |
 
 - `GET /api/products/:id` = `HGETALL product:{id}` (zero PostgreSQL reads).
 - `GET /api/products` = `ZRANGE <zset> -inf +inf BYSCORE LIMIT offset size`
