@@ -40,7 +40,7 @@ create table products (
   category               text not null,
   base_price_cents       bigint not null check (base_price_cents >= 0),
   stock_quantity         integer not null check (stock_quantity >= 0),
-  pricing_rules_version  bigint,                -- set by ingestion, null for manual creates
+  pricing_rules_version  bigint,                -- max(updated_at) of the rule set, epoch ms; null for manual creates
   ingest_job_id          bigint,                 -- ingestion job that last wrote this product (identity, monotonic)
   ingest_source_offset   bigint,                 -- byte offset of that row inside its file
   created_at             timestamptz not null default now(),
@@ -190,7 +190,8 @@ create table ingestion_chunks (
   promotion wins over its category's, even when the category discount is
   larger. This is not a free choice: REVIEW.md 7.4 makes it a required edge
   case and section 3 of this document states it with its consequence for
-  admins, so the rule that ships in the migration encodes it. The alternative
+  admins. The `pricing_rules` row that encodes it ships with the promotion
+  rules (#36); migration `0001` on this branch seeds the ingestion rules only. The alternative
   — whichever price is lower — is the same policy as "precedence by larger
   discount", which ADR-0004 rejects as surprising to an admin who set a
   product price deliberately. That two names for one policy sat in a rejected

@@ -42,8 +42,10 @@ export const products = pgTable(
     basePriceCents: bigint('base_price_cents', { mode: 'number' }).notNull(),
     stockQuantity: integer('stock_quantity').notNull(),
     // Null for manual creates; ingestion stamps the rules version it priced the row with.
-    // bigint because that version is the rules' max(updated_at) in epoch seconds, which
-    // leaves int4 in 2038.
+    // bigint because that version is the rules' max(updated_at) in epoch MILLISECONDS.
+    // Seconds would collapse two rule edits made inside the same second into one version,
+    // so a version-keyed rule cache would never reload and a row would claim a version
+    // that does not identify the rules that priced it. Milliseconds also leave int4 in 1970.
     pricingRulesVersion: bigint('pricing_rules_version', { mode: 'number' }),
     // Written together by the ingestion upsert. The check below removes the one-column-null
     // branch, not every branch: a manually created product has both null, so the last-writer
