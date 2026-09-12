@@ -91,7 +91,7 @@ describe('effectivePrice', () => {
   it('rejects a percentage above 100 % rather than clamping it to a free product', () => {
     expect(effectivePrice(10_000, active({ value: 10_001 }))).toEqual({
       ok: false,
-      reason: 'percentage discount is above 10000 basis points',
+      reason: 'discount is above 10000 basis points',
     });
   });
 });

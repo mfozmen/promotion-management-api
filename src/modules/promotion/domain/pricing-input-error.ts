@@ -1,3 +1,4 @@
+import { discountCalculators } from './discount-calculators.js';
 import type { Promotion } from './promotion.js';
 
 export function pricingInputError(
@@ -10,9 +11,6 @@ export function pricingInputError(
   if (!Number.isSafeInteger(promotion.value) || promotion.value <= 0) {
     return 'discount value is not a whole, positive number';
   }
-  if (promotion.discountType === 'percentage' && promotion.value > 10_000) {
-    return 'percentage discount is above 10000 basis points';
-  }
 
-  return null;
+  return discountCalculators[promotion.discountType].valueError(promotion.value);
 }
