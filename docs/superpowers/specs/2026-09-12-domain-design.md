@@ -670,7 +670,7 @@ src/
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
-  shared/        config.ts, db/ (schema.ts, client.ts, migrations/), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
+  shared/        config.ts, db/ (schema/ one file per table, schema.ts re-exporting, client.ts, migrations/), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
 tests/
   unit/          effective-price, csv-lines, ingestion-rules, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
