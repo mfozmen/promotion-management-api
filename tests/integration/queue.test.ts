@@ -32,8 +32,13 @@ describe('queue contracts', () => {
   let queues: Queues;
   const workers: Pick<Worker, 'close'>[] = [];
 
-  beforeAll(() => {
+  beforeAll(async () => {
     queues = createQueues(redisUrl);
+    // A run killed mid-test leaves keys behind that fail the next one's counts.
+    await Promise.all([
+      queues.events.obliterate({ force: true }),
+      queues.ingestion.obliterate({ force: true }),
+    ]);
   });
 
   afterEach(async () => {
