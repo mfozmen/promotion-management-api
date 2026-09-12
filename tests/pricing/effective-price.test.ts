@@ -1,20 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
-  adjustmentFor,
   applyPromotions,
+  CalculatorFactory,
   isActive,
-  type AdjustmentEvent,
+  type DiscountEvent,
   type Promotion,
 } from '../../src/modules/pricing/effective-price.js';
 
 const NOW = new Date('2026-09-12T12:00:00.000Z');
 const MS = 1;
 
-const percent = (value: number): AdjustmentEvent => ({
-  type: 'adjustPercentBps',
-  params: { value },
+const percentage = (valueBasisPoints: unknown): DiscountEvent => ({
+  type: 'applyDiscount',
+  params: { calculator: 'PercentageDiscount', valueBasisPoints },
 });
-const cents = (value: number): AdjustmentEvent => ({ type: 'adjustCents', params: { value } });
+const fixed = (valueCents: unknown): DiscountEvent => ({
+  type: 'applyDiscount',
+  params: { calculator: 'FixedDiscount', valueCents },
+});
 
 function promotion(overrides: Partial<Promotion> = {}): Promotion {
   return {
@@ -25,167 +28,140 @@ function promotion(overrides: Partial<Promotion> = {}): Promotion {
   };
 }
 
-function priced(basePriceCents: number, event: AdjustmentEvent | null): number {
+function priced(basePriceCents: number, event: DiscountEvent | null): number {
   const outcome = applyPromotions(basePriceCents, event);
 
   expect(outcome.ok).toBe(true);
   return outcome.effectivePriceCents;
 }
 
-describe('adjustmentFor', () => {
-  it('has a strategy for every event type the rules may emit', () => {
-    expect(adjustmentFor('adjustPercentBps')).toBeDefined();
-    expect(adjustmentFor('adjustCents')).toBeDefined();
+describe('CalculatorFactory', () => {
+  it('resolves every calculator the seeded rules name', () => {
+    expect(CalculatorFactory.create('PercentageDiscount')).toBeDefined();
+    expect(CalculatorFactory.create('FixedDiscount')).toBeDefined();
   });
 
-  it('has no strategy for a type nothing implements', () => {
-    expect(adjustmentFor('adjustNothing')).toBeUndefined();
+  it('resolves nothing for a name the registry does not know', () => {
+    expect(CalculatorFactory.create('TieredDiscount')).toBeUndefined();
   });
 
-  it('exposes the arithmetic itself, so ingestion can run it without this price path', () => {
-    // Ingestion runs several of these in priority order over one price;
-    // promotions run the winning one. One implementation, two callers.
-    const percentBps = adjustmentFor('adjustPercentBps');
-    const minorUnits = adjustmentFor('adjustCents');
+  it('hands out a calculator that can be run without the price path', () => {
+    // The registry is the shared entry point: ingestion runs calculators over
+    // a vendor price, promotions run the winning rule's over a base price.
+    const percent = CalculatorFactory.create('PercentageDiscount');
 
-    expect(percentBps?.apply(10_000n, { value: -2500 })).toBe(7500n);
-    expect(percentBps?.apply(10_000n, { value: 1500 })).toBe(11_500n);
-    // Flooring the adjustment agrees with flooring the price for a markup, so
-    // the ingestion rules that emit one are unaffected by the direction.
-    expect(percentBps?.apply(999n, { value: 1500 })).toBe(1148n);
-    expect(minorUnits?.apply(10_000n, { value: -2500 })).toBe(7500n);
-    expect(minorUnits?.apply(10_000n, { value: 1500 })).toBe(11_500n);
-    expect(minorUnits?.validate(1500)).toBeNull();
+    expect(percent?.validate({ valueBasisPoints: 2500 })).toBeNull();
+    expect(percent?.calculate(10_000n, { valueBasisPoints: 2500 })).toBe(7500n);
+  });
+
+  it('applies no discount when asked to price parameters it rejects', () => {
+    // Callers validate first; this is what happens if one forgets, and it is
+    // the safe answer rather than a guess.
+    const percent = CalculatorFactory.create('PercentageDiscount');
+
+    expect(percent?.calculate(10_000n, { valueBasisPoints: -1 })).toBe(10_000n);
+    expect(percent?.calculate(10_000n, null)).toBe(10_000n);
   });
 });
 
 describe('applyPromotions', () => {
-  it('applies a percentage adjustment in basis points', () => {
-    expect(priced(10_000, percent(-2500))).toBe(7500);
+  it('applies a percentage discount in basis points', () => {
+    expect(priced(10_000, percentage(2500))).toBe(7500);
   });
 
-  it('applies a fixed adjustment in minor units', () => {
-    expect(priced(10_000, cents(-2500))).toBe(7500);
+  it('applies a fixed discount in minor units', () => {
+    expect(priced(10_000, fixed(2500))).toBe(7500);
   });
 
   it('floors the discount, so the customer pays at most one minor unit more', () => {
     // 25 % of 999 is 249.75, floored to 249 (ADR-0004, REVIEW.md 1.4).
-    expect(priced(999, percent(-2500))).toBe(750);
-    expect(priced(1000, percent(-3333))).toBe(667);
+    expect(priced(999, percentage(2500))).toBe(750);
+    expect(priced(1000, percentage(3333))).toBe(667);
   });
 
   it('returns zero for a 100 % discount', () => {
-    expect(priced(10_000, percent(-10_000))).toBe(0);
+    expect(priced(10_000, percentage(10_000))).toBe(0);
   });
 
   it('returns zero for a fixed discount larger than the base price', () => {
-    expect(priced(500, cents(-800))).toBe(0);
+    expect(priced(500, fixed(800))).toBe(0);
   });
 
   it('returns zero for a zero base price', () => {
-    expect(priced(0, percent(-2500))).toBe(0);
-    expect(priced(0, cents(-800))).toBe(0);
+    expect(priced(0, percentage(2500))).toBe(0);
+    expect(priced(0, fixed(800))).toBe(0);
   });
 
   it('returns the base price when no rule fired', () => {
     expect(priced(10_000, null)).toBe(10_000);
   });
 
-  it('returns the base price for an adjustment of zero', () => {
-    expect(priced(10_000, percent(0))).toBe(10_000);
-    expect(priced(10_000, cents(0))).toBe(10_000);
-  });
-
-  it('reports a markup instead of quietly pricing at the base', () => {
-    // The vocabulary is shared with ingestion, where a markup is the point. On
-    // the promotion path it is a rule-authoring defect, and clamping it
-    // silently would look exactly like no promotion firing (REVIEW.md 1.5).
-    expect(applyPromotions(10_000, percent(1500))).toEqual({
-      ok: false,
-      effectivePriceCents: 10_000,
-      reason: 'adjustment 1500 would raise the price above the base',
-    });
-    expect(applyPromotions(10_000, cents(500))).toEqual({
-      ok: false,
-      effectivePriceCents: 10_000,
-      reason: 'adjustment 500 would raise the price above the base',
-    });
-  });
-
-  it('reports a markup too small to move a cheap price', () => {
-    // 15 % of 6 minor units floors to nothing, so testing the result rather
-    // than the sign would let exactly the defect above through unreported.
-    expect(applyPromotions(6, percent(1500))).toEqual({
-      ok: false,
-      effectivePriceCents: 6,
-      reason: 'adjustment 1500 would raise the price above the base',
-    });
-    expect(applyPromotions(0, cents(500))).toEqual({
-      ok: false,
-      effectivePriceCents: 0,
-      reason: 'adjustment 500 would raise the price above the base',
-    });
-  });
-
   it('is exact at the largest price the money representation allows', () => {
     // The ceiling of the `mode: 'number'` price columns. In doubles the
     // intermediate product is far outside the exact-integer range.
-    expect(priced(Number.MAX_SAFE_INTEGER, percent(-5000))).toBe(4_503_599_627_370_496);
+    expect(priced(Number.MAX_SAFE_INTEGER, percentage(5000))).toBe(4_503_599_627_370_496);
   });
 
   it('is exact at a large price where double arithmetic would round', () => {
     // In doubles this discount floors to 2940746862477, one cent too much.
-    expect(priced(4_171_863_899_102, percent(-7049))).toBe(1_231_117_036_626);
+    expect(priced(4_171_863_899_102, percentage(7049))).toBe(1_231_117_036_626);
   });
 
-  it('skips an event naming a type no strategy implements, keeping the base price', () => {
-    expect(applyPromotions(10_000, { type: 'adjustKarma', params: { value: -2500 } })).toEqual({
+  it('reports a calculator name the registry does not know', () => {
+    expect(
+      applyPromotions(10_000, {
+        type: 'applyDiscount',
+        params: { calculator: 'TieredDiscount', valueBasisPoints: 2500 },
+      }),
+    ).toEqual({
       ok: false,
       effectivePriceCents: 10_000,
-      reason: 'unknown adjustment type "adjustKarma"',
+      reason: 'unknown calculator "TieredDiscount"',
     });
   });
 
-  it('rejects an adjustment value that is not a whole number in range', () => {
-    for (const event of [percent, cents]) {
-      for (const value of [-2500.5, NaN, Infinity, -Infinity, 2 ** 53]) {
-        expect(applyPromotions(10_000, event(value))).toEqual({
-          ok: false,
-          effectivePriceCents: 10_000,
-          reason: `adjustment value ${value} is not a whole number in range`,
-        });
-      }
-    }
-  });
-
-  it('rejects an event whose params a rule row never filled in', () => {
-    // Events arrive from a database row, so a rule written without `params`
-    // reaches this function however strict the type is at the call site.
-    for (const event of [{ type: 'adjustCents' }, { type: 'adjustPercentBps', params: null }]) {
+  it('reports an event that names no calculator at all', () => {
+    for (const event of [
+      { type: 'applyDiscount' },
+      { type: 'applyDiscount', params: null },
+      { type: 'applyDiscount', params: { valueBasisPoints: 2500 } },
+      { type: 'applyDiscount', params: { calculator: 42 } },
+    ]) {
       expect(applyPromotions(10_000, event)).toEqual({
         ok: false,
         effectivePriceCents: 10_000,
-        reason: 'adjustment value undefined is not a whole number in range',
+        reason: 'event names no calculator',
       });
     }
-
-    expect(applyPromotions(10_000, { type: 'adjustCents', params: { value: '-500' } })).toEqual({
-      ok: false,
-      effectivePriceCents: 10_000,
-      reason: 'adjustment value "-500" is not a whole number in range',
-    });
   });
 
-  it('rejects a percentage below -10 000 basis points rather than pricing it', () => {
-    expect(applyPromotions(10_000, percent(-10_001))).toEqual({
-      ok: false,
-      effectivePriceCents: 10_000,
-      reason: 'percentage adjustment -10001 is below -10000 basis points',
-    });
+  it('reports parameters the named calculator rejects', () => {
+    for (const value of [2500.5, NaN, Infinity, -2500, 0, '2500', null, undefined]) {
+      const percentOutcome = applyPromotions(10_000, percentage(value));
+      const fixedOutcome = applyPromotions(10_000, fixed(value));
+
+      expect(percentOutcome.ok).toBe(false);
+      expect(fixedOutcome.ok).toBe(false);
+      expect(percentOutcome.effectivePriceCents).toBe(10_000);
+      expect(fixedOutcome.effectivePriceCents).toBe(10_000);
+    }
+
+    // A percentage above 100 % can only be a mistake, so it is rejected rather
+    // than clamped to a free product.
+    expect(applyPromotions(10_000, percentage(10_001)).ok).toBe(false);
+  });
+
+  it('names the calculator that rejected the parameters, for the log', () => {
+    const outcome = applyPromotions(10_000, percentage(-1));
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.reason).toMatch(
+      /^PercentageDiscount rejected its parameters: /,
+    );
   });
 
   it('rejects a base price that is not a whole, non-negative number of minor units', () => {
-    for (const event of [null, percent(-2500), cents(-2500)]) {
+    for (const event of [null, percentage(2500), fixed(2500)]) {
       for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, -500, 2 ** 53]) {
         expect(applyPromotions(basePriceCents, event)).toEqual({
           ok: false,
@@ -196,9 +172,9 @@ describe('applyPromotions', () => {
     }
   });
 
-  it('never returns a price outside [0, base] for any adjustment it accepts', () => {
-    for (const value of [-10_000, -2500, -1, 0, 1, 20_000]) {
-      for (const event of [percent, cents]) {
+  it('never returns a price outside [0, base] for anything it accepts', () => {
+    for (const value of [1, 2500, 10_000]) {
+      for (const event of [percentage, fixed]) {
         const outcome = applyPromotions(10_000, event(value));
 
         expect(outcome.effectivePriceCents).toBeLessThanOrEqual(10_000);

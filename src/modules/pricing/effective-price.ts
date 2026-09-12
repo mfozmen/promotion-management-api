@@ -1,12 +1,16 @@
 /**
- * The instruction set the promotion rules are written in (design section 4,
- * ADR-0004).
+ * The calculators the promotion rules name (design section 4, ADR-0004).
  *
- * The vocabulary is shared with the ingestion rules deliberately: the
- * percentage and cents arithmetic is to have one implementation
- * (REVIEW.md 1.3). Ingestion still carries its own copy on an unmerged
- * branch; issue #45 moves it onto this registry.
+ * A rule row carries both the condition and the calculation: its event names a
+ * calculator and the configuration that calculator needs. Code holds the
+ * classes and the registry, never the policy — a discount that works
+ * differently is a new class, one registry line and rule rows naming it.
+ *
+ * The registry is shared with the ingestion rules, so the percentage and fixed
+ * arithmetic has one implementation (REVIEW.md 1.3). Ingestion still carries
+ * its own copy on an unmerged branch; issue #45 moves it onto this registry.
  */
+import { z } from 'zod';
 
 export type PromotionStatus = 'draft' | 'active' | 'cancelled';
 
@@ -18,97 +22,139 @@ export interface Promotion {
   endsAt: Date;
 }
 
-/** The event a matching rule carries: what to do to the price, and by how much. */
-export interface AdjustmentEvent {
+/** What a rule row can contain, before anything has validated it. */
+export interface DiscountEvent {
   type: string;
-  params: { value: number };
+  params?: unknown;
 }
-
-/** What a rule row can actually contain, before anything has validated it. */
-type UncheckedEvent = { type: string; params?: { value?: unknown } | null };
 
 /**
  * Both outcomes carry a price, so a caller always has something safe to write:
  * on failure it is the untouched base price, or zero when the base price is
- * itself the thing that is unusable. `ok: false` is the caller's cue
- * to log and count — a bad event must not crash a 50 000-product recompute,
- * and must not pass for a priced product either.
+ * itself what is unusable. `ok: false` is the caller's cue to log and count —
+ * a bad rule row must not crash a 50 000-product recompute, and must not pass
+ * for a priced product either. The storefront path keeps the base price; the
+ * ingestion path treats the same outcome as a `rules` fault and stops the job
+ * rather than mispricing 500 000 rows.
  */
 export type PricingOutcome =
   | { ok: true; effectivePriceCents: number }
   | { ok: false; effectivePriceCents: number; reason: string };
 
+export interface DiscountCalculator {
+  /** Names what is wrong with these parameters, or `null` when it can price them. */
+  validate(params: unknown): string | null;
+  calculate(baseCents: bigint, params: unknown): bigint;
+}
+
 const BASIS_POINTS_PER_UNIT = 10_000n;
 
 /**
- * One arithmetic step, in whole minor units. Every caller — `applyPromotions`
- * here, the ingestion wrapper once issue #45 lands — owes a strategy a non-negative
- * `cents` and a `value` that passed `validate`, which is what lets `apply`
- * skip the `BigInt` guards and treat truncating division as a floor.
+ * Everything a calculator must not get wrong, held once: parameters are
+ * validated against the subclass's own schema before use, the arithmetic is
+ * `bigint` so no intermediate product loses a cent, and the effective price is
+ * clamped into `[0, baseCents]`. A subclass supplies only its schema and its
+ * discount, so a new calculator cannot reintroduce a rounding or clamping bug
+ * that was already fixed once — and cannot raise a price either, whatever a
+ * rule row asks of it.
  */
-export interface Adjustment {
-  /** Names the parameter it cannot price, or `null` when it can. */
-  validate(value: number): string | null;
-  apply(cents: bigint, params: { value: number }): bigint;
+abstract class ValidatedDiscount<P> implements DiscountCalculator {
+  protected abstract readonly name: string;
+  protected abstract readonly schema: z.ZodType<P>;
+  /**
+   * Whole minor units off the base price. Floored by construction: every
+   * operand is a `bigint`, and `bigint` division truncates toward zero.
+   */
+  protected abstract discountCents(baseCents: bigint, params: P): bigint;
+
+  validate(params: unknown): string | null {
+    const parsed = this.schema.safeParse(params);
+    return parsed.success
+      ? null
+      : `${this.name} rejected its parameters: ${parsed.error.issues.map((issue) => issue.message).join('; ')}`;
+  }
+
+  calculate(baseCents: bigint, params: unknown): bigint {
+    const parsed = this.schema.safeParse(params);
+    // Callers validate first and report the reason; a calculator asked to
+    // price parameters it rejects applies no discount rather than guessing.
+    if (!parsed.success) return baseCents;
+
+    // The schemas make a discount positive, so bounding it above by the base
+    // price is the whole of `[0, baseCents]`: a discount larger than the price
+    // is a free product, and none can push the price above the base.
+    const discount = this.discountCents(baseCents, parsed.data);
+    return baseCents - (discount > baseCents ? baseCents : discount);
+  }
+}
+
+// A discount of zero is a rule that does nothing, and one above 100 % can only
+// ever mean a mistake; both are rejected rather than clamped, so the rule row
+// gets fixed instead of quietly pricing at zero.
+const percentageParams = z.object({
+  valueBasisPoints: z.number().int().positive().max(10_000),
+});
+
+class PercentageDiscount extends ValidatedDiscount<z.infer<typeof percentageParams>> {
+  protected readonly name = 'PercentageDiscount';
+  protected readonly schema = percentageParams;
+
+  protected discountCents(baseCents: bigint, params: z.infer<typeof percentageParams>): bigint {
+    // Floored on the discount, so a percentage rounds against the customer by
+    // at most one minor unit rather than in their favour (REVIEW.md 1.4).
+    return (baseCents * BigInt(params.valueBasisPoints)) / BASIS_POINTS_PER_UNIT;
+  }
+}
+
+const fixedParams = z.object({ valueCents: z.number().int().positive() });
+
+class FixedDiscount extends ValidatedDiscount<z.infer<typeof fixedParams>> {
+  protected readonly name = 'FixedDiscount';
+  protected readonly schema = fixedParams;
+
+  protected discountCents(_baseCents: bigint, params: z.infer<typeof fixedParams>): bigint {
+    // Larger than the base price is a free product rather than a defect: the
+    // clamp in the base class takes it to zero.
+    return BigInt(params.valueCents);
+  }
 }
 
 /**
- * `value` is a signed basis-point adjustment: `-2500` takes a quarter off,
- * `+1500` is the ingestion markup.
- *
- * The adjustment itself is floored, not the price, so a discount rounds
- * against the customer by at most one minor unit (ADR-0004, REVIEW.md 1.4).
- * `bigint` division truncates toward zero, which is that floor for a discount;
- * for a markup it agrees exactly with `cents * (10000 + value) / 10000`, so
- * the ingestion rules keep the prices they were reviewed against.
+ * The names a rule row may use, mapped to the classes that implement them.
+ * Seeded with the two the case asks for; a tiered or buy-one-get-one discount
+ * is a new class and one more line here.
  */
-class PercentBpsAdjustment implements Adjustment {
-  validate(value: number): string | null {
-    // Below -10 000 basis points the adjustment exceeds the whole price, which
-    // is a price below zero rather than a free product.
-    return value < -10_000 ? `percentage adjustment ${value} is below -10000 basis points` : null;
-  }
-
-  apply(cents: bigint, params: { value: number }): bigint {
-    return cents + (cents * BigInt(params.value)) / BASIS_POINTS_PER_UNIT;
-  }
-}
-
-/** `value` is a signed amount of minor units: `-500` takes five currency units off. */
-class CentsAdjustment implements Adjustment {
-  validate(): string | null {
-    return null;
-  }
-
-  apply(cents: bigint, params: { value: number }): bigint {
-    return cents + BigInt(params.value);
-  }
-}
-
-const ADJUSTMENTS: ReadonlyMap<string, Adjustment> = new Map<string, Adjustment>([
-  ['adjustPercentBps', new PercentBpsAdjustment()],
-  ['adjustCents', new CentsAdjustment()],
+const CALCULATORS: ReadonlyMap<string, new () => DiscountCalculator> = new Map<
+  string,
+  new () => DiscountCalculator
+>([
+  ['PercentageDiscount', PercentageDiscount],
+  ['FixedDiscount', FixedDiscount],
 ]);
 
-/** The lookup both layers share, so neither grows its own copy of the arithmetic. */
-export function adjustmentFor(type: string): Adjustment | undefined {
-  return ADJUSTMENTS.get(type);
-}
+export const CalculatorFactory = {
+  /**
+   * `undefined` for a name the registry does not know: a defect in the rule
+   * row, which the caller reports rather than crashing on.
+   */
+  create(name: string): DiscountCalculator | undefined {
+    const Calculator = CALCULATORS.get(name);
+    return Calculator === undefined ? undefined : new Calculator();
+  },
+};
 
 /**
- * Applies the winning rule's event to a base price. `event` is `null` when no
- * rule fired, and the base price stands.
+ * The whole call site: resolve the calculator the winning rule names, validate
+ * the event's parameters against that calculator's schema, run it. `event` is
+ * `null` when no rule fired, and the base price stands.
  *
- * Every rejection returns the base price with a reason instead of throwing:
- * `BigInt` raises a `RangeError` on a fractional, `NaN` or infinite number,
- * and one unusable product must not take down the batch around it.
- *
- * Only this path rejects a price-raising adjustment. Ingestion calls the
- * strategies directly, where a markup is the whole point.
+ * Never throws. `BigInt` raises a `RangeError` on a fractional, `NaN` or
+ * infinite number, and one unusable product must not take down the batch
+ * around it, so every failure is a returned outcome carrying a reason.
  */
 export function applyPromotions(
   basePriceCents: number,
-  event: UncheckedEvent | null,
+  event: DiscountEvent | null,
 ): PricingOutcome {
   if (!Number.isSafeInteger(basePriceCents) || basePriceCents < 0) {
     return {
@@ -125,35 +171,17 @@ export function applyPromotions(
     reason,
   });
 
-  // An event naming a type no strategy implements is a defect in the rule row,
-  // not in the product: skipped with the base price, never a crash.
-  const adjustment = adjustmentFor(event.type);
-  if (adjustment === undefined) return rejected(`unknown adjustment type "${event.type}"`);
+  const name: unknown = (event.params as { calculator?: unknown } | null | undefined)?.calculator;
+  if (typeof name !== 'string') return rejected('event names no calculator');
 
-  // The event is a database row, not a TypeScript value: a rule written
-  // without `params` type-checks nowhere and reaches here all the same.
-  const value: unknown = event.params?.value;
-  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
-    // Quoted when it is a string, or `"-2500"` and `-2500` would produce the
-    // same message and the second would read as a contradiction.
-    const shown = typeof value === 'string' ? `"${value}"` : String(value);
-    return rejected(`adjustment value ${shown} is not a whole number in range`);
-  }
-  const invalid = adjustment.validate(value);
+  const calculator = CalculatorFactory.create(name);
+  if (calculator === undefined) return rejected(`unknown calculator "${name}"`);
+
+  const invalid = calculator.validate(event.params);
   if (invalid !== null) return rejected(invalid);
-  // A markup is legitimate for ingestion and a rule-authoring defect here, and
-  // the two are told apart only by which layer ran the rule — so it is
-  // reported rather than quietly clamped, or a stray `+1500` copied from the
-  // seeded ingestion rules would look exactly like no promotion at all. On the
-  // sign, not on the result: a markup too small to move a cheap product's
-  // price is the same defect and must not slip through rounding.
-  if (value > 0) return rejected(`adjustment ${value} would raise the price above the base`);
 
-  const adjusted = adjustment.apply(BigInt(basePriceCents), { value });
-
-  // A discount larger than the whole price is not a defect, it is a free
-  // product: clamped, never negative (REVIEW.md 1.5).
-  return { ok: true, effectivePriceCents: Number(adjusted < 0n ? 0n : adjusted) };
+  const effective = calculator.calculate(BigInt(basePriceCents), event.params);
+  return { ok: true, effectivePriceCents: Number(effective) };
 }
 
 /**
