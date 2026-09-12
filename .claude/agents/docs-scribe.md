@@ -58,3 +58,9 @@ caught and how it was corrected. If not given, reconstruct from
   files changed and one line per change, or "no change needed") or
   `DOCS RESULT: FAIL` (something is undecided or contradictory, say what),
   then stop. Do not commit; the caller commits.
+
+Never open a GitHub issue. A finding that this branch can fix is fixed here; a
+finding that belongs to another branch goes in your report as one line for the
+coordinator to route. Filing moves the work sideways and makes the pull request
+look cleaner than it is; thirty-nine open issues in one day came from exactly
+that.
