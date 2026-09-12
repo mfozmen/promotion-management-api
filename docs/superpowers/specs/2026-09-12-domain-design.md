@@ -627,7 +627,8 @@ worker expose `GET /metrics` with `prom-client` (default Node metrics plus
 `readmodel_drift_products`, `http_request_duration_seconds`,
 `ingestion_rows_processed_total`, `ingestion_chunks_stuck`,
 `promotion_rules_no_event_total` — the silence counter of section 4, which the
-seeded rules cannot increment). Prometheus
+seeded rules cannot increment once #36 lands; until it does, migration 0001
+seeds no promotion rule and the counter is expected to move). Prometheus
 scrapes them; Grafana ships with a provisioned dashboard and alert rules:
 queue depth > 10 000, any failed (DLQ) job, drift > 1 %, API p95 > 500 ms,
 5xx rate > 1 %, worker RSS > 90 % of its limit, stuck ingestion chunk,

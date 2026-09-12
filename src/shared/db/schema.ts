@@ -14,8 +14,10 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
-// Drizzle cannot express `exclude using gist`; the two promotion constraints and the
-// btree_gist extension live in migration 0000 only. Keep both sides in step (REVIEW.md 11.4).
+// Four objects live in the migrations and nowhere in this file, so regenerating
+// from it drops them: the btree_gist extension, the two promotion exclusion
+// constraints, the pricing_rules_set_updated_at trigger with its function, and the
+// reconciler_state seed row. The integration tests are what notices.
 
 export const promotionStatus = pgEnum('promotion_status', ['draft', 'active', 'cancelled']);
 export const promotionDiscountType = pgEnum('promotion_discount_type', ['percentage', 'fixed']);
@@ -42,14 +44,11 @@ export const products = pgTable(
     basePriceCents: bigint('base_price_cents', { mode: 'number' }).notNull(),
     stockQuantity: integer('stock_quantity').notNull(),
     // Null for manual creates; ingestion stamps the rules version it priced the row with.
-    // bigint because that version is the rules' max(updated_at) in epoch MILLISECONDS.
-    // Seconds would collapse two rule edits made inside the same second into one version,
-    // so a version-keyed rule cache would never reload and a row would claim a version
-    // that does not identify the rules that priced it. Milliseconds also leave int4 in 1970.
+    // The unit is epoch MILLISECONDS, which is why the column is bigint.
     pricingRulesVersion: bigint('pricing_rules_version', { mode: 'number' }),
     // Written together by the ingestion upsert. The check below removes the one-column-null
     // branch, not every branch: a manually created product has both null, so the last-writer
-    // guard still needs `products.ingest_job_id is null or (...) > (...)` (REVIEW.md 2.6).
+    // guard still needs `products.ingest_job_id is null or (...) > (...)`.
     ingestJobId: bigint('ingest_job_id', { mode: 'number' }),
     ingestSourceOffset: bigint('ingest_source_offset', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
