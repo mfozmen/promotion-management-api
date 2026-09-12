@@ -14,7 +14,8 @@ name: promotion-management-api
 #     .env.example has been copied.
 #
 # Host processes (`npm run dev`, the tests) reach the stores on localhost
-# through the published ports; containers on the `promotion` network use the
+# through the published ports, bound to the loopback interface so a laptop on a
+# shared network does not expose PostgreSQL; containers on the `promotion` network use the
 # service names. .env.example carries both forms.
 #
 # Redis logical databases are separated by design: database 0 is the storefront
@@ -30,7 +31,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-promo}
       POSTGRES_DB: ${POSTGRES_DB:-promotion}
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -53,7 +54,7 @@ services:
     # and must never be silently evicted.
     command: ['redis-server', '--appendonly', 'yes']
     ports:
-      - '${REDIS_PORT:-6379}:6379'
+      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
     volumes:
       - redis-data:/data
     networks:

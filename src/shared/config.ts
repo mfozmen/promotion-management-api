@@ -118,7 +118,9 @@ export const loadConfig = (env: Env = process.env): Config => {
     redisQueueUrl: redisUrlForDb(redisBase, redisQueueDb),
     ingestion: Object.freeze({
       chunkBytes: readInt(env, 'INGESTION_CHUNK_BYTES', 4 * 1024 * 1024, 1, MAX_SAFE_INT),
-      batchSize: readInt(env, 'INGESTION_BATCH_SIZE', 1000, 1, MAX_SAFE_INT),
+      // Capped well below PostgreSQL's 65 535 bind parameters, which a
+      // multi-row upsert of wide rows blows long before the batch is large.
+      batchSize: readInt(env, 'INGESTION_BATCH_SIZE', 1000, 1, 5000),
       budgetMs,
       leaseMs,
       maxFailures: readInt(env, 'INGESTION_MAX_FAILURES', 3, 1, MAX_SAFE_INT),

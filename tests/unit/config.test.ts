@@ -192,6 +192,12 @@ describe('loadConfig', () => {
       );
     });
 
+    it('rejects a batch size above the bind-parameter ceiling', () => {
+      expect(() => loadConfig({ ...validEnv, INGESTION_BATCH_SIZE: '50000' })).toThrow(
+        'Invalid environment variable INGESTION_BATCH_SIZE: expected an integer between 1 and 5000, got "50000"',
+      );
+    });
+
     it('rejects a Redis database index above 15', () => {
       expect(() => loadConfig({ ...validEnv, REDIS_QUEUE_DB: '16' })).toThrow(
         'Invalid environment variable REDIS_QUEUE_DB: expected an integer between 0 and 15, got "16"',
