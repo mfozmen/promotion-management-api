@@ -574,6 +574,13 @@ endpoint, job, cache or store.
 
 13.5 An architectural change without a matching `ADR.md` update is a finding.
 
+13.6 One declaration per file. A class, an interface or an abstract base gets
+its own file, named after it: `discount-calculator.ts` holds
+`DiscountCalculator` and nothing else. Types that describe a domain row live
+apart from the functions that operate on them. A file carrying two interfaces,
+an abstract class, two classes, a registry and a pair of functions is what this
+rule exists to stop, whatever its line count.
+
 ---
 
 ## 14. Reviewer's quick pass
