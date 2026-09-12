@@ -4,11 +4,14 @@ import { adminUrl, urlFor } from './env.js';
 import { sweepStaleClones } from './global-setup.js';
 
 const HOUR_MS = 3_600_000;
+// Fixtures of our own: a real `pma_test_` clone would be fair game for a sibling worktree's
+// sweep between creating it and holding it open, which is a flake rather than a finding.
+const PATTERN = '^pma_sweepfixture_([0-9]+)_';
 const admin = new Client({ connectionString: adminUrl });
 const created: string[] = [];
 
 async function clone(ageMs: number, label: string): Promise<string> {
-  const name = `pma_test_${Date.now() - ageMs}_sweep${label}`;
+  const name = `pma_sweepfixture_${Date.now() - ageMs}_${label}`;
   await admin.query(`create database "${name}"`);
   created.push(name);
   return name;
@@ -34,7 +37,7 @@ describe('stale clone sweep', () => {
   it('drops a clone a killed run left behind', async () => {
     const abandoned = await clone(2 * HOUR_MS, 'abandoned');
 
-    await sweepStaleClones(admin);
+    await sweepStaleClones(admin, { pattern: PATTERN });
 
     expect(await exists(abandoned)).toBe(false);
   });
@@ -42,7 +45,7 @@ describe('stale clone sweep', () => {
   it('leaves a clone young enough to belong to a run in progress alone', async () => {
     const inFlight = await clone(0, 'inflight');
 
-    await sweepStaleClones(admin);
+    await sweepStaleClones(admin, { pattern: PATTERN });
 
     expect(await exists(inFlight)).toBe(true);
   });
@@ -53,7 +56,7 @@ describe('stale clone sweep', () => {
     await holder.connect();
 
     try {
-      await sweepStaleClones(admin);
+      await sweepStaleClones(admin, { pattern: PATTERN });
 
       expect(await exists(held)).toBe(true);
     } finally {
@@ -62,11 +65,11 @@ describe('stale clone sweep', () => {
   });
 
   it('never considers a database that is not a clone of this harness', async () => {
-    await admin.query('create database "pma_test_template_not_a_clone"');
-    created.push('pma_test_template_not_a_clone');
+    await admin.query('create database "pma_sweepfixture_template_not_a_clone"');
+    created.push('pma_sweepfixture_template_not_a_clone');
 
-    await sweepStaleClones(admin);
+    await sweepStaleClones(admin, { pattern: PATTERN });
 
-    expect(await exists('pma_test_template_not_a_clone')).toBe(true);
+    expect(await exists('pma_sweepfixture_template_not_a_clone')).toBe(true);
   });
 });

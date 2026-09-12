@@ -1,6 +1,6 @@
 {
-  "id": "719269bf-305b-4e21-85d8-1252c6ab40d1",
-  "prevId": "9c321612-6370-4432-9219-bdc4d7b6419d",
+  "id": "f2c0fd99-0a90-4f27-8347-b3be7bb2ee25",
+  "prevId": "f34f3db6-92f4-463e-b875-a0e6d421d0c3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -407,7 +407,7 @@
         },
         "pricing_rules_version": {
           "name": "pricing_rules_version",
-          "type": "integer",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": false
         },

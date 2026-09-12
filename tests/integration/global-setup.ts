@@ -4,18 +4,27 @@ import { Client, Pool } from 'pg';
 import { adminUrl, templateDatabase, urlFor } from './env.js';
 
 const STALE_AFTER_MS = 3_600_000;
+const CLONE_PATTERN = '^pma_test_([0-9]+)_';
 
 /**
  * A killed run cannot drop its clone, so abandoned ones are swept here. Scoped by age and
  * never forced: a dozen worktrees share this server under the same name prefix, so a clone
  * younger than an hour, or one another process still holds open, belongs to a run in
  * progress. A `like` is not ownership.
+ *
+ * `pattern` exists so the test can sweep fixtures of its own rather than real clones; there
+ * is one production value and it is the default.
  */
-export async function sweepStaleClones(admin: Client, now = Date.now()): Promise<void> {
+export async function sweepStaleClones(
+  admin: Client,
+  { now = Date.now(), pattern = CLONE_PATTERN }: { now?: number; pattern?: string } = {},
+): Promise<void> {
+  // `substring` rather than a `~` test plus `split_part(...)::bigint`: PostgreSQL orders
+  // qualifiers by cost, not left to right, so the cast could run on a name the regex was
+  // meant to exclude and raise 22P02. A non-match yields NULL here, which filters out.
   const stale = await admin.query<{ datname: string }>(
-    `select datname from pg_database
-      where datname ~ '^pma_test_[0-9]+_' and split_part(datname, '_', 3)::bigint < $1`,
-    [now - STALE_AFTER_MS],
+    `select datname from pg_database where (substring(datname from $2))::bigint < $1`,
+    [now - STALE_AFTER_MS, pattern],
   );
   for (const { datname } of stale.rows) {
     try {

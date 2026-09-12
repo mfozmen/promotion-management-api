@@ -59,7 +59,7 @@ CREATE TABLE "products" (
 	"category" text NOT NULL,
 	"base_price_cents" bigint NOT NULL,
 	"stock_quantity" integer NOT NULL,
-	"pricing_rules_version" integer,
+	"pricing_rules_version" bigint,
 	"ingest_job_id" bigint,
 	"ingest_source_offset" bigint,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
