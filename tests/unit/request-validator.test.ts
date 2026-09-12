@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import express, { type Express, type RequestHandler } from 'express';
 import request from 'supertest';
 import { z } from 'zod';
-import { validate } from '../src/middleware/request-validator.js';
-import { errorHandler } from '../src/middleware/error-handler.js';
-import { httpLogger } from '../src/shared/logger.js';
-import { captureLogger, type CapturedLogger } from './capture-logger.js';
+import { validate } from '../../src/middleware/request-validator.js';
+import { errorHandler } from '../../src/middleware/error-handler.js';
+import { httpLogger } from '../../src/shared/logger.js';
+import { captureLogger, type CapturedLogger } from '../capture-logger.js';
 
 /** A one-route app so the helper can be exercised through real HTTP. */
 function appLogging(
@@ -208,6 +208,22 @@ describe('validate: where the problem is', () => {
       path: 'body.items[3].sku',
       message: expect.any(String),
     });
+  });
+});
+
+describe('validate: how much one request can cost', () => {
+  it('caps the details it returns, so a bad body cannot amplify into a response', async () => {
+    const app = appWith(
+      '/imports',
+      validate({ body: z.object({ items: z.array(z.strictObject({ sku: z.string() })) }) }),
+    );
+
+    const res = await request(app)
+      .post('/imports')
+      .send({ items: Array.from({ length: 200 }, () => ({ sku: 1 })) });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.details).toHaveLength(20);
   });
 });
 

@@ -24,12 +24,16 @@ const OTHER_CLIENT_ERROR = {
 const SERVER_FAULT = { status: 500, code: 'INTERNAL', message: 'Internal server error' } as const;
 
 /**
- * A 5xx a handler designed, so the prose is ours by construction rather than by
- * trust: `503` tells a client to retry, and answering it with "Internal server
- * error" tells the human reading the body the wrong thing.
+ * Public wording for a 5xx, keyed by **status** so the pair is checked rather
+ * than assumed: a handler that raises the right code under the wrong status has
+ * still made a mistake, and `500 READ_MODEL_NOT_READY` would have a client
+ * retry a genuine fault forever.
  */
-const SERVER_MESSAGES = new Map<ErrorCode, string>([
-  ['READ_MODEL_NOT_READY', 'The read model is not ready yet; retry shortly'],
+const SERVER_MESSAGES = new Map<number, { code: ErrorCode; message: string }>([
+  [
+    503,
+    { code: 'READ_MODEL_NOT_READY', message: 'The read model is not ready yet; retry shortly' },
+  ],
 ]);
 
 /**
@@ -65,12 +69,13 @@ function raisedError(err: HttpError): ErrorMapping {
     return SERVER_FAULT;
   }
   // The status survives — `502` and `504` are what an operator needs — but the
-  // code and the words cross only where we wrote public ones for that code. A
-  // client branching on `CONFLICT` must never see it on a read-model outage.
-  const message = SERVER_MESSAGES.get(err.code);
+  // code and the words cross only where we wrote public ones for that exact
+  // status. A client branching on `CONFLICT` must never see it on a read-model
+  // outage, and must not retry a `500` because it arrived wearing a 503's code.
+  const known = SERVER_MESSAGES.get(err.status);
 
-  return message
-    ? { status: err.status, code: err.code, message }
+  return known && known.code === err.code
+    ? { status: err.status, ...known }
     : { ...SERVER_FAULT, status: err.status };
 }
 

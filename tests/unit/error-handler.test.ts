@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import express, { type Express } from 'express';
 import request from 'supertest';
-import { errorHandler } from '../src/middleware/error-handler.js';
-import { httpLogger } from '../src/shared/logger.js';
-import { HttpError } from '../src/shared/http-error.js';
+import { errorHandler } from '../../src/middleware/error-handler.js';
+import { httpLogger } from '../../src/shared/logger.js';
+import { HttpError } from '../../src/shared/http-error.js';
 import { DrizzleQueryError } from 'drizzle-orm';
-import { captureLogger, type CapturedLogger } from './capture-logger.js';
+import { captureLogger, type CapturedLogger } from '../capture-logger.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
 function appThrowing(error: unknown, captured: CapturedLogger = captureLogger()): Express {
@@ -90,6 +90,7 @@ describe('HttpError mapping', () => {
   it.each([
     ['a 5xx code we wrote no public words for', 502, 'INTERNAL' as const],
     ['a client code wearing a server status', 503, 'CONFLICT' as const],
+    ['a real code under the wrong status', 500, 'READ_MODEL_NOT_READY' as const],
   ])('keeps the status but not the words for %s', async (_name, status, code) => {
     // The status is what an operator needs — 502 is not 500 — while a client
     // branching on CONFLICT must never see it on a read-model outage.

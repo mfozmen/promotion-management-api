@@ -11,6 +11,18 @@ export interface RequestSchemas {
 
 const PARTS = ['body', 'query', 'params'] as const;
 
+const MAX_DETAILS = 20;
+const MAX_LOGGED_KEYS = 20;
+const MAX_KEY_LENGTH = 64;
+
+/** `body.items[3].sku`: the part it was found in, then the way in. */
+const formatPath = (part: string, path: PropertyKey[]): string =>
+  path.reduce<string>(
+    (acc, segment) =>
+      typeof segment === 'number' ? `${acc}[${segment}]` : `${acc}.${String(segment)}`,
+    part,
+  );
+
 /**
  * A rejection names where the problem is, never what the client sent: the path
  * is ours and they need it, the key and the value are theirs. zod quotes the
@@ -21,16 +33,10 @@ const PARTS = ['body', 'query', 'params'] as const;
  * `z.record` part would put the caller's own key into `path`, reopening this.
  * A union's detail is also only as good as its top-level message today.
  */
-/** `body.items[3].sku`: the part it was found in, then the way in. */
-const formatPath = (part: string, path: PropertyKey[]): string =>
-  path.reduce<string>(
-    (acc, segment) =>
-      typeof segment === 'number' ? `${acc}[${segment}]` : `${acc}.${String(segment)}`,
-    part,
-  );
-
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
-  return error.issues.map((issue) => ({
+  // Bounded like the log line: one 100kb body of array items is thousands of
+  // issues, and an unauthenticated request must not amplify into a response.
+  return error.issues.slice(0, MAX_DETAILS).map((issue) => ({
     path: formatPath(part, issue.path),
     message:
       issue.code === 'unrecognized_keys'
@@ -67,7 +73,11 @@ export function validate(schemas: RequestSchemas): RequestHandler {
           // bounded in count and in length, because both are the client's to
           // choose and this line is written on an unauthenticated path.
           (req.log ?? logger).warn(
-            { part, keys: keys.slice(0, 20).map((key) => key.slice(0, 64)), count: keys.length },
+            {
+              part,
+              keys: keys.slice(0, MAX_LOGGED_KEYS).map((key) => key.slice(0, MAX_KEY_LENGTH)),
+              count: keys.length,
+            },
             'unrecognized fields rejected',
           );
         }

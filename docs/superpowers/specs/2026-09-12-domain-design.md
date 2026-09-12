@@ -466,10 +466,12 @@ src/
     pricing/     effective-price.ts (pure), ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
+  middleware/    error-handler.ts (the one JSON error envelope), request-validator.ts (zod at the boundary)
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
-  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
+  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids), http-error.ts (HttpError, ErrorCode)
 tests/
-  unit/          effective-price, csv-lines, ingestion-rules, schemas
+  capture-logger.ts  and any other helper both kinds import: neither a unit nor an integration test
+  unit/          effective-price, csv-lines, ingestion-rules, schemas, the HTTP boundary
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
 docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander
 Dockerfile           one image, command per service
