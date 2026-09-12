@@ -13,6 +13,18 @@ permissions:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    services:
+      # The queue integration tests run against a real Redis, never a mock
+      # (REVIEW.md 7.3). Locally: docker run -d --rm -p 6399:6379 redis:7-alpine
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6399:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v5

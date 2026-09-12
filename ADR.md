@@ -66,6 +66,7 @@ Money is stored as integer minor units, percentages as basis points, timestamps 
 - Every read-model write is a recompute from PostgreSQL, so handlers are idempotent and retry-safe; the event-handler runs with concurrency 1 to keep them ordered.
 - The read model is eventually consistent: a write is visible after the handler runs, typically well under a second for single products and a few seconds for a 50 000-product category.
 - Redis is a hard runtime dependency; an empty read model answers `503` until the cold-start rebuild completes.
+- "Emission after commit" is enforced at runtime, not only by convention: `src/shared/queue.ts` marks a transaction body with an `AsyncLocalStorage` scope (`withinTransaction`) and `enqueue()` throws when called inside one, so the ordering mistake fails loudly in a test instead of surfacing as a rare stale read (REVIEW.md 3.4; issue #7, branch `feat/queue-contracts`, based on PR #27).
 
 ### Trade-offs
 

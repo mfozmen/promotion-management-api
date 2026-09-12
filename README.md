@@ -9,6 +9,8 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Node.js 22
 - Express 5
 - TypeScript (strict mode)
+- BullMQ on Redis 7 (event bus; see [ADR-0003](./ADR.md))
+- zod (payload validation at the queue boundary)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
 - SonarCloud (static analysis / quality gate)
@@ -18,16 +20,24 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
+- Docker, for the Redis the queue integration tests use (no mocks, REVIEW.md 7.3)
 
 ## Getting started
 
 ```bash
 npm ci
 npm run dev
+
+# Redis for the queue integration tests; override the port with QUEUE_TEST_REDIS_URL
+docker run -d --rm -p 6399:6379 redis:7-alpine
 npm test
 npm run test:cov
 npm run lint
 ```
+
+BullMQ uses Redis logical database 1; database 0 is reserved for the read
+model, so queue maintenance and read-model rebuilds cannot destroy each other
+(ADR-0007).
 
 ## Project structure
 

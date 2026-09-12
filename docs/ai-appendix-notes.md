@@ -88,6 +88,11 @@ rewritten.
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
 - Human refinement: none needed — `impact-analyzer` confirmed no doc or config referenced the removed sections and every named script (`dev`, `test`, `test:cov`, `lint`) still exists in `package.json`.
 
+### 2026-09-12 — Event contracts and BullMQ setup (issue #7, branch `feat/queue-contracts`, based on PR #27)
+
+- Strategy: gave section 6 of `docs/superpowers/specs/2026-09-12-domain-design.md` (the event table, queue split, job defaults and boundary job ids) plus REVIEW.md as the contract, and asked for exactly that and nothing more — one zod schema and type per event, the `queueOfEvent` routing map, `createQueues` on Redis DB 1 with the agreed `defaultJobOptions`, and the deterministic `promo:{id}:{activate|expire}` job ids. No worker, no handler, no admin surface: those are later issues.
+- Human refinement: two rules from REVIEW.md were turned from prose into enforced code rather than left as review checklist items — 3.4 (enqueue after commit) became the `withinTransaction` `AsyncLocalStorage` guard that makes `enqueue()` throw inside a transaction, and 7.3 (no mocks) kept the queue tests on a real Redis (`docker run -p 6399:6379 redis:7-alpine`) instead of an in-memory double. `now` is injected into `schedulePromotionBoundary` so one clock decides the delay (REVIEW.md 1.7).
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
