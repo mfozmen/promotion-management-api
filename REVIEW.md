@@ -556,7 +556,12 @@ memory on the smallest configured container.
 
 ## 8b. Comments
 
-**Severity: warning.**
+**Severity: critical. Blocking.**
+
+Raised from warning on 2026-09-13: as a warning it was skipped twice in one
+day — a 293-line module reached hand-off at 33 per cent narrative comment lines
+with every check green. The owner's rule is that a clear function carries no
+comment, so a violation blocks like any other.
 
 8b.1 A comment earns its line by saying something the code cannot: a
 non-obvious invariant, a unit that is not in the name, a reason the obvious
@@ -597,7 +602,11 @@ rule or a section that lands in another pull request reads as fact and is not.
 
 ## 8c. Names match
 
-**Severity: warning.**
+**Severity: critical. Blocking.**
+
+Raised from warning on 2026-09-13: one declaration per file is the owner's
+explicit rule, and as a warning it was passed on a module holding five types,
+two schemas and three functions the day after the rule was written.
 
 8c.1 A name says what the thing is. A file and its main export carry the same
 word, and when the two disagree, fix whichever is wrong rather than whichever is
