@@ -770,10 +770,12 @@ rewritten.
 - Verification: `git diff ffb09a0 HEAD -- docs/superpowers/specs/2026-09-12-domain-design.md`
   shows the field reverting inside the merge, and a grep for
   `ingestion_rules_version` across the migrations of every ref finds nothing.
-- Resolution: not made here. The spec is outside the three documents this agent
-  edits; one word on line 412 restores it, and this round reports FAIL until it
-  is restored. Scenario A is the affected half: the field is what a storefront
-  read would key on to tell which ingestion rule set priced a product.
+- Resolution: made in `d22aa5c`, one word on line 412, in its own commit placed
+  before the next base merge so the merge could not swallow it a third time.
+  This agent reported FAIL for the round in which the name was still reverted;
+  the entry below records the restoration and the ordering that holds it.
+  Scenario A is the affected half: the field is what a storefront read would
+  key on to tell which ingestion rule set priced a product.
 - The class, not the instance: the conflicted hunks of a merge get reviewed, the
   hunks resolved silently do not. Both earlier merge entries on this branch
   record defects in text the merge did not mark as conflicting, and this is the
