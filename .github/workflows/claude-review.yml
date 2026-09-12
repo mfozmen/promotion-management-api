@@ -103,6 +103,10 @@ jobs:
             used to do) means a run that dies before the end leaves nothing
             at all.
 
+            Read REVIEW.md first: it lists the repository's review rules with
+            severities, and a blocking rule violated is always a Critical
+            finding, cited by rule number.
+
             Review the diff for:
             - Bugs, security issues, and performance problems.
             - TDD discipline: production code backed by tests that assert real

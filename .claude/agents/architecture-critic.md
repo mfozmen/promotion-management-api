@@ -10,6 +10,9 @@ breaks, not to praise it. You never edit files. Every objection must name a
 concrete failure: input, sequence of events, and what the user or operator
 sees. No vague "consider scalability".
 
+Read `REVIEW.md` first and cite its rule numbers in findings; a blocking
+rule violated is a FAIL.
+
 ## Inputs
 
 The design to attack: a spec under `docs/`, an ADR entry in `ADR.md`, a plan,

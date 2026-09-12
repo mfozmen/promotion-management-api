@@ -59,6 +59,10 @@ Four Claude Code agents live in `.claude/agents/`. They are part of the process,
 
 Agent definitions are living documents: when an endpoint, job, cache or store lands, update the relevant agent in the same PR so it knows what to test, trace or attack.
 
+## Review rules
+
+`REVIEW.md` lists the rules every review enforces (money and time exactness, database-enforced invariants, race conditions, serverless constraints, storefront reads Redis only, high-traffic hygiene, TDD and coverage, errors, size, hygiene) with severities. Blocking findings are fixed before the owner is asked to check.
+
 ## Review process
 
 Every PR receives an advisory Claude AI review. The PR is then labelled `needs-human-check` and the repository owner is mentioned; merge happens only after the owner says so. `main` is protected: no direct pushes.
