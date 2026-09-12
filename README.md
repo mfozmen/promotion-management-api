@@ -9,9 +9,10 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Node.js 22
 - Express 5
 - TypeScript (strict mode)
-- zod (request validation at the boundary)
+- zod (request validation at the HTTP boundary, payload validation at the queue boundary)
 - pino + pino-http (structured JSON logging)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
+- BullMQ on Redis 7 (event bus; see [ADR-0003](./ADR.md))
 - Vitest + Supertest (testing)
 - ESLint + Prettier
 - SonarCloud (static analysis / quality gate)
@@ -22,12 +23,16 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 
 - Node.js 22 (see `.nvmrc`)
 - PostgreSQL 16 for the integration tests
+- Docker, for the Redis the queue integration tests use (no mocks, REVIEW.md 7.3)
 
 ## Getting started
 
 ```bash
 npm ci
 npm run dev
+
+# Redis for the queue integration tests; override the port with QUEUE_TEST_REDIS_URL
+docker run -d --rm -p 6399:6379 redis:7-alpine
 npm test
 npm run test:cov # needs a PostgreSQL, see below
 npm run lint
@@ -40,8 +45,8 @@ The suite is split into layers, so the one that needs nothing can run anywhere:
 | Layer                              | Command                    | Needs           | Runs                        |
 | ---------------------------------- | -------------------------- | --------------- | --------------------------- |
 | unit (`tests/unit/`)               | `npm test`                 | nothing         | pre-commit hook, everywhere |
-| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL | CI, before every push       |
-| both, with coverage                | `npm run test:cov`         | real PostgreSQL | CI (the 100 % gate)         |
+| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL and Redis | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | real PostgreSQL and Redis | CI (the 100 % gate)         |
 
 The integration tests run against a real PostgreSQL, never a mock. Point them at one with
 `TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`); a
@@ -62,13 +67,24 @@ migrations with `npm run db:generate` after changing `src/shared/db/schema.ts`, 
 them to a running database with `DATABASE_URL=... npm run db:migrate` (drizzle-kit reads
 `DATABASE_URL`, not `TEST_DATABASE_URL`, and defaults to port 5432).
 
+BullMQ uses Redis logical database 1; database 0 is reserved for the read
+model, so queue maintenance and read-model rebuilds cannot destroy each other
+(ADR-0007).
+
+`npm run dev` opens the queue connections at startup against `REDIS_URL`
+(default `redis://127.0.0.1:6379`), but it starts and serves without a Redis
+there: connection errors are logged and every enqueue fails at its 2 s bound
+rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the HTTP server first and the queues last, and
+waits at most `SHUTDOWN_TIMEOUT_MS` (default 10 s, `0` exits immediately) for
+open connections before closing the queues anyway (ADR-0003).
+
 ## Project structure
 
 ```
 src/             app.ts (the Express app and the /api router), server.ts (the process entry point)
 src/middleware/  error handler (the one JSON error envelope), request validator (zod at the boundary)
 src/shared/      cross-cutting modules: logger.ts, http-error.ts; db/ holds the Drizzle schema, client and SQL migrations
-tests/unit/      unit tests; tests/integration/ needs a real PostgreSQL; tests/ itself holds helpers both kinds import (capture-logger.ts)
+tests/unit/      unit tests; tests/integration/ needs a real PostgreSQL and Redis; tests/ itself holds helpers both kinds import (capture-logger.ts)
 docs/            design specs (docs/superpowers/specs), end-to-end case files (docs/e2e-cases)
 ```
 
@@ -104,6 +120,6 @@ Further endpoints are documented as they land.
 - All changes land through pull requests — no direct pushes to `main`.
 - A PR merges only once the required checks `ci` and `claude-review` are green. `ci` runs the SonarCloud scan and waits for its quality gate; the scan is skipped on a PR that touches nothing SonarCloud reads, which is why SonarCloud's own check is not required. Every SonarCloud finding on the PR is fixed before hand-off (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
 - `local-gates` runs on every PR and computes which local-agent labels apply; it does not block the merge, but its labels are read at hand-off. When the checks are green, the threads are resolved and the labels are on, the PR is labelled `needs-human-check` and the owner is mentioned; merge happens only after the owner's approving comment, as a squash. The owner cannot approve their own PR, so that comment is the merge signal rather than a GitHub review approval.
-- Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check.
+- Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check, and a Warning is fixed in the pull request that found it rather than filed as an issue.
 
 See [ADR.md](./ADR.md) for architectural decisions, [Form 5 — AI Appendix](./Form%205_AI%20Appendix.docx) for AI usage documentation, and [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution process.
