@@ -257,7 +257,7 @@ rewritten.
 
 ### 2026-09-12 — Comment-density round on the HTTP skeleton (PR #30, commit `87b0a49`)
 
-- Strategy: the owner's finding was that the merged code read as narration rather than as code with notes, so the branch was measured against the new REVIEW.md §8b (PR #46, branch `docs/comment-density`) instead of being re-read by taste. The rule is countable — more than one comment line per four of code is a finding — which turned a style argument into an audit: 45 comment lines removed across five source files, no code changed, `src/shared/logger.ts` from 67 per cent comment to 24.
+- Strategy: the owner's finding was that the merged code read as narration rather than as code with notes, so the branch was measured against the comment-density rule proposed as §8b in PR #46 (branch `docs/comment-density`) instead of being re-read by taste. The rule is countable — more than one comment line per four of code is a finding — which turned a style argument into an audit: 45 comment lines removed across five source files, no code changed, `src/shared/logger.ts` from 67 per cent comment to 24.
 - Human refinement: the owner set the rule and the threshold; the AI applied it and, for each comment it wanted to keep, had to state what the code could not say by itself. That test is what kept the deletion from becoming its own overcorrection.
 
 #### The AI had been documenting its own reasoning, one review round at a time
