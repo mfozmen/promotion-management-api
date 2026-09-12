@@ -109,6 +109,14 @@ columns are null together (as `ingest_job_id` and `ingest_source_offset` are:
 both written by the same upsert), say so next to the guard and test the
 all-null case; otherwise test each column null on its own.
 
+2.7 State that depends on time or on other rows — "is this promotion active",
+"which candidate applies" — is decided in SQL on the database clock, as a view
+or the query's `WHERE`, never re-derived in code. A predicate that exists in
+both a query and a function is a finding.
+
+Evidence: `isActive(promotion, now)` duplicated the resolution query's
+`tstzrange(...) @> now()` on a second clock (PR #29, issue #28).
+
 ---
 
 ## 2b. Business data lives in the database
@@ -671,6 +679,11 @@ Evidence: ADR-0004 on #35 stated the promotion precedence rule three different
 ways in one section: "at most one active promotion per product", "at most one
 applied promotion", and "product level wins". No single name ran through the
 prose, so a rename had nothing to follow.
+
+8c.7 Directories are named for a role, never for a kind of syntax. Inside a
+module: `domain/` (types and pure rules, importing no store and no framework),
+`db/`, `http/`, `jobs/`; in `src/shared/db/schema/` one file per table. No
+`models/`, `types/`, `interfaces/`, `classes/`. The tree is in CONTRIBUTING.md.
 
 ---
 

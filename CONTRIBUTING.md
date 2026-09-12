@@ -1,5 +1,28 @@
 # Contributing
 
+## Source layout
+
+Modular monolith: one directory per module under `src/modules/`, and inside a module directories are named for a role, never for a kind of syntax (REVIEW.md 8c.7). One exported declaration per file, the file named after it (8c.2).
+
+```
+src/
+  modules/<module>/
+    domain/     types, interfaces, enum-like aliases and the pure rules over them; imports no store and no framework
+    db/         queries and repositories (Drizzle)
+    http/       routes, handlers, request schemas (zod)
+    jobs/       BullMQ processors
+  shared/
+    db/schema/  one file per table, schema.ts re-exports
+    http/       error type, error handler, request validator, logger
+    config.ts
+tests/
+  unit/         mirrors src/, one test file per source file
+  integration/  real PostgreSQL and Redis
+  e2e/
+```
+
+A module opens a directory when it has a file for it, not before. No `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/` anywhere.
+
 ## Branch naming
 
 `type/short-description`, e.g. `feat/product-listing`, `fix/promotion-overlap`.
