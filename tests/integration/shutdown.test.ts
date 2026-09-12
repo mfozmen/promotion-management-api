@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
 import { createQueues } from '../../src/shared/queue.js';
-import { shutdown } from '../../src/shared/shutdown.js';
+import { SHUTDOWN_TIMEOUT_MS, parseShutdownTimeout, shutdown } from '../../src/shared/shutdown.js';
 
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
 
@@ -18,6 +18,25 @@ describe('shutdown', () => {
     await new Promise((resolve) => server.once('listening', resolve));
     return { server, port: (server.address() as AddressInfo).port };
   };
+
+  it.each([
+    ['unset', undefined, SHUTDOWN_TIMEOUT_MS],
+    ['set but empty, the usual compose shape', '', SHUTDOWN_TIMEOUT_MS],
+    ['not a number', 'abc', SHUTDOWN_TIMEOUT_MS],
+    ['negative', '-1', SHUTDOWN_TIMEOUT_MS],
+    ['a deliberate zero', '0', 0],
+    ['a real value', '5000', 5_000],
+    ['padded', ' 5000 ', 5_000],
+  ])('reads the timeout %s', (_label, raw, expected) => {
+    expect(parseShutdownTimeout(raw)).toBe(expected);
+  });
+
+  it('uses the default bound when the caller passes none', async () => {
+    const { server } = await listening();
+    const queues = createQueues(redisUrl);
+
+    await expect(shutdown(server, queues)).resolves.toBe('drained');
+  });
 
   it('drains when nothing is holding the server open', async () => {
     const { server } = await listening();

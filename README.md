@@ -41,8 +41,10 @@ model, so queue maintenance and read-model rebuilds cannot destroy each other
 
 `npm run dev` opens the queue connections at startup, so it needs a Redis at
 `REDIS_URL` (default `redis://127.0.0.1:6379`). Queue operations are bounded at
-2 s, so an unreachable Redis fails the request instead of hanging it, and
-`SIGTERM` closes the HTTP server first and the queues last (ADR-0003).
+2 s and connecting at 10 s, so an unreachable Redis fails the request instead
+of hanging it. `SIGTERM` closes the HTTP server first and the queues last, and
+waits at most `SHUTDOWN_TIMEOUT_MS` (default 10 s, `0` exits immediately) for
+open connections before closing the queues anyway (ADR-0003).
 
 ## Project structure
 

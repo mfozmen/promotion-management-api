@@ -5,6 +5,13 @@ import { closeQueues, type Queues } from './queue.js';
  *  queues are closed anyway and the exit is taken. */
 export const SHUTDOWN_TIMEOUT_MS = 10_000;
 
+/** `Number('')` is 0 and `Number('abc')` is `NaN`, so an unset-but-present
+ *  `SHUTDOWN_TIMEOUT_MS=` in a compose or Kubernetes env block would otherwise
+ *  force every shutdown immediately. Digits only; `0` is a deliberate value. */
+export function parseShutdownTimeout(raw: string | undefined): number {
+  return raw !== undefined && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : SHUTDOWN_TIMEOUT_MS;
+}
+
 export async function shutdown(
   server: { close: (onClosed: () => void) => void },
   queues: Queues,
