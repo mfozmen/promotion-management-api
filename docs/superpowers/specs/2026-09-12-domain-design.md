@@ -662,7 +662,7 @@ src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
-    promotion/   promotion.ts (the Promotion row as a type), active-promotion.ts (the narrowed type and isActive, which reads the window), effective-price.ts (effectivePrice, pure), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
+    promotion/   promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), effective-price.ts (effectivePrice, pure), pricing-outcome.ts (PricingOutcome), pricing-input-error.ts (pricingInputError, the guards), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
     pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts

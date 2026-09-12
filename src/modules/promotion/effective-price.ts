@@ -1,9 +1,6 @@
 import { pricingInputError } from './pricing-input-error.js';
+import type { PricingOutcome } from './pricing-outcome.js';
 import type { Promotion } from './promotion.js';
-
-/** A failure carries no price, so a caller cannot publish one by mistake. */
-export type PricingOutcome =
-  { ok: true; effectivePriceCents: number } | { ok: false; reason: string };
 
 const BASIS_POINTS_PER_UNIT = 10_000n;
 

@@ -1,6 +1,5 @@
-export type DiscountType = 'percentage' | 'fixed';
-
-export type PromotionStatus = 'draft' | 'active' | 'cancelled';
+import type { DiscountType } from './discount-type.js';
+import type { PromotionStatus } from './promotion-status.js';
 
 export interface Promotion {
   discountType: DiscountType;

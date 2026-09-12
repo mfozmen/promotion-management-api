@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { ActivePromotion } from '../../../../src/modules/promotion/active-promotion.js';
 import { effectivePrice } from '../../../../src/modules/promotion/effective-price.js';
 import type { Promotion } from '../../../../src/modules/promotion/promotion.js';
 
-function active(overrides: Partial<Omit<Promotion, 'status'>> = {}): ActivePromotion {
+function active(overrides: Partial<Omit<Promotion, 'status'>> = {}): Promotion {
   return {
     discountType: 'percentage',
     value: 2500,
