@@ -315,7 +315,14 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    `sku,name,category,vendor_price,stock_quantity`; `vendor_price` is a
    decimal with at most two fraction places (`799.90`) parsed to integer
    cents without floating point (`"799.90"` → `79990`), more places or a
-   non-numeric value rejects the row; UTF-8, optional BOM, LF or CRLF; RFC
+   non-numeric value rejects the row. The zod row schema mirrors every
+   database constraint so a bad row can never abort a batch: `sku`, `name`
+   and `category` are non-empty trimmed strings, `vendor_price` is `>= 0`,
+   `stock_quantity` is a non-negative integer, and the price produced by the
+   ingestion rules is checked `>= 0` before the batch is built (a rule that
+   drives a price negative rejects the row and logs the rule name). A
+   constraint violation that still escapes is a defect: the batch fails with
+   the offending rows logged and counts against `failures`; UTF-8, optional BOM, LF or CRLF; RFC
    4180 quoting within a line is supported, embedded newlines are not. A
    sample lives at `fixtures/vendor-sample.csv`.
 3. **Batch** 1 000 lines: parse, validate (zod), **dedupe by SKU in a `Map`
@@ -466,7 +473,8 @@ Dockerfile           one image, command per service
 
 - Edge cases that must have a named test: cancel an unassigned draft (no
   target, allowed by the CHECKs), assign a non-draft (`409`), assign with
-  both or neither target (`400`), a category promotion whose category matches
+  both or neither target (`400`), a vendor row with a negative price or stock
+  rejected without aborting its batch, a category promotion whose category matches
   no product (`201` with `productCount: 0` and a warning log), assigning a draft whose `endsAt` has passed
   (`409`), two concurrent assigns of one draft (one `200`, one `409`), a
   product created in a category with an active promotion is discounted on its
