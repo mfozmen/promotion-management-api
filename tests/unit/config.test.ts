@@ -118,15 +118,17 @@ describe('loadConfig', () => {
       expect(config.uploadDir).toBe('./uploads');
     });
 
-    it('throws naming DATABASE_URL when it is not a URL', () => {
-      expect(() => loadConfig({ ...validEnv, DATABASE_URL: 'localhost/promotion' })).toThrow(
-        'Invalid environment variable DATABASE_URL: expected a URL, got "localhost/promotion"',
-      );
+    it('throws naming DATABASE_URL when it is not a URL, without echoing the value', () => {
+      // The exact-message assertion is the point: a connection string carries a
+      // password and this message reaches a startup log (REVIEW.md 10.3).
+      expect(() =>
+        loadConfig({ ...validEnv, DATABASE_URL: 'postgres//promo:hunter2@localhost/promotion' }),
+      ).toThrow(new Error('Invalid environment variable DATABASE_URL: expected a URL'));
     });
 
     it('throws naming REDIS_URL when it is not a URL', () => {
       expect(() => loadConfig({ ...validEnv, REDIS_URL: 'not a url' })).toThrow(
-        'Invalid environment variable REDIS_URL: expected a URL, got "not a url"',
+        new Error('Invalid environment variable REDIS_URL: expected a URL'),
       );
     });
   });

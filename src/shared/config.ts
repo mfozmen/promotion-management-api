@@ -57,7 +57,9 @@ const parseUrl = (key: string, value: string): URL => {
   try {
     return new URL(value);
   } catch {
-    return invalid(key, 'expected a URL', value);
+    // The value is not echoed: a connection string carries a password, and this
+    // message reaches a startup log (REVIEW.md 10.3).
+    throw new Error(`Invalid environment variable ${key}: expected a URL`);
   }
 };
 
