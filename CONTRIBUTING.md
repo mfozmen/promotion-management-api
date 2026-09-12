@@ -46,7 +46,12 @@ All of these are required on `main`:
 
 `local-gates` lists the pull request files and edits labels with the workflow's `GITHUB_TOKEN`; both are served by the `pull-requests` and `issues` scopes, and the job performs no checkout, so it grants no `contents` scope. A `403` on that step means the pull request comes from a fork, where the token is read-only regardless of the `permissions` block. Fork pull requests cannot pass this gate (nor the Claude review); open the branch in this repository instead.
 
-Pre-push local gates: run the agents the change needs against the branch before pushing, then apply their labels. Which ones are needed follows from what the diff can break, not from the fact that a diff exists, and the table below states it per agent. Push only when every applicable verdict is PASS (or SOUND) and the docs changes are committed.
+Pre-push local gates: run the agents the change needs against the branch before pushing, then apply their labels. Which ones are needed follows from what the diff can break, not from the fact that a diff exists. The changed paths fall into two groups:
+
+- **Behaviour** — changes how the running application or its build behaves: `src/`, `tests/`, `scripts/`, `.claude/agents/`, `package.json`, a `*.config.ts`, `*.config.mjs` or `*.config.js`, a `tsconfig*.json`, a `Dockerfile` or a compose file.
+- **Judgement** — changes how the work itself is judged: `.github/workflows/`, `.claude/agents/`, `.husky/`, `sonar-project.properties`.
+
+An agent definition is in both groups: the agent itself must be exercised, and every branch in flight is judged by it. Push only when every applicable verdict is PASS (or SOUND) and the docs changes are committed.
 
 ## Local agents
 
@@ -55,8 +60,8 @@ Four Claude Code agents live in `.claude/agents/`. They are part of the process,
 | Agent                 | When it runs                                                                                                                                                 | Output                                                                                           |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | `architecture-critic` | Before pushing a PR that touches `ADR.md`, `docs/superpowers/specs/`, the vendor, promotion or pricing modules, the workers, or carries the `scenario` label | SOUND / REVISE / REJECT, label `architecture-verified`                                           |
-| `e2e-tester`          | Before pushing a PR that touches `src/`, `tests/`, `package.json`, a `*.config.ts`, a `tsconfig*.json`, a `Dockerfile` or a compose file                     | PASS / FAIL, label `e2e-verified`                                                                |
-| `impact-analyzer`     | Before pushing a PR that touches those same paths or `.github/workflows/`                                                                                    | PASS / FAIL, label `impact-verified`                                                             |
+| `e2e-tester`          | Before pushing a PR that touches the **behaviour** group                                                                                                     | PASS / FAIL, label `e2e-verified`                                                                |
+| `impact-analyzer`     | Before pushing a PR that touches the **behaviour** or the **judgement** group                                                                                | PASS / FAIL, label `impact-verified`                                                             |
 | `docs-scribe`         | Before every push, on the PR branch, and whenever an AI mistake is caught and fixed (this one always applies)                                                | Updates `ADR.md`, `README.md`, `docs/ai-appendix-notes.md` in the same PR, label `docs-verified` |
 
 Agent definitions are living documents: when an endpoint, job, cache or store lands, update the relevant agent in the same PR so it knows what to test, trace or attack.

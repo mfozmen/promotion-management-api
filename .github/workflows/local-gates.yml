@@ -70,16 +70,21 @@ jobs:
           # docs-scribe is the one that always applies: every change can outdate the ADRs, the
           # README or the appendix, and that is the case-study deliverable.
           required="docs-verified"
+          # Two groups, named once and used below, so the prose in CLAUDE.md and CONTRIBUTING.md
+          # has something to match and the two conditions cannot drift apart.
+          #
+          # behaviour: changes how the running application or its build behaves.
+          behaviour='^(src/|tests/|scripts/|\.claude/agents/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|Dockerfile|docker-compose.*\.ya?ml$)'
+          # judgement: changes how the work itself is judged. An agent definition is in both
+          # groups: the agent must be exercised, and every branch in flight is judged by it.
+          judgement='^(\.github/workflows/|\.claude/agents/|\.husky/|sonar-project\.properties$)'
           # e2e-tester needs something that can change how the running application behaves.
-          # One pattern, used twice, so the two lists cannot drift apart.
-          app='^(src/|tests/|package(-lock)?\.json$|.*\.config\.ts$|tsconfig.*\.json$|Dockerfile|docker-compose.*\.ya?ml$)'
-          if grep -qE "$app" <<<"$files"; then
+          if grep -qE "$behaviour" <<<"$files"; then
             required="$required e2e-verified"
           fi
-          # impact-analyzer covers those same paths and the workflows, because a change to how
-          # pull requests are judged lands on every branch in flight at once; that is the widest
-          # blast radius here.
-          if grep -qE "$app|^\.github/workflows/" <<<"$files"; then
+          # impact-analyzer covers both groups: a change to how pull requests are judged lands on
+          # every branch in flight at once, which is the widest blast radius here.
+          if grep -qE "$behaviour|$judgement" <<<"$files"; then
             required="$required impact-verified"
           fi
           # Design documents, the modules that implement Scenario A and B, and the workers all

@@ -146,15 +146,25 @@ rewritten.
 - Strategy: `local-gates` demanded all three agent labels on every pull
   request, so a markdown-only branch waited for a load run that could not
   find anything. The required set is now computed from the pull request's
-  changed paths: `docs-scribe` always (any change can outdate the ADRs, the
-  README or this appendix), `e2e-tester` for paths that change how the
-  running application behaves, `impact-analyzer` for those paths and
-  `.github/workflows/`, `architecture-critic` unchanged. CLAUDE.md and
-  CONTRIBUTING.md were rewritten to state the same rule.
-- Human refinement: the owner set the scope — required by what a diff can
-  break, not by the fact that a diff exists — and named the consequence for
-  this pull request itself, which touches `.github/workflows/` and therefore
-  needs `docs-verified` and `impact-verified` but not `e2e-verified`.
+  changed paths, sorted into two named groups: **behaviour** (changes how the
+  running application or its build behaves) and **judgement** (changes how the
+  work itself is judged). `docs-scribe` always, because any change can outdate
+  the ADRs, the README or this appendix; `e2e-tester` for the behaviour group;
+  `impact-analyzer` for both; `architecture-critic` unchanged. An agent
+  definition sits in both groups — the agent must be exercised, and every
+  branch in flight is judged by it. CLAUDE.md and CONTRIBUTING.md list the
+  same two groups so the prose and the gate cannot drift.
+- Human refinement: substantial, in two rounds. The owner set the scope
+  (required by what a diff can break, not by the fact that a diff exists) and
+  named the consequence for this pull request itself, which touches
+  `.github/workflows/` and therefore needs `docs-verified` and
+  `impact-verified` but not `e2e-verified`. The owner then found five kinds
+  of file the first patterns dropped — `.claude/agents/`, `scripts/`,
+  `*.config.mjs` and `*.config.js`, `.husky/` and `sonar-project.properties`
+  — and required the restructure into two named groups rather than five
+  more alternatives bolted onto one regular expression. The sharpest of the
+  five: PR #44 rewrote the e2e tester's own definition and would have
+  shipped without a single e2e run.
 
 ## Judgement, challenges and verification
 
@@ -205,9 +215,12 @@ rewritten.
   `e2e` bucket and not the `impact` one. The same probe confirmed
   `src/shared/db/migrations/0001.sql` and `vitest.config.ts` bucket
   correctly, and that no open pull request goes from passing to failing.
-- Resolution: the path list is now one shell variable used by both
-  conditions, with `.github/workflows/` appended for `impact-analyzer` only,
-  so the two sets cannot drift apart again.
+- Resolution: the path list became one shell variable used by both
+  conditions, then — on the owner's second pass — two named variables,
+  `behaviour` and `judgement`, that the prose in CLAUDE.md and CONTRIBUTING.md
+  names verbatim. The resolved bucket for every representative path is
+  tabulated in the pull request body, so a reader can check the rule without
+  running it.
 
 ## Overall reflection
 
