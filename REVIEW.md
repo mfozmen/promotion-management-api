@@ -93,9 +93,13 @@ fine" is not a test.
 2.6 A `WHERE` clause on a nullable column states its `NULL` branch explicitly.
 `NULL` compared with anything is `NULL`, not `TRUE`, and a row-value
 comparison stops at the first pair it cannot decide: `(a, b) > (c, d)` is
-`NULL` when `c` is `NULL`, so a guard such as
-`ON CONFLICT DO UPDATE ... WHERE (a, b) > (c, d)` silently skips the row.
-Write `c IS NULL OR (a, b) > (c, d)`, and test the null case.
+`NULL` when `c` is `NULL`, and also when `a = c` and `d` is `NULL`, so a
+guard such as `ON CONFLICT DO UPDATE ... WHERE (a, b) > (c, d)` silently
+skips the row in both cases. The standard form names every nullable column:
+`c IS NULL OR d IS NULL OR (a, b) > (c, d)`. When the schema guarantees the
+columns are null together (as `ingest_job_id` and `ingest_source_offset` are:
+both written by the same upsert), say so next to the guard and test the
+all-null case; otherwise test each column null on its own.
 
 ---
 
