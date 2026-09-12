@@ -22,10 +22,13 @@ routes under `src/`.
 
 1. `npm ci` only if `node_modules` is missing.
 2. Start dependencies if a `docker-compose.yml` exists: `docker compose up -d --wait`.
-3. Pick a port and prove it is free before using it: fail the run if anything
-   already listens on it (`Get-NetTCPConnection -LocalPort <port> -State Listen`
-   on Windows, `ss -ltn` elsewhere) and pick another. Start the API in the
-   background: `PORT=<port> npm run dev > e2e-server.log 2>&1 &`.
+3. Pick a port and prove it is free before using it
+   (`Get-NetTCPConnection -LocalPort <port> -State Listen` on Windows,
+   `ss -ltn` elsewhere). If something already listens, pick another port and
+   check again; after ten occupied ports, FAIL rather than keep hunting. If the
+   check itself cannot run, FAIL: an unverified port is how the last stale
+   server went unnoticed. Then start the API in the background:
+   `PORT=<port> npm run dev > e2e-server.log 2>&1 &`.
 4. **Prove you are talking to the server you started.** Find the process that
    actually listens on the port and check it is a descendant of the one you
    launched, or that its command line points at this worktree. A stale server
