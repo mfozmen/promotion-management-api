@@ -515,9 +515,9 @@ and a parser's message is replaced rather than forwarded.
 
 A schema's own message is part of the response, so a custom or refinement
 message must not interpolate the value it rejected. The validator forwards what
-the schema produced, so `.refine(v => ..., { error: () => \`${input} is
-invalid\` })` puts the caller's value back in the body with nothing in the
-middleware to stop it.
+the schema produced, so a refinement whose message is built from the received
+input puts the caller's value back in the body with nothing in the middleware
+to stop it.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
 another row's fields, which they never had. `Unrecognized key: "discountTyp"` is
