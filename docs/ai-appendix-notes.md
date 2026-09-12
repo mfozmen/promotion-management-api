@@ -744,6 +744,64 @@ rewritten.
   stale, and the guard that runs before the branch is the one place where no
   single unit is correct.
 
+### 2026-09-12 — Pricing core: the revert took the code out and left the documents behind (issue #8, PR #29, commit `8001eb8`)
+
+- Challenge, two findings in one round, both about prose rather than code. (1)
+  The revert `1e624f5` deleted the calculator, factory and registry, but ADR-0004
+  and the design spec kept describing them, so this branch merging after PR #35
+  would have reinstated the sentences #35 removes — a revert that is green in
+  every test and still restores what it reverted, one document later. (2) The
+  precedence policy was stated as two opposite rules that were both called the
+  default: "product level wins even when the category discount is larger" sat in
+  ADR-0004 and REVIEW.md 7.4's edge case, while "whichever price is lower" sat
+  in the rejected alternatives under its other name, "precedence by larger
+  discount". The design spec stated it both ways in one document.
+- Verification: an architecture review of the branch, plus a read of ADR-0004
+  against the design spec's DDL rather than against the code. That second read
+  is what caught the stale sentence, and it is also where the previous
+  `docs-scribe` pass had gone wrong: the earlier report called ADR-0004 an exact
+  match for the shipped module, because the module was the only thing it was
+  checked against. The ADR's claim that the write store "still has `calculator
+text` and `params jsonb`" was false in both directions — no migration exists
+  on this branch, and the spec's `create table promotions` carries
+  `discount_type` and `value` only, with no column for a later migration to
+  drop.
+- Resolution, the precedence half, before and after in ADR-0004:
+  - before: the seeded default is product-level precedence, so a product's own
+    promotion wins over its category's even when the category discount is
+    larger; "whichever price is lower" is listed as rejected.
+  - after: the seeded default applies whichever candidate prices lower, in the
+    customer's favour, so a category flash sale deeper than a product's own
+    promotion wins (owner decision, 2026-09-12); unconditional product-level
+    precedence is the rejected alternative, because it would show a customer a
+    worse price than the campaign advertises.
+- The same sentence now appears once in each of ADR-0004's decision,
+  consequences and rejected alternatives, REVIEW.md 7.4's promotion-inheritance
+  edge case and section 4 of the design spec. The stale-shape half removed the
+  `calculator`/`params` claim from ADR-0004, moved `effective-price.ts` from
+  `pricing/` to `promotion/` in the spec's layout so it matches REVIEW.md 1.3
+  and the tree, and dropped the guard comment in `effective-price.ts` that cited
+  a zod boundary and check constraints as the real gates when neither has landed
+  here.
+- One cross-reference was wrong on both sides of the same sentence and is fixed
+  here in ADR.md only: the ADR said the precedence policy is stated "with its
+  consequence for admins" in section 3 of the design spec, but section 3 is the
+  write-store schema; the statement is in section 4. The spec repeats the error
+  about itself ("section 3 of this document"), which is outside this agent's
+  files and is reported for routing rather than edited.
+- Appendix history was left alone deliberately. The entries above that describe
+  calculators, a registry and a factory, and the one that records
+  product-over-category precedence as a tested case, stay in the past tense:
+  this file is the case study's record of how the design moved, and rewriting it
+  to match the current shape would delete the evidence the reflection depends
+  on. Only the REVIEW.md rule number was corrected in place, 13.6 to 8c.2, with
+  the old number kept in the sentence.
+- Lesson, and the sharpest one in this pull request: a revert has a blast radius
+  in prose that no test measures. Four reshapes of one module each updated the
+  code and the design document, but the revert updated only the code, and the
+  contradiction it left was invisible to lint, typecheck, 100 % coverage and the
+  local agent set. It took a reviewer reading two documents against each other.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
