@@ -266,12 +266,12 @@ rewritten.
   anything already say this?
 - Verification: it does. SonarCloud posts its findings as a pull request comment
   without being asked, which is the same list the script was re-printing as
-  GitHub annotations. The configuration alternative was checked and rejected on
-  evidence rather than assumed: `api/qualitygates/get_by_project` reports that
-  the project uses the built-in Sonar way gate, and the owner established that a
-  custom gate with an issue-count condition is not available on this plan — that
-  one is the owner's finding, not an API result — so the gate cannot be made to
-  fail on findings. A third check found that every endpoint the script called
+  GitHub annotations. The configuration alternative was examined rather than
+  assumed, keeping what was verified apart from what was reported:
+  `api/qualitygates/get_by_project` reports that the project uses the built-in
+  Sonar way gate, and the owner established that a custom gate with an
+  issue-count condition is not available on this plan — that one is the owner's
+  finding, not an API result — so the gate cannot be made to fail on findings. A third check found that every endpoint the script called
   answers anonymously on this public project: `issues/search`, the same call with
   `issueStatuses`, and `hotspots/search` each answer 200 with no credential. So
   the `SONAR_TOKEN` the script demanded was never needed — the AI wrote
@@ -285,9 +285,9 @@ rewritten.
   rewritten to say what is actually true — findings are read in SonarCloud's pull
   request comment and fixed before hand-off. Because that is a rule rather than a
   check, the obligation went into `.claude/agents/impact-analyzer.md`, which runs
-  before every push, instead of into prose nobody executes; and 13.6 names the
-  paid-feature constraint so the next reader does not spend an afternoon
-  rebuilding what was just removed. `SONAR_TOKEN` stays on the scan step alone,
+  before every push, instead of into prose nobody executes; and 13.6 names that
+  plan constraint, attributed to the owner, so the next reader does not spend an
+  afternoon rebuilding what was just removed. `SONAR_TOKEN` stays on the scan step alone,
   where uploading an analysis genuinely needs it.
 - Ratio note: this episode is the clearest case so far of AI-generated work being
   net negative until a human asked what the tool already did. The script was
