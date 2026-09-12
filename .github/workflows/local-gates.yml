@@ -53,6 +53,8 @@ jobs:
 
       - name: Require the applicable verification labels
         # gh pr diff --name-only is served by the pull-requests permission; no checkout, no contents scope needed.
+        # A 403 here means the PR comes from a fork, where GITHUB_TOKEN is read-only regardless of this
+        # permissions block. Fork PRs cannot pass this gate; open the branch in this repository instead.
         run: |
           labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')
           files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
