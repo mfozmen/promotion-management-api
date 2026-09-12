@@ -1,18 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyPromotion,
+  adjustmentFor,
+  applyPromotions,
   isActive,
-  resolveApplied,
+  type AdjustmentEvent,
   type Promotion,
 } from '../../src/modules/pricing/effective-price.js';
 
 const NOW = new Date('2026-09-12T12:00:00.000Z');
 const MS = 1;
 
+const percent = (value: number): AdjustmentEvent => ({
+  type: 'adjustPercentBps',
+  params: { value },
+});
+const cents = (value: number): AdjustmentEvent => ({ type: 'adjustCents', params: { value } });
+
 function promotion(overrides: Partial<Promotion> = {}): Promotion {
   return {
-    discountType: 'percentage',
-    value: 2500,
     status: 'active',
     startsAt: new Date('2026-09-12T00:00:00.000Z'),
     endsAt: new Date('2026-09-13T00:00:00.000Z'),
@@ -20,89 +25,141 @@ function promotion(overrides: Partial<Promotion> = {}): Promotion {
   };
 }
 
-describe('applyPromotion', () => {
-  it('applies a percentage discount in basis points', () => {
-    expect(applyPromotion(10_000, promotion({ value: 2500 }))).toBe(7500);
+function priced(basePriceCents: number, event: AdjustmentEvent | null): number {
+  const outcome = applyPromotions(basePriceCents, event);
+
+  expect(outcome.ok).toBe(true);
+  return outcome.effectivePriceCents;
+}
+
+describe('adjustmentFor', () => {
+  it('has a strategy for every event type the rules may emit', () => {
+    expect(adjustmentFor('adjustPercentBps')).toBeDefined();
+    expect(adjustmentFor('adjustCents')).toBeDefined();
   });
 
-  it('floors the discount so the customer pays at most one cent more', () => {
-    expect(applyPromotion(1000, promotion({ value: 3333 }))).toBe(667);
+  it('has no strategy for a type nothing implements', () => {
+    expect(adjustmentFor('adjustNothing')).toBeUndefined();
   });
 
-  it('floors a discount of exactly half a cent', () => {
-    expect(applyPromotion(999, promotion({ value: 5000 }))).toBe(500);
+  it('exposes the arithmetic itself, so ingestion can run it without this price path', () => {
+    // Ingestion runs several of these in priority order over one price;
+    // promotions run the winning one. One implementation, two callers.
+    const percentBps = adjustmentFor('adjustPercentBps');
+    const minorUnits = adjustmentFor('adjustCents');
+
+    expect(percentBps?.apply(10_000n, { value: -2500 })).toBe(7500n);
+    expect(percentBps?.apply(10_000n, { value: 1500 })).toBe(11_500n);
+    expect(minorUnits?.apply(10_000n, { value: -2500 })).toBe(7500n);
+    expect(minorUnits?.apply(10_000n, { value: 1500 })).toBe(11_500n);
+    expect(minorUnits?.validate(1500)).toBeNull();
+  });
+});
+
+describe('applyPromotions', () => {
+  it('applies a percentage adjustment in basis points', () => {
+    expect(priced(10_000, percent(-2500))).toBe(7500);
   });
 
-  it('returns zero for a 100 % percentage discount', () => {
-    expect(applyPromotion(10_000, promotion({ value: 10_000 }))).toBe(0);
+  it('applies a fixed adjustment in minor units', () => {
+    expect(priced(10_000, cents(-2500))).toBe(7500);
   });
 
-  it('applies a fixed discount in cents', () => {
-    expect(applyPromotion(10_000, promotion({ discountType: 'fixed', value: 2500 }))).toBe(7500);
+  it('floors the price, so the customer never pays a fraction of a minor unit', () => {
+    // 75 % of 999 is 749.25. The floor is on the price, not on the discount,
+    // because the ingestion strategy this shares floors a markup the same way.
+    expect(priced(999, percent(-2500))).toBe(749);
+    expect(priced(1000, percent(-3333))).toBe(666);
   });
 
-  it('clamps a fixed discount larger than the base price to zero', () => {
-    expect(applyPromotion(500, promotion({ discountType: 'fixed', value: 800 }))).toBe(0);
+  it('returns zero for a 100 % discount', () => {
+    expect(priced(10_000, percent(-10_000))).toBe(0);
+  });
+
+  it('returns zero for a fixed discount larger than the base price', () => {
+    expect(priced(500, cents(-800))).toBe(0);
   });
 
   it('returns zero for a zero base price', () => {
-    expect(applyPromotion(0, promotion({ value: 2500 }))).toBe(0);
-    expect(applyPromotion(0, promotion({ discountType: 'fixed', value: 800 }))).toBe(0);
+    expect(priced(0, percent(-2500))).toBe(0);
+    expect(priced(0, cents(-800))).toBe(0);
   });
 
-  it('returns the base price when there is no applied promotion', () => {
-    expect(applyPromotion(10_000, null)).toBe(10_000);
+  it('returns the base price when no rule fired', () => {
+    expect(priced(10_000, null)).toBe(10_000);
   });
 
-  it('floors exactly at the largest price the money representation allows', () => {
-    // The ceiling of the `mode: 'number'` price columns. This one floors
-    // correctly in doubles too; the case below is the discriminating one.
-    expect(applyPromotion(Number.MAX_SAFE_INTEGER, promotion({ value: 5000 }))).toBe(
-      4_503_599_627_370_496,
-    );
+  it('returns the base price for an adjustment of zero', () => {
+    expect(priced(10_000, percent(0))).toBe(10_000);
+    expect(priced(10_000, cents(0))).toBe(10_000);
   });
 
-  it('floors a large price where double arithmetic rounds the discount up', () => {
-    // In doubles this discount floors to 2940746862477, one cent too much.
-    expect(applyPromotion(4_171_863_899_102, promotion({ value: 7049 }))).toBe(1_231_117_036_626);
+  it('never raises a price above the base, whatever the rule asked for', () => {
+    // The vocabulary is shared with ingestion, where a markup is the point;
+    // on the promotion path it is clamped away (REVIEW.md 1.5).
+    expect(priced(10_000, percent(1500))).toBe(10_000);
+    expect(priced(10_000, cents(500))).toBe(10_000);
   });
 
-  it('clamps a percentage above 100 % to zero rather than rejecting it', () => {
-    // The `value <= 10000` check constraint is the gate; this pins what the
-    // module does when something gets past it, at a base where the bigint
-    // discount is far outside a double's exact range.
-    expect(applyPromotion(10_000, promotion({ value: 15_000 }))).toBe(0);
-    expect(applyPromotion(Number.MAX_SAFE_INTEGER, promotion({ value: 10_001 }))).toBe(0);
+  it('is exact at the largest price the money representation allows', () => {
+    // The ceiling of the `mode: 'number'` price columns. In doubles the
+    // intermediate product is far outside the exact-integer range.
+    expect(priced(Number.MAX_SAFE_INTEGER, percent(-5000))).toBe(4_503_599_627_370_495);
   });
 
-  it('returns the base price for a discount of zero', () => {
-    expect(applyPromotion(10_000, promotion({ value: 0 }))).toBe(10_000);
-    expect(applyPromotion(10_000, promotion({ discountType: 'fixed', value: 0 }))).toBe(10_000);
+  it('is exact at a large price where double arithmetic would round', () => {
+    expect(priced(4_171_863_899_102, percent(-7049))).toBe(1_231_117_036_625);
   });
 
-  it('rejects a base price that is not a whole number of minor units', () => {
-    for (const discountType of ['percentage', 'fixed'] as const) {
-      for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, 2 ** 53]) {
-        expect(() => applyPromotion(basePriceCents, promotion({ discountType }))).toThrow(
-          /basePriceCents must be a whole number of minor units/,
-        );
+  it('skips an event naming a type no strategy implements, keeping the base price', () => {
+    expect(applyPromotions(10_000, { type: 'adjustKarma', params: { value: -2500 } })).toEqual({
+      ok: false,
+      effectivePriceCents: 10_000,
+      reason: 'unknown adjustment type "adjustKarma"',
+    });
+  });
+
+  it('rejects an adjustment value that is not a whole number in range', () => {
+    for (const event of [percent, cents]) {
+      for (const value of [-2500.5, NaN, Infinity, -Infinity, 2 ** 53]) {
+        expect(applyPromotions(10_000, event(value))).toEqual({
+          ok: false,
+          effectivePriceCents: 10_000,
+          reason: `adjustment value ${value} is not a whole number in range`,
+        });
       }
     }
   });
 
-  it('rejects a promotion value that is not a whole number of minor units', () => {
-    for (const discountType of ['percentage', 'fixed'] as const) {
-      for (const value of [2500.5, NaN, Infinity, 2 ** 53]) {
-        expect(() => applyPromotion(10_000, promotion({ discountType, value }))).toThrow(
-          /promotion value must be a whole number of minor units/,
-        );
+  it('rejects a percentage below -10 000 basis points rather than pricing it', () => {
+    expect(applyPromotions(10_000, percent(-10_001))).toEqual({
+      ok: false,
+      effectivePriceCents: 10_000,
+      reason: 'percentage adjustment -10001 is below -10000 basis points',
+    });
+  });
+
+  it('rejects a base price that is not a whole, non-negative number of minor units', () => {
+    for (const event of [null, percent(-2500), cents(-2500)]) {
+      for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, -500, 2 ** 53]) {
+        expect(applyPromotions(basePriceCents, event)).toEqual({
+          ok: false,
+          effectivePriceCents: 0,
+          reason: `base price ${basePriceCents} is not a whole number of minor units in range`,
+        });
       }
     }
   });
 
-  it('never returns more than the base price', () => {
-    expect(applyPromotion(10_000, promotion({ value: -2500 }))).toBe(10_000);
-    expect(applyPromotion(10_000, promotion({ discountType: 'fixed', value: -500 }))).toBe(10_000);
+  it('never returns a price outside [0, base] for any adjustment it accepts', () => {
+    for (const value of [-10_000, -2500, -1, 0, 1, 20_000]) {
+      for (const event of [percent, cents]) {
+        const outcome = applyPromotions(10_000, event(value));
+
+        expect(outcome.effectivePriceCents).toBeLessThanOrEqual(10_000);
+        expect(outcome.effectivePriceCents).toBeGreaterThanOrEqual(0);
+      }
+    }
   });
 });
 
@@ -144,56 +201,5 @@ describe('isActive', () => {
 
   it('is never active for a cancelled promotion', () => {
     expect(isActive(promotion({ status: 'cancelled' }), NOW)).toBe(false);
-  });
-});
-
-describe('resolveApplied', () => {
-  it('applies the product-level promotion when both levels are active', () => {
-    const product = promotion({ value: 1000 });
-    const category = promotion({ value: 5000 });
-
-    expect(resolveApplied(product, category, NOW)).toBe(product);
-  });
-
-  it('applies the product-level promotion even when the category discount is larger', () => {
-    const product = promotion({ value: 1000 });
-    const category = promotion({ value: 9000 });
-
-    expect(applyPromotion(10_000, resolveApplied(product, category, NOW))).toBe(9000);
-  });
-
-  it('applies the category-level promotion when there is no product-level one', () => {
-    const category = promotion();
-
-    expect(resolveApplied(null, category, NOW)).toBe(category);
-  });
-
-  it('applies the category-level promotion when the product-level one is not active', () => {
-    const product = promotion({ endsAt: NOW });
-    const category = promotion();
-
-    expect(resolveApplied(product, category, NOW)).toBe(category);
-  });
-
-  it('applies the product-level promotion when there is no category-level one', () => {
-    const product = promotion();
-
-    expect(resolveApplied(product, null, NOW)).toBe(product);
-  });
-
-  it('applies nothing when the product-level promotion is not active and there is no category-level one', () => {
-    expect(resolveApplied(promotion({ status: 'draft' }), null, NOW)).toBeNull();
-  });
-
-  it('applies nothing when the category-level promotion is not active either', () => {
-    const product = promotion({ status: 'draft' });
-    const category = promotion({ status: 'cancelled' });
-
-    expect(resolveApplied(product, category, NOW)).toBeNull();
-  });
-
-  it('applies nothing and keeps the base price when there is no promotion at all', () => {
-    expect(resolveApplied(null, null, NOW)).toBeNull();
-    expect(applyPromotion(10_000, resolveApplied(null, null, NOW))).toBe(10_000);
   });
 });

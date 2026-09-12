@@ -217,3 +217,43 @@ rewritten.
 
 - Estimated ratio: pending.
 - Key takeaway: pending.
+
+### 2026-09-12 — Pricing core: advisory AI review caught a defect four local agents missed (issue #8, PR #29, commit `a60877d`)
+
+- Challenge: `applyPromotion` called `BigInt()` on its two `number` parameters
+  with no integer guard. `BigInt()` raises a RangeError on a fractional, NaN or
+  infinite value, so the percentage branch threw on
+  `applyPromotion(1000.5, ...)`, while the `fixed` branch never reached
+  `BigInt()` and silently returned `750.5` or `NaN` as a price — a money value
+  that is not a whole minor unit, which nothing downstream would have noticed.
+  The same commit's review also found a comment asserting that the `bigint`
+  quotient is at most the base so the conversion back with `Number` is always
+  exact; that held only while `value <= 10000`, an invariant the module
+  deliberately does not enforce.
+- Verification: found by the advisory Claude Code Action review on the PR, not
+  by the local agents — three earlier review passes and all four local agents
+  (`e2e-tester`, `impact-analyzer`, `architecture-critic`, `docs-scribe`) had
+  passed the same code. The reviewer verified the behaviour in Node against the
+  exact expression rather than reasoning about it, and pointed at the sibling
+  module `src/modules/pricing/ingestion-rules.ts` (PR #39), whose `priceRow`
+  already guards with `Number.isSafeInteger` — two modules in one folder
+  disagreeing about whether the guard was needed.
+- Resolution: one `Number.isSafeInteger` guard at the top of `applyPromotion`
+  covering both amounts and both branches, throwing a RangeError that names the
+  offending value, with the contract written into the docblock: callers read
+  whole minor units out of `bigint` columns, so a violation is a caller bug,
+  while an untrusted vendor row is `priceRow`'s job and that one returns a
+  rejection instead of throwing so a single row cannot abort a batch. The clamp
+  now runs in `bigint` before the conversion back, so the result is inside
+  `[0, basePriceCents]` and exactly representable for any discount size — which
+  makes the comment true instead of deleting it.
+- Verification of the fix: tests written red first for both amounts fractional,
+  NaN, infinite and past 2^53 on both discount types, plus a percentage above
+  100 % clamping to zero, a zero discount, an inverted window and two
+  `resolveApplied` combinations. 32 tests pass (31 in the pricing file) at 100 %
+  statement, branch, function and line coverage; `npm run lint` and
+  `npm run typecheck` are clean and all four local agents were re-run.
+- Honest note: 100 % line coverage did not reveal this. Every guarded input was
+  outside the range the tests exercised, so the uncovered risk was in the input
+  domain, not in the lines — which is REVIEW.md 7.2's own point about coverage
+  not being an edge-case test.
