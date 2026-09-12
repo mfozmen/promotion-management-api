@@ -263,8 +263,7 @@ child. Build once outside the loop.
 its own outage. Log per batch, with counts.
 
 6.8 **Queries are bounded and narrow.** Every list has a `LIMIT`; `SELECT *`
-where three columns are used is a finding on hot paths. Indexing rules are
-6.12 to 6.16.
+where three columns are used is a finding on hot paths. Indexing rules are in 6.12 to 6.15.
 
 6.9 **No deep offset paging in worker scans.** Keyset pagination
 (`where id > $last order by id limit n`) for anything that walks a category or
