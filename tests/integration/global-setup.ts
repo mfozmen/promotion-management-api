@@ -17,14 +17,14 @@ const CLONE_PATTERN = '^pma_test_([0-9]+)_';
  */
 export async function sweepStaleClones(
   admin: Client,
-  { now = Date.now(), pattern = CLONE_PATTERN }: { now?: number; pattern?: string } = {},
+  { pattern = CLONE_PATTERN }: { pattern?: string } = {},
 ): Promise<void> {
   // `substring` rather than a `~` test plus `split_part(...)::bigint`: PostgreSQL orders
   // qualifiers by cost, not left to right, so the cast could run on a name the regex was
   // meant to exclude and raise 22P02. A non-match yields NULL here, which filters out.
   const stale = await admin.query<{ datname: string }>(
     `select datname from pg_database where (substring(datname from $2))::bigint < $1`,
-    [now - STALE_AFTER_MS, pattern],
+    [Date.now() - STALE_AFTER_MS, pattern],
   );
   for (const { datname } of stale.rows) {
     try {

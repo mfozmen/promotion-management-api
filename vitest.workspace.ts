@@ -1,4 +1,4 @@
-import { defineWorkspace } from 'vitest/config';
+import { configDefaults, defineWorkspace } from 'vitest/config';
 
 // Two layers, so a machine with no PostgreSQL can still run `npm test` and commit.
 export default defineWorkspace([
@@ -8,7 +8,8 @@ export default defineWorkspace([
     test: {
       name: 'unit',
       include: ['tests/**/*.test.ts'],
-      exclude: ['tests/integration/**'],
+      // Spread the defaults back in: setting `exclude` replaces them rather than adding to them.
+      exclude: [...configDefaults.exclude, 'tests/integration/**'],
     },
   },
   {

@@ -40,7 +40,7 @@ create table products (
   category               text not null,
   base_price_cents       bigint not null check (base_price_cents >= 0),
   stock_quantity         integer not null check (stock_quantity >= 0),
-  pricing_rules_version  integer,                -- set by ingestion, null for manual creates
+  pricing_rules_version  bigint,                -- set by ingestion, null for manual creates
   ingest_job_id          bigint,                 -- ingestion job that last wrote this product (identity, monotonic)
   ingest_source_offset   bigint,                 -- byte offset of that row inside its file
   created_at             timestamptz not null default now(),
