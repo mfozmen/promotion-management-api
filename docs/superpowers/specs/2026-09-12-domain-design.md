@@ -663,12 +663,12 @@ src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
-    promotion/   promotion.ts (the Promotion row as a type), effective-price.ts (applyPromotion, pure), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
+    promotion/   promotion.ts (the Promotion row as a type), effective-price.ts (applyPromotion, pure), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts (calls shared/queue.ts with the database clock)
     pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
-  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
+  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, events.ts (event schemas, queue routing), queue.ts (BullMQ queues), shutdown.ts (bounded shutdown), logger.ts (pino, request ids)
 tests/
   unit/          effective-price, csv-lines, ingestion-rules, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
