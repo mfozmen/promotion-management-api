@@ -455,8 +455,7 @@ immediately (if `startsAt` has passed) or delayed until `startsAt` with
 `jobId = promo:{id}:activate`, and always a delayed job until `endsAt` with
 `jobId = promo:{id}:expire`. Cancel removes both by job id and enqueues an
 immediate `promotion.changed`. Delayed jobs persist in Redis across restarts;
-the reconciler's boundary sweep covers a lost one, and covers a lost cancel
-only once it reads `cancelled_at` too (ADR-0003).
+the reconciler's boundary sweep (section 9) covers a lost one.
 
 Emission happens after the PostgreSQL commit. A crash between commit and
 enqueue leaves the read model stale until the reconciler repairs it; this is
