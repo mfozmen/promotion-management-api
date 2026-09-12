@@ -241,7 +241,7 @@ Alarms: the API and workers expose Prometheus metrics (`prom-client`); a `monito
 
 ## ADR-0008: HTTP boundary contract — `/api` prefix, strict validation, one JSON error envelope
 
-**Status:** Accepted — issue #6, PR #30 (branch `feat/http-skeleton`, commit `7fd588e` plus the review-fix commits `e46f14b` and `c6e4ff2`)
+**Status:** Accepted — issue #6, PR #30 (branch `feat/http-skeleton`, commit `7fd588e` plus the review-fix commits `e46f14b`, `c6e4ff2` and `ccef8a4`)
 
 ### Context
 
@@ -288,7 +288,7 @@ Every endpoint in ADR-0003 to ADR-0007 (storefront reads, admin promotion mutati
 
 ## ADR-0009: Structured logging with a validated correlation id
 
-**Status:** Accepted — issue #6, PR #30 (branch `feat/http-skeleton`, commit `7fd588e` plus the review-fix commits `e46f14b` and `c6e4ff2`)
+**Status:** Accepted — issue #6, PR #30 (branch `feat/http-skeleton`, commit `7fd588e` plus the review-fix commits `e46f14b`, `c6e4ff2` and `ccef8a4`)
 
 ### Context
 
@@ -298,7 +298,7 @@ A request in this system does not end at the HTTP response: it emits an event th
 
 `src/shared/logger.ts` exports a pino root logger and a `pino-http` middleware, mounted first in `createApp` so every later middleware and handler has `req.log`.
 
-- **Correlation id.** Taken from the incoming `x-request-id` header **only when it matches `^[A-Za-z0-9._-]{1,128}$`**; otherwise a `randomUUID()` is generated. The header is untrusted input: a value containing a newline would forge whole log lines, and one containing CR would inject a response header. The id is echoed in the `x-request-id` response header and bound as `reqId` on every line through `quietReqLogger: true`. One "request completed" line closes each request.
+- **Correlation id.** Taken from the incoming `x-request-id` header **only when it matches `^[A-Za-z0-9._-]{1,128}$`**; otherwise a `randomUUID()` is generated. The header is untrusted input: a value containing a newline would forge whole log lines, and one containing CR would inject a response header. The id is echoed in the `x-request-id` response header and bound as `reqId` on every line through `quietReqLogger: true`. One "request completed" line closes each request — except a 5xx, which pino-http closes with its own "request errored" line. That line carries an error pino-http constructs itself (`failed with status code 500`), not the one the handler caught, so it is synthetic and outside §8.4's reach; it is the one place in the process where an error object is handed to a logger, and it is the library's, not ours.
 - **Narrowed serializers.** `req` is serialised to `{ id, method, path }` and `res` to `{ statusCode }`. Headers, the body and the query string are therefore never serialised at all, so no credential or personal data can reach a log line (REVIEW.md §10.3). The query string is dropped rather than logged because an endpoint that one day takes a token or an email as a parameter would otherwise write it on every line. pino's `redact` option is deliberately **not** set: it can only mask paths that survive serialisation, and none do, so configuring it would read as an independent control while doing nothing.
 - **Errors are logged as a whitelist, under an `error` key.** `serializeError` emits `{ type, message, stack, code }` and nothing else: `type`, `message` and `code` come from the error's `cause` when it has one, and `stack` is the outer stack reduced to the lines whose **shape** is a frame (`/^\s+at .*:\d+:\d+\)?$/`), so a bound value containing a newline and `at ` cannot pose as one. `message` is never trusted even after the hop to the cause: an error that carries `query` or `params` composed its message out of them, so its message is replaced outright with `database query failed`, and any other message is cut at the first quoted value and bounded, because driver messages quote what the caller sent (`invalid input syntax for type uuid: "..."`) (commit `c6e4ff2`). The shape it is written against is concrete and versioned rather than imagined: `drizzle-orm` 0.45 builds `DrizzleQueryError`'s message as `` `Failed query: ${query}\nparams: ${params}` ``, keeps `query` and `params` as own fields, and puts the driver error — which names the constraint and carries the SQLSTATE, but not the values — on `cause`. So the earlier, wider whitelist still leaked: pino's own serializer writes all of those fields, the message is the statement plus the bound row, and the first line of a stack repeats the message. Taking the message from the cause and dropping the stack's first line is what actually closes it.
 - **The error is never handed to a logger as an object.** The `error` key is used rather than pino's conventional `err`, and `serializeError` is called explicitly at each log site, because pino-http wraps a custom `err` serializer around pino's own: the same function would receive an already-flattened object through `req.log` and a real `Error` through the root logger. Left that way it silently turned every 500 line into `{"type":"object"}` with no message, no stack and no SQLSTATE. REVIEW.md §8.4 now requires this form. A thrown non-`Error` logs `{ type: typeof err }` — its type, never its value, which may itself be the leak. A dependency upgrade can change the driver's shape, so `tests/error-handler.test.ts` builds its fixture from the real `DrizzleQueryError` rather than a lookalike.
