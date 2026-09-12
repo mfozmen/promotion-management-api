@@ -293,8 +293,8 @@ create table ingestion_chunks (
 Resolution query (used by the event handler and reconciler, batched by id):
 
 ```sql
-select p.*, pp.id as pp_id, pp.name as pp_name, pp.discount_type as pp_type, pp.value as pp_value,
-             cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_type, cp.value as cp_value
+select p.*, pp.id as pp_id, pp.name as pp_name, pp.calculator as pp_calculator, pp.params as pp_params,
+             cp.id as cp_id, cp.name as cp_name, cp.calculator as cp_calculator, cp.params as cp_params
 from products p
 left join promotions pp on pp.product_id = p.id and pp.status = 'active'
                        and tstzrange(pp.starts_at, pp.ends_at) @> now()
