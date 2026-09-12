@@ -492,7 +492,9 @@ describe('priceRow', () => {
       priceRow(rules, vendorRow()),
     ]);
 
-    expect(outcomes.every((outcome) => !outcome.ok && outcome.fault === 'rules')).toBe(true);
+    expect(
+      outcomes.map((outcome) => (outcome.ok ? outcome.basePriceCents : outcome.fault)),
+    ).toEqual(['rules', 'rules', 'rules']);
   });
 
   it('turns an engine failure into a rejection rather than letting it escape', async () => {
