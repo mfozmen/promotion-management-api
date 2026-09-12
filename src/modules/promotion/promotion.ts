@@ -12,5 +12,5 @@ export interface Promotion {
   endsAt: Date;
 }
 
-/** What `isActive` narrows to; the only shape `applyPromotion` prices. */
+/** What `isActive` narrows to. */
 export type ActivePromotion = Promotion & { status: 'active' };

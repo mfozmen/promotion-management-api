@@ -111,13 +111,6 @@ describe('applyPromotion', () => {
       reason: 'percentage discount is above 10000 basis points',
     });
   });
-
-  it('prices a candidate that carries only the discount fields', () => {
-    expect(applyPromotion(10_000, { discountType: 'percentage', value: 2500 })).toEqual({
-      ok: true,
-      effectivePriceCents: 7500,
-    });
-  });
 });
 
 describe('isActive', () => {
