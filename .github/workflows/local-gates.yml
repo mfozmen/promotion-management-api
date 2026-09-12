@@ -55,13 +55,16 @@ jobs:
           exit 1
 
       - name: Require the applicable verification labels
-        # gh pr view and gh pr diff --name-only are reads served by the pull-requests permission; no
+        # Runs even after the strip step fails, so the missing-label diagnostics are always visible.
+        if: ${{ !cancelled() }}
+        # gh pr view and the pulls/files listing are reads served by the pull-requests permission; no
         # checkout, no contents scope needed, and they succeed even with a read-only token.
         run: |
           labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')
-          files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
+          # Current and previous paths, so a file moved out of the specs directory still counts.
+          files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)')
           required="e2e-verified impact-verified docs-verified"
-          if grep -qE '^(ADR\.md|docs/superpowers/specs/)' <<<"$files" || grep -qx scenario <<<"$labels"; then
+          if grep -qE '^(ADR\.md$|docs/superpowers/specs/)' <<<"$files" || grep -qx scenario <<<"$labels"; then
             required="$required architecture-verified"
           fi
           echo "required: $required"
