@@ -699,7 +699,8 @@ change.
 12.2 A deliberate shortcut carries a comment naming its ceiling and the upgrade
 path, so the reviewer can tell a decision from an oversight.
 
-12.3 A PR delivers one story. Scope creep is a finding; open another issue.
+12.3 A PR delivers one story. Scope creep is a finding; the extra work goes in
+its own pull request, not in an issue to be dealt with later.
 
 12.4 Dependencies: prefer the standard library, then something already
 installed. A new dependency for a few lines of code is a finding.
