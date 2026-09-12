@@ -509,6 +509,13 @@ a timeout. A flaky test is a finding, not a retry.
 7.6 **Isolation.** Each test file owns its data; tests pass in any order and in
 parallel. Shared mutable fixtures across files are a finding.
 
+7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
+the tree mirrors `src/` and one test file per source file. Nothing at `tests/`
+root, no per-module top-level directories.
+
+Evidence: `tests/promotion/`, `tests/unit/` and a root-level test file on three
+open branches at once (PRs #29, #39).
+
 ---
 
 ## 8. Boundaries, errors and API shape
@@ -745,6 +752,11 @@ Redis database, a lease shorter than its budget). One zod `parse` with a refine
 per such invariant; everything else fails on first use by itself.
 
 Evidence: a 149-line validator plus 296 test lines replaced by 37 lines (PR #34).
+
+12.6 Complexity per function stays at 10 or below: ESLint `complexity`
+(cyclomatic, gates `npm run lint`) and Sonar S3776 (cognitive, on the PR). Above
+it, Extract Function or Replace Nested Conditional with Guard Clauses — never a
+disable comment.
 
 ---
 
