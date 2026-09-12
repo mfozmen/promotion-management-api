@@ -1,6 +1,7 @@
 import express, { type Express } from 'express';
 import type { Logger } from 'pino';
-import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { errorHandler } from './middleware/error-handler.js';
+import { notFoundHandler } from './middleware/not-found-handler.js';
 import { httpLogger, logger as rootLogger } from './shared/logger.js';
 
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0008).

@@ -1,4 +1,4 @@
-import type { ErrorRequestHandler, RequestHandler } from 'express';
+import type { ErrorRequestHandler } from 'express';
 import { CLIENT_ERRORS } from '../shared/client-errors.js';
 import type { ErrorCode } from '../shared/error-code.js';
 import { MAX_DETAILS } from '../shared/max-details.js';
@@ -58,12 +58,6 @@ function raisedError(err: HttpError): ErrorMapping {
 
   return message ? { status: err.status, code: err.code, message } : SERVER_FAULT;
 }
-
-export const notFoundHandler: RequestHandler = (_req, _res, next) => {
-  // The path is withheld while a rejected key is returned: a key is something
-  // the caller can fix, a path they already have is not.
-  next(new HttpError('NOT_FOUND', 'Route not found'));
-};
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express recognises an error handler by its arity
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
