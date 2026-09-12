@@ -1,9 +1,10 @@
 name: promotion-management-api
 
-# Local infrastructure: the two stores only. Issue #19 adds the application
-# services (api, event-handler, ingestion-worker with its 256 MiB / 0.5 CPU
-# limits, reconciler) and the "monitoring" and "tools" profiles on top of this
-# file. The `api` service that issue #19 adds must publish the fixed host port
+# Local infrastructure: the two stores, plus the `tools` profile with a browser
+# for each (`docker compose --profile tools up -d`). Issue #19 adds the
+# application services (api, event-handler, ingestion-worker with its 256 MiB /
+# 0.5 CPU limits, reconciler) and the "monitoring" profile on top of this file.
+# The `api` service that issue #19 adds must publish the fixed host port
 # 3000 and answer `/api/health`: that is the contract .claude/agents/e2e-tester.md
 # measures against, and the port is fixed so two runs cannot measure the same
 # machine at once. Until then no application port is published here.
@@ -83,6 +84,32 @@ services:
       timeout: 5s
       retries: 12
       start_period: 5s
+
+  # Database browsers, started only with `--profile tools`. Adminer rather than
+  # pgAdmin: one container, no setup. Both bind to loopback like the stores.
+  adminer:
+    image: adminer:4
+    profiles: [tools]
+    ports:
+      - '127.0.0.1:8081:8080'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - promotion
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    profiles: [tools]
+    environment:
+      REDIS_HOSTS: 'read-model:redis:6379:0,queue:redis:6379:1'
+    ports:
+      - '127.0.0.1:8082:8081'
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - promotion
 
 networks:
   promotion:
