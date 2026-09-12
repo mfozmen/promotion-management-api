@@ -1,15 +1,8 @@
 import { z } from 'zod';
 
-/**
- * The event catalogue of section 6 of
- * `docs/superpowers/specs/2026-09-12-domain-design.md`. Producers and consumers
- * are written in parallel, so every payload is typed at compile time and parsed
- * at the queue boundary: a malformed job fails where it is produced rather than
- * deep inside a handler.
- *
- * Payloads are strict, so nothing rides along uninvited: a correlation id has to
- * be added to a schema here before it can cross the queue boundary.
- */
+// Event catalogue: section 6 of `docs/superpowers/specs/2026-09-12-domain-design.md`.
+// Payloads are strict, so a field has to be added to a schema here before it can
+// cross the queue boundary.
 
 const entityId = z.number().int().positive();
 

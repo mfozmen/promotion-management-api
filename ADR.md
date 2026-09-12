@@ -67,6 +67,7 @@ Money is stored as integer minor units, percentages as basis points, timestamps 
 - The read model is eventually consistent: a write is visible after the handler runs, typically well under a second for single products and a few seconds for a 50 000-product category.
 - Redis is a hard runtime dependency; an empty read model answers `503` until the cold-start rebuild completes.
 - "Emission after commit" has a runtime guard as well as a convention: `src/shared/queue.ts` exposes `withinTransaction`, an `AsyncLocalStorage` scope in which `enqueue()` and `removePromotionBoundaries()` throw. It protects only transactions whose body is wrapped in it, and nothing wraps one yet, so it takes effect when the database module wraps its own `transaction()` helper; until then the ordering rests on convention as before (REVIEW.md 3.4; issue #7, commits `829d6bb` and `3a3ec5f`, which extended the guard to boundary removal).
+- Event payloads are validated by the producer, inside `enqueue()`, rather than by the consumer, so a malformed job fails in the request that created it instead of in a worker three retries later. The schemas are the single definition both sides share, and they are strict, so an unknown field is rejected rather than carried.
 - Correlation-id transport across the queue boundary (REVIEW.md 10.1) is undecided: payloads are strict, so an id has to be added to the event schemas, and that decision belongs with the PR that introduces the logger.
 
 ### Trade-offs

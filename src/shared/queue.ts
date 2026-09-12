@@ -29,15 +29,9 @@ export function createQueues(redisUrl: string): Queues {
 const transactionScope = new AsyncLocalStorage<true>();
 
 /**
- * Wraps a PostgreSQL transaction body so that enqueueing inside it throws. A job
- * enqueued before the commit can be consumed before its row is visible and
- * survives a rollback, so producers enqueue after the commit returns and leave
- * the crash-in-between window to the reconciler.
- *
- * The guard is opt-in: it sees only transactions whose body is wrapped, and an
- * unawaited promise started inside the body inherits the scope and trips it.
- * Wrapping once inside the database module's `transaction()` helper, when that
- * lands, would remove both limitations.
+ * A job enqueued before the commit can be consumed before its row is visible and
+ * survives a rollback. Opt-in: only wrapped bodies are seen, and an unawaited
+ * promise started inside one trips it too. Wrapping `transaction()` fixes both.
  */
 export function withinTransaction<T>(body: () => T): T {
   return transactionScope.run(true, body);
@@ -64,16 +58,15 @@ export async function enqueue<N extends EventName>(
 export type PromotionBoundary = 'activate' | 'expire';
 
 /**
- * `removeOnComplete: 1000` keeps a fired boundary job resident, and BullMQ
- * ignores an `add` for a job id it still holds, so only the scheduling of a
- * future boundary may use this id. The reconciler's sweep re-emits a plain
- * `promotion.changed` with no job id instead.
+ * Write-once per id: BullMQ ignores an `add` for an id it still holds, and the
+ * returned `Job` then describes the request, not what is stored. The reconciler's
+ * sweep re-emits `promotion.changed` with no job id instead.
  */
 export function promotionBoundaryJobId(promotionId: number, boundary: PromotionBoundary): string {
   return `promo:${promotionId}:${boundary}`;
 }
 
-/** Delayed until `at`, or immediate when that instant has already passed. `now` is a parameter so one clock decides. */
+/** `now` is a parameter so one clock decides: PostgreSQL's, never the process's. */
 export function schedulePromotionBoundary(
   queues: Queues,
   promotionId: number,
@@ -93,14 +86,10 @@ export function schedulePromotionBoundary(
 }
 
 /**
- * Removing a boundary job is a Redis write that a PostgreSQL rollback cannot
- * undo, so it is barred inside a transaction for the same reason enqueueing is.
- *
- * Returns BullMQ's removal code per boundary: `1` when nothing blocked the
- * removal, including when there was no such job, and `0` when a worker already
- * holds the job. A cancel racing a running activate gets `0` and can log it; the
- * end state is still correct because cancel also enqueues an immediate
- * `promotion.changed`.
+ * Barred inside a transaction like `enqueue`: a rollback cannot undo a removal.
+ * BullMQ's codes: `1` when nothing blocked it, including when there was no such
+ * job, `0` when a worker already holds it. A cancel racing a running activate
+ * gets `0` but still ends correct: cancel enqueues `promotion.changed`.
  */
 export async function removePromotionBoundaries(
   queues: Queues,
