@@ -50,6 +50,9 @@ describe('adjustmentFor', () => {
 
     expect(percentBps?.apply(10_000n, { value: -2500 })).toBe(7500n);
     expect(percentBps?.apply(10_000n, { value: 1500 })).toBe(11_500n);
+    // Flooring the adjustment agrees with flooring the price for a markup, so
+    // the ingestion rules that emit one are unaffected by the direction.
+    expect(percentBps?.apply(999n, { value: 1500 })).toBe(1148n);
     expect(minorUnits?.apply(10_000n, { value: -2500 })).toBe(7500n);
     expect(minorUnits?.apply(10_000n, { value: 1500 })).toBe(11_500n);
     expect(minorUnits?.validate(1500)).toBeNull();
@@ -65,11 +68,10 @@ describe('applyPromotions', () => {
     expect(priced(10_000, cents(-2500))).toBe(7500);
   });
 
-  it('floors the price, so the customer never pays a fraction of a minor unit', () => {
-    // 75 % of 999 is 749.25. The floor is on the price, not on the discount,
-    // because the ingestion strategy this shares floors a markup the same way.
-    expect(priced(999, percent(-2500))).toBe(749);
-    expect(priced(1000, percent(-3333))).toBe(666);
+  it('floors the discount, so the customer pays at most one minor unit more', () => {
+    // 25 % of 999 is 249.75, floored to 249 (ADR-0004, REVIEW.md 1.4).
+    expect(priced(999, percent(-2500))).toBe(750);
+    expect(priced(1000, percent(-3333))).toBe(667);
   });
 
   it('returns zero for a 100 % discount', () => {
@@ -94,21 +96,31 @@ describe('applyPromotions', () => {
     expect(priced(10_000, cents(0))).toBe(10_000);
   });
 
-  it('never raises a price above the base, whatever the rule asked for', () => {
-    // The vocabulary is shared with ingestion, where a markup is the point;
-    // on the promotion path it is clamped away (REVIEW.md 1.5).
-    expect(priced(10_000, percent(1500))).toBe(10_000);
-    expect(priced(10_000, cents(500))).toBe(10_000);
+  it('reports a markup instead of quietly pricing at the base', () => {
+    // The vocabulary is shared with ingestion, where a markup is the point. On
+    // the promotion path it is a rule-authoring defect, and clamping it
+    // silently would look exactly like no promotion firing (REVIEW.md 1.5).
+    expect(applyPromotions(10_000, percent(1500))).toEqual({
+      ok: false,
+      effectivePriceCents: 10_000,
+      reason: 'adjustment 1500 raises the price above the base',
+    });
+    expect(applyPromotions(10_000, cents(500))).toEqual({
+      ok: false,
+      effectivePriceCents: 10_000,
+      reason: 'adjustment 500 raises the price above the base',
+    });
   });
 
   it('is exact at the largest price the money representation allows', () => {
     // The ceiling of the `mode: 'number'` price columns. In doubles the
     // intermediate product is far outside the exact-integer range.
-    expect(priced(Number.MAX_SAFE_INTEGER, percent(-5000))).toBe(4_503_599_627_370_495);
+    expect(priced(Number.MAX_SAFE_INTEGER, percent(-5000))).toBe(4_503_599_627_370_496);
   });
 
   it('is exact at a large price where double arithmetic would round', () => {
-    expect(priced(4_171_863_899_102, percent(-7049))).toBe(1_231_117_036_625);
+    // In doubles this discount floors to 2940746862477, one cent too much.
+    expect(priced(4_171_863_899_102, percent(-7049))).toBe(1_231_117_036_626);
   });
 
   it('skips an event naming a type no strategy implements, keeping the base price', () => {
@@ -129,6 +141,24 @@ describe('applyPromotions', () => {
         });
       }
     }
+  });
+
+  it('rejects an event whose params a rule row never filled in', () => {
+    // Events arrive from a database row, so a rule written without `params`
+    // reaches this function however strict the type is at the call site.
+    for (const event of [{ type: 'adjustCents' }, { type: 'adjustPercentBps', params: null }]) {
+      expect(applyPromotions(10_000, event)).toEqual({
+        ok: false,
+        effectivePriceCents: 10_000,
+        reason: 'adjustment value undefined is not a whole number in range',
+      });
+    }
+
+    expect(applyPromotions(10_000, { type: 'adjustCents', params: { value: '-500' } })).toEqual({
+      ok: false,
+      effectivePriceCents: 10_000,
+      reason: 'adjustment value -500 is not a whole number in range',
+    });
   });
 
   it('rejects a percentage below -10 000 basis points rather than pricing it', () => {

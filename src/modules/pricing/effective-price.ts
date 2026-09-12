@@ -1,9 +1,6 @@
 /**
  * The instruction set the promotion rules are written in (design section 4,
- * ADR-0004). The rule row carries the condition and the arithmetic; this file
- * holds one strategy per event type and nothing that decides policy. A new
- * kind of discount is a new strategy plus rules that emit it, never a branch
- * added to a function here.
+ * ADR-0004).
  *
  * The vocabulary is shared with the ingestion rules deliberately: the
  * percentage and cents arithmetic has one implementation (REVIEW.md 1.3), and
@@ -27,9 +24,13 @@ export interface AdjustmentEvent {
   params: { value: number };
 }
 
+/** What a rule row can actually contain, before anything has validated it. */
+type UncheckedEvent = { type: string; params?: { value?: unknown } | null };
+
 /**
  * Both outcomes carry a price, so a caller always has something safe to write:
- * on failure it is the untouched base price. `ok: false` is the caller's cue
+ * on failure it is the untouched base price, or zero when the base price is
+ * itself the thing that is unusable. `ok: false` is the caller's cue
  * to log and count — a bad event must not crash a 50 000-product recompute,
  * and must not pass for a priced product either.
  */
@@ -52,18 +53,23 @@ export interface Adjustment {
 
 /**
  * `value` is a signed basis-point adjustment: `-2500` takes a quarter off,
- * `+1500` is the ingestion markup. The result is floored — the largest whole
- * minor unit at or below the exact price.
+ * `+1500` is the ingestion markup.
+ *
+ * The adjustment itself is floored, not the price, so a discount rounds
+ * against the customer by at most one minor unit (ADR-0004, REVIEW.md 1.4).
+ * `bigint` division truncates toward zero, which is that floor for a discount;
+ * for a markup it agrees exactly with `cents * (10000 + value) / 10000`, so
+ * the ingestion rules keep the prices they were reviewed against.
  */
 class PercentBpsAdjustment implements Adjustment {
   validate(value: number): string | null {
-    // Below -10 000 basis points the multiplier turns negative, which is a
-    // price below zero rather than a free product.
+    // Below -10 000 basis points the adjustment exceeds the whole price, which
+    // is a price below zero rather than a free product.
     return value < -10_000 ? `percentage adjustment ${value} is below -10000 basis points` : null;
   }
 
   apply(cents: bigint, params: { value: number }): bigint {
-    return (cents * (BASIS_POINTS_PER_UNIT + BigInt(params.value))) / BASIS_POINTS_PER_UNIT;
+    return cents + (cents * BigInt(params.value)) / BASIS_POINTS_PER_UNIT;
   }
 }
 
@@ -99,7 +105,7 @@ export function adjustmentFor(type: string): Adjustment | undefined {
  */
 export function applyPromotions(
   basePriceCents: number,
-  event: AdjustmentEvent | null,
+  event: AdjustmentEvent | UncheckedEvent | null,
 ): PricingOutcome {
   if (!Number.isSafeInteger(basePriceCents) || basePriceCents < 0) {
     return {
@@ -120,21 +126,28 @@ export function applyPromotions(
   // not in the product: skipped with the base price, never a crash.
   const adjustment = adjustmentFor(event.type);
   if (adjustment === undefined) return rejected(`unknown adjustment type "${event.type}"`);
-  if (!Number.isSafeInteger(event.params.value)) {
-    return rejected(`adjustment value ${event.params.value} is not a whole number in range`);
+
+  // The event is a database row, not a TypeScript value: a rule written
+  // without `params` type-checks nowhere and reaches here all the same.
+  const value: unknown = event.params?.value;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+    return rejected(`adjustment value ${String(value)} is not a whole number in range`);
   }
-  const invalid = adjustment.validate(event.params.value);
+  const invalid = adjustment.validate(value);
   if (invalid !== null) return rejected(invalid);
 
   const base = BigInt(basePriceCents);
-  const adjusted = adjustment.apply(base, event.params);
+  const adjusted = adjustment.apply(base, { value });
 
-  // A promotion never raises a price and never makes one negative, whatever
-  // the rule asked for (REVIEW.md 1.5). Clamping here rather than inside a
-  // strategy leaves the strategies reusable by ingestion, where a markup above
-  // the incoming price is the point.
-  const effective = adjusted < 0n ? 0n : adjusted > base ? base : adjusted;
-  return { ok: true, effectivePriceCents: Number(effective) };
+  // A markup is legitimate for ingestion and a rule-authoring defect here, and
+  // the two are told apart only by which layer ran the rule — so it is
+  // reported rather than quietly clamped, or a stray `+1500` copied from the
+  // seeded ingestion rules would look exactly like no promotion at all.
+  if (adjusted > base) return rejected(`adjustment ${value} raises the price above the base`);
+
+  // A discount larger than the whole price is not a defect, it is a free
+  // product: clamped, never negative (REVIEW.md 1.5).
+  return { ok: true, effectivePriceCents: Number(adjusted < 0n ? 0n : adjusted) };
 }
 
 /**

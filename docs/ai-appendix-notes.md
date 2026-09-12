@@ -257,3 +257,43 @@ rewritten.
   outside the range the tests exercised, so the uncovered risk was in the input
   domain, not in the lines — which is REVIEW.md 7.2's own point about coverage
   not being an edge-case test.
+
+### 2026-09-12 — Pricing core: the module had decided the arithmetic itself (issue #8, PR #29, commit `92832b7`)
+
+- Supersedes the pricing-core entries above: they describe `applyPromotion` and
+  `resolveApplied`, which no longer exist. Those entries stay as written; this
+  one records what replaced them.
+- Challenge: the AI-written module branched on `discountType` and computed the
+  discount in its own code. The point of the rule engine is the opposite — the
+  formula travels with the rule row, so a new kind of discount should be a rule
+  change, not a new branch in the pricing module. Three review passes and all
+  four local agents had validated the module against its own tests and the rules
+  it cited, never against the architecture the design intended. Only the human
+  owner caught it, in review.
+- Verification: the owner wrote the intended shape into the design spec and
+  ADR-0004 first (commit `09c9915` on `docs/promotion-rule-engine`, PR #35), and
+  the module was then reshaped onto that recorded decision rather than onto a
+  reviewer's opinion.
+- Resolution (commit `92832b7`): an `Adjustment` interface (`validate`, and
+  `apply(cents: bigint, params): bigint`) implemented by `PercentBpsAdjustment`
+  and `CentsAdjustment`, registered by event type name behind
+  `adjustmentFor(type)`; `applyPromotions(basePriceCents, event)` looks the
+  strategy up. No `discountType` branch survives — a new discount kind is a new
+  strategy class plus rules that emit it. The event vocabulary is shared with the
+  ingestion rules and signed: `adjustPercentBps` in basis points, `adjustCents`
+  in minor units. `resolveApplied` was deleted, because precedence is a rule now
+  and issue #36 owns the resolver; `isActive` stays as a fact builder. Failures
+  are returned rather than thrown, which also closed the blocking review thread
+  about `BigInt()` raising a RangeError — the guard no longer needs to throw.
+- Follow-up: issue #45 refactors `priceRow` (PR #39) onto the shared registry
+  instead of editing that green branch, and carries an open rounding-direction
+  question — the shared strategy floors the price while ADR-0004 still describes
+  flooring the discount, and the two differ by a cent. Undecided, recorded there,
+  not decided here.
+- Verification of the fix: 28 tests pass at 100 % statement, branch, function and
+  line coverage; `npm run lint` and `npm run typecheck` are clean and the four
+  local agents were re-run.
+- Honest lesson: agents and review passes checked the code against its own tests
+  and the rules it cited, which is a closed loop — none of them checked it
+  against the architecture the design intended. Validation that never leaves the
+  artefact under review cannot detect a wrong shape.
