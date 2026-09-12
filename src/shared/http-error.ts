@@ -7,6 +7,11 @@ export type ErrorCode =
   | 'BAD_REQUEST'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  // Two conflicts the case study names, kept distinct from the generic CONFLICT
+  // because a client acts on them differently: a duplicate SKU means this is a
+  // product that already exists, an overlap means this window is taken (#10, #11).
+  | 'SKU_EXISTS'
+  | 'PROMOTION_OVERLAP'
   | 'PAYLOAD_TOO_LARGE'
   | 'UNSUPPORTED_MEDIA_TYPE'
   | 'BACKPRESSURE'
@@ -27,6 +32,8 @@ export const STATUS = Object.freeze({
   BAD_REQUEST: 400,
   NOT_FOUND: 404,
   CONFLICT: 409,
+  SKU_EXISTS: 409,
+  PROMOTION_OVERLAP: 409,
   PAYLOAD_TOO_LARGE: 413,
   UNSUPPORTED_MEDIA_TYPE: 415,
   BACKPRESSURE: 429,
