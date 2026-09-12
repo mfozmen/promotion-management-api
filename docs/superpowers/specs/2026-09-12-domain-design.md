@@ -587,13 +587,15 @@ Dockerfile           one image, command per service
   first read, a budget release leaving `failures` untouched while an
   error increments it, and a reconciler catch-up after an outage longer than
   its period (watermark sweep re-emits the missed boundary).
-- Unit: pure functions and schemas (effective price, precedence, CSV byte
-  splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
-- Integration: real PostgreSQL and Redis, never a mock, reached through
-  `TEST_DATABASE_URL`. Vitest `globalSetup` migrates one template database
-  (`pma_test_template`); each test file clones it into a database of its own,
+- Unit (`tests/unit/`): pure functions and schemas (effective price,
+  precedence, CSV byte splitting across chunk boundaries with BOM/CRLF/UTF-8,
+  rule application). No store, so this layer runs in the pre-commit hook.
+- Integration (`tests/integration/`): real PostgreSQL and Redis, never a mock,
+  reached through `TEST_DATABASE_URL`. Its Vitest project carries the
+  `globalSetup` that migrates one template database, named after the checkout;
+  each test file clones it into a database of its own (`pma_test_<epoch>_<uuid>`),
   so files stay isolated under parallel runs instead of truncating shared
-  tables. Handlers are invoked directly (no worker process) so coverage is
+  tables, and several worktrees share one server safely. Handlers are invoked directly (no worker process) so coverage is
   measured.
 - Concurrency: parallel promotion creates on one target assert exactly one
   `201` and the rest `409`; parallel `processChunk` calls on one chunk assert

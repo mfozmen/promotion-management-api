@@ -44,6 +44,7 @@ Use Vitest as the test runner, paired with Supertest for HTTP integration tests 
 - Coverage reporting (`npm run test:cov`) feeds the SonarCloud quality gate.
 - TDD discipline slows down initial feature authoring in exchange for a regression-resistant codebase and living documentation of behavior via tests — this is treated as a net win for a codebase reviewed by AI and humans on every PR.
 - Database tests run against a real PostgreSQL, never a mock or an in-process substitute, because the invariants under test are `CHECK`, unique and GiST exclusion constraints that only PostgreSQL enforces. The cost is a `postgres:16-alpine` service in CI and a running server locally (`TEST_DATABASE_URL`); isolation comes from cloning a migrated template database per test file (issue #5).
+- The suite is two Vitest projects (`vitest.workspace.ts`): `unit` needs no service and is what `npm test` and the pre-commit hook run, `integration` carries the database `globalSetup` and is what CI and the pre-push agents run. Without the split every `git commit` on every branch would need a live PostgreSQL; with it the 100 % coverage gate moves from the hook to the required `ci` check, which runs both projects (owner decision, 2026-09-12).
 
 ---
 

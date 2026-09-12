@@ -31,6 +31,14 @@ npm run test:cov
 npm run lint
 ```
 
+The suite is split into layers, so the one that needs nothing can run anywhere:
+
+| Layer                              | Command                    | Needs           | Runs                        |
+| ---------------------------------- | -------------------------- | --------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing         | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | real PostgreSQL | CI (the 100 % gate)         |
+
 The integration tests run against a real PostgreSQL, never a mock. Point them at one with
 `TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`); a
 throwaway server is one command away:
@@ -40,8 +48,10 @@ docker run -d --rm --name pma-db-test -p 55432:5432 \
   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promotion postgres:16-alpine
 ```
 
-`globalSetup` applies `src/shared/db/migrations/*.sql` to a template database once; each test
-file then clones that template, so files stay isolated and can run in parallel. Regenerate the
+The integration project's `globalSetup` applies `src/shared/db/migrations/*.sql` to a template
+database once; each test file then clones that template, so files stay isolated and can run in
+parallel. The template is named after the checkout and clones carry a timestamp, so several
+worktrees can share one server without dropping each other's databases. Regenerate the
 migrations with `npx drizzle-kit generate` after changing `src/shared/db/schema.ts`, and apply
 them to a running database with `DATABASE_URL=... npx drizzle-kit migrate` (drizzle-kit reads
 `DATABASE_URL`, not `TEST_DATABASE_URL`, and defaults to port 5432).
