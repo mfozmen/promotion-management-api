@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { percentageDiscount } from '../../../../../src/modules/promotion/domain/percentage-discount.js';
+import { percentageDiscount } from '@src/modules/promotion/domain/percentage-discount.js';
 
 describe('percentageDiscount', () => {
   it('takes basis points off the base price', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { effectivePrice } from '../../../../../src/modules/promotion/domain/effective-price.js';
-import type { Promotion } from '../../../../../src/modules/promotion/domain/promotion.js';
+import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js';
+import type { Promotion } from '@src/modules/promotion/domain/promotion.js';
 
 type Discount = Pick<Promotion, 'discountType' | 'value'>;
 

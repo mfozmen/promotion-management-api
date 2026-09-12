@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fixedDiscount } from '../../../../../src/modules/promotion/domain/fixed-discount.js';
+import { fixedDiscount } from '@src/modules/promotion/domain/fixed-discount.js';
 
 describe('fixedDiscount', () => {
   it('takes the value off the base price, in minor units', () => {

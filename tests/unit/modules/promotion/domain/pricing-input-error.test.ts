@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pricingInputError } from '../../../../../src/modules/promotion/domain/pricing-input-error.js';
-import type { Promotion } from '../../../../../src/modules/promotion/domain/promotion.js';
+import { pricingInputError } from '@src/modules/promotion/domain/pricing-input-error.js';
+import type { Promotion } from '@src/modules/promotion/domain/promotion.js';
 
 type Discount = Pick<Promotion, 'discountType' | 'value'>;
 
