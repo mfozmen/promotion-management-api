@@ -108,6 +108,12 @@ rewritten.
 - Human refinement: cross-check rather than derive, because the URL is authoritative in every deployment that has no compose file at all, and the check applies only to loopback hosts — a container dialling `postgres:5432` on the compose network is unaffected by what the host publishes. `.env.example` states the coupling under each `*_PORT` so the constraint is visible where the value is set, not only in the error.
 - Verification: 60 tests, 100 % on statements, branches, functions and lines. The `architecture-critic` re-run returned REVISE, so `architecture-verified` was deliberately not applied; the remaining findings sit with the owner.
 
+### 2026-09-12 — The port cross-check deleted, the healthcheck claim narrowed (PR #34, commits `e1c34cf`, `4c21ea0`)
+
+- Strategy: the third `architecture-critic` pass was given the branch rather than the last diff, and its recommendation on the twice-patched port cross-check was to delete rather than guard again. `POSTGRES_PORT` and `REDIS_PORT` are gone everywhere, together with `isLoopback`, `assertPortMatchesUrl` and their tests: those are the names Kubernetes injects for Services called `postgres` and `redis`, so they were never this application's to read. `docker-compose.yml` publishes 5432 and 6379 as literals and ADR-0003 states why the pair must not return.
+- Human refinement: claims were held to what had been measured. `4c21ea0` withdrew an overstatement of mine about the authenticated `psql` healthcheck — it catches a database name or role that no longer matches an initialised volume, but it cannot catch a changed password, so the ADR and the compose comment now say that and name where a password mismatch does surface. A `leaseMs === budgetMs` boundary test was added rather than the equality being tightened away: equality stays legal deliberately until a reclaim sweep exists to make a stricter margin mean anything.
+- Verification: 52 tests, 100 % on statements, branches, functions and lines. The `architecture-critic` returned REVISE on its third pass, so `architecture-verified` is again deliberately not applied. One finding stays open with the owner: `parseUrl` accepts a `DATABASE_URL` with no database name, now recorded in ADR-0003 rather than closed inside this PR.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
