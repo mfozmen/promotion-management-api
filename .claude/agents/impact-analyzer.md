@@ -29,7 +29,12 @@ use `gh pr diff <n>`.
    error type, units such as cents vs. major currency units).
 3. **Trace async and indirect dependents.** Async paths are invisible to the
    type checker, so look for them explicitly:
-   - queue producers and consumers, workers, cron or serverless handlers;
+   - queue producers and consumers, workers, cron or serverless handlers. Two
+     BullMQ queues exist on Redis database 1: `events`, carrying
+     `product.upserted`, `promotion.changed`, `readmodel.rebuild` and
+     `reconcile.run`, and `ingestion`, carrying `ingestion.chunk`. A promotion
+     boundary is a delayed `promotion.changed` under the write-once job id
+     `promo:{id}:{activate|expire}`;
    - cache reads, writes and invalidations (key names, TTLs, what triggers a purge);
    - event emitters and listeners, database triggers, views, materialised data;
    - ingestion checkpoints and idempotency keys;
@@ -38,7 +43,8 @@ use `gh pr diff <n>`.
      `REDIS_QUEUE_DB` (1, BullMQ) kept separate, `PORT`, `UPLOAD_DIR`, and the
      ingestion knobs `INGESTION_CHUNK_BYTES`, `INGESTION_BATCH_SIZE`,
      `INGESTION_BUDGET_MS`, `INGESTION_LEASE_MS`, `INGESTION_MAX_FAILURES`,
-     `INGESTION_MAX_WAITING`. A new or renamed key must appear in
+     `INGESTION_MAX_WAITING`, plus `SHUTDOWN_TIMEOUT_MS`, which `src/server.ts`
+     reads directly rather than through the config module. A new or renamed key must appear in
      `.env.example`, and in `docker-compose.yml` when a container reads it;
    - anything that recomputes effective prices or promotion state.
      For each, state whether the change alters what they read or produce.
