@@ -1,5 +1,6 @@
+import { inArray, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { activePromotions, products, promotions } from '../../../../src/shared/db/schema/index.js';
+import { activePromotions, products, promotions } from '../../../../src/shared/db/schema.js';
 import { useTestDatabase } from '../../db.js';
 
 const db = useTestDatabase();
@@ -85,5 +86,38 @@ describe('active_promotions', () => {
 
     expect(rows.map((row) => row.name)).toEqual(['running now']);
     expect(rows[0]).toMatchObject({ productId: inWindow, discountType: 'percentage', value: 1000 });
+  });
+  it('starts the moment starts_at arrives and stops the moment ends_at does, because the range is half-open', async () => {
+    const [startingNow, endingNow] = await Promise.all([insertProduct(), insertProduct()]);
+
+    await db()
+      .insert(promotions)
+      .values([
+        {
+          name: 'starting exactly now',
+          discountType: 'percentage',
+          value: 1000,
+          startsAt: sql`now()`,
+          endsAt: sql`now() + interval '1 hour'`,
+          productId: startingNow,
+          status: 'active',
+        },
+        {
+          name: 'ending exactly now',
+          discountType: 'percentage',
+          value: 1000,
+          startsAt: sql`now() - interval '1 hour'`,
+          endsAt: sql`now()`,
+          productId: endingNow,
+          status: 'active',
+        },
+      ]);
+
+    const rows = await db()
+      .select()
+      .from(activePromotions)
+      .where(inArray(activePromotions.productId, [startingNow, endingNow]));
+
+    expect(rows.map((row) => row.name)).toEqual(['starting exactly now']);
   });
 });

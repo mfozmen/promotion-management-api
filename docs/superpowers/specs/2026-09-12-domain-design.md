@@ -146,10 +146,11 @@ create table ingestion_chunks (
 
 ## 4. Promotion resolution and effective price
 
-- **Active** = `status = 'active' and starts_at <= now() < ends_at`, decided by
-  the **database clock**. The application never forms its own opinion: a
-  resolver that needs the predicate in TypeScript takes the instant the query
-  returned and passes it in, so one `now` decides a boundary a millisecond wide
+- **Active** is the `active_promotions` view (`status = 'active' and
+`tstzrange(starts_at, ends_at) @> now()`), decided by
+the **database clock**. The application never forms its own opinion: a
+resolver that needs the predicate in TypeScript takes the instant the query
+returned and passes it in, so one `now` decides a boundary a millisecond wide
   (REVIEW.md 1.7). Two clocks for one predicate is how a read model publishes a
   discount for a promotion SQL considers expired.
 - **Applied promotion** for a product is decided by `json-rules-engine`, not by
@@ -398,10 +399,8 @@ Resolution query (used by the event handler and reconciler, batched by id):
 select p.*, pp.id as pp_id, pp.name as pp_name, pp.discount_type as pp_discount_type, pp.value as pp_value,
              cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_discount_type, cp.value as cp_value
 from products p
-left join promotions pp on pp.product_id = p.id and pp.status = 'active'
-                       and tstzrange(pp.starts_at, pp.ends_at) @> now()
-left join promotions cp on cp.category = p.category and cp.status = 'active'
-                       and tstzrange(cp.starts_at, cp.ends_at) @> now()
+left join active_promotions pp on pp.product_id = p.id
+left join active_promotions cp on cp.category = p.category
 where p.id = any($1);
 ```
 

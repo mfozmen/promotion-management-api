@@ -118,8 +118,4 @@ END;
 $$;--> statement-breakpoint
 CREATE TRIGGER pricing_rules_set_updated_at BEFORE UPDATE ON "pricing_rules" FOR EACH ROW EXECUTE FUNCTION pricing_rules_touch_updated_at();--> statement-breakpoint
 -- The reconciler sweeps from a watermark, so the single row has to exist before it first runs.
-INSERT INTO "reconciler_state" ("id") VALUES (true) ON CONFLICT DO NOTHING;--> statement-breakpoint
--- One predicate for "is this promotion live", evaluated on the database clock.
-CREATE VIEW "active_promotions" AS
-  SELECT * FROM "promotions"
-  WHERE "status" = 'active' AND tstzrange("starts_at", "ends_at") @> now();
+INSERT INTO "reconciler_state" ("id") VALUES (true) ON CONFLICT DO NOTHING;
