@@ -1184,6 +1184,25 @@ now()`), with `isActive` mirroring the same half-open window in TypeScript
   derived document rather than resolved by silently following either source. The
   issue body itself is left untouched by this branch.
 
+### 2026-09-13 — The per-issue case file was retired before it was pushed (issue #8, PR #29)
+
+- Challenge: `docs/e2e-cases/8.md` was written from issue #8's acceptance
+  criteria as `test-case-generator` prescribed, then the owner rejected
+  per-issue numeric files: cases live in journey files named for the person
+  and what they do, and #8 is a task, not a story, so it owes no file at all.
+- Resolution: the file is deleted on this branch and no replacement is written
+  here; the journey files land on `main` separately. The two entries above
+  stay as the record of the round, including the stale criterion 3 they found.
+- Same round, three critic findings closed on the code: `applyPromotion` takes
+  `Pick<Promotion, 'discountType' | 'value'>` as the merged spec prescribes
+  (owner's choice over an `ActivePromotion` parameter — the resolution query's
+  `now()` predicate is the gate, the pure function prices what it is handed),
+  `isActive` is a type guard whose `now` is PostgreSQL's clock injected by the
+  caller (sentence added to ADR-0004), and a `PricingOutcome.reason` names the
+  defect without echoing the stored value. Left alone on the owner's ruling:
+  `promotion.ts` keeping two type aliases beside the interface they describe,
+  which REVIEW.md 8c.2 does not reach.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
