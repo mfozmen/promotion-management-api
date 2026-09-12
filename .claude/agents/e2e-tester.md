@@ -66,7 +66,8 @@ routes under `src/`.
    listener check and confirm it is the process you launched or its child:
 
    ```
-   powershell -NoProfile -c "Get-CimInstance Win32_Process -Filter 'ProcessId=<pid>' | Select-Object ParentProcessId, CommandLine"
+   powershell -NoProfile -c "Get-CimInstance Win32_Process -Filter 'ProcessId=<pid>' | Select-Object ParentProcessId, CommandLine"   # Windows
+   ps -o ppid=,args= -p <pid>                                                                                                       # Linux and macOS
    ```
 
    A stale server answers `/health` exactly like yours and makes every number
@@ -158,11 +159,17 @@ already cover under the read-path checks.
 
 A single reading that straddles a pass criterion is noise, not a result: the
 same build on the same machine produced a p99 of 106 ms and then 63 ms against
-a route that serialises one small object. So every number compared against a
-criterion below is the median of at least three runs, and a run whose readings
+a route that serialises one small object. So every _measured_ number — latency,
+throughput, RSS — is the median of at least three runs, and a run whose readings
 disagree across the threshold reports the spread and the median rather than
 picking one. Report the concurrency you used; a p99 at `-c 50` and at `-c 100`
 are different measurements and only the second is the flash-sale case.
+
+Presence checks are not measurements and run once: a deadlock is in the log or
+it is not, a statement count either scales with page size or it does not, a
+cache expiry either rebuilds once or a hundred times. Repeating those three
+times only multiplies the runtime of items 7 to 10. Re-run one only when its
+first result is ambiguous, and say so.
 
 ## Pass criteria (fail the run if any is violated)
 
