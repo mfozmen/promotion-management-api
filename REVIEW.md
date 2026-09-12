@@ -462,8 +462,14 @@ rather than ignored, so a typo in a client is visible.
 `400` validation, `404` missing, `409` conflict, `429` backpressure, `503` read
 model not ready. The message is for a human; the code is for a client.
 
-8.4 No internal detail escapes: no stack trace, no SQL text, no connection
-string, no secret, in a response or a log line.
+8.4 No internal detail escapes to the client: no stack trace, no SQL text, no
+connection string, no secret, in a response. A log line is read by the operator,
+not the caller, so the stack of an unexpected error belongs there — it is the
+only way to diagnose a 500 — but SQL text, bound parameters and secrets do not.
+A driver or ORM error carries the failing statement and the request body on its
+own fields and in its message, so an error reaches a log through
+`serializeError` under an `error` key (ADR-0009). Handing a logger the error
+itself, under `err` or any other key, is a finding.
 
 8.5 Handlers log and rethrow; `catch {}` is a finding. A caught error that is
 neither logged nor rethrown is a silent failure.

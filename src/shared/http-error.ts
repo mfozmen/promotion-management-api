@@ -1,7 +1,7 @@
 /**
- * An error a handler raises on purpose. The middleware turns it into the API
- * error shape `{ error: { code, message, details? } }` (REVIEW.md §8.3): the
- * status and code are for the client to branch on, the message is for a human.
+ * An error a handler raises on purpose: the middleware turns it into the API
+ * error shape. The status and code are for the client to branch on, the message
+ * for a human.
  */
 export class AppError extends Error {
   constructor(

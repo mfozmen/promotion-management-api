@@ -3,11 +3,8 @@ import type { Logger } from 'pino';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { httpLogger, logger as rootLogger } from './shared/logger.js';
 
-/**
- * The body cap is small on purpose: the JSON routes carry a single entity, and
- * the smallest configured container is 256 MB (REVIEW.md §8.6). Vendor files
- * arrive as a multipart stream, not as a JSON body.
- */
+// JSON routes carry a single entity. This guards them only: a multipart vendor
+// upload is not parsed here and brings its own byte limit.
 const BODY_LIMIT = '100kb';
 
 export function createApp(logger: Logger = rootLogger): Express {

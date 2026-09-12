@@ -14,11 +14,15 @@ const details = (error: ZodError): { path: string; message: string }[] =>
   error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message }));
 
 /**
- * Validates the request at the boundary and replaces each part with the parsed,
- * typed value, so handlers never see raw input (REVIEW.md §8.1). Schemas are
- * made strict once, at route construction, so an unknown field is a 400 rather
- * than a silently ignored client typo — and never compiled per request
- * (REVIEW.md §6.6).
+ * Parses each declared part and replaces it with the typed result, so a handler
+ * reads raw input only where it declared no schema.
+ *
+ * Schemas are made strict here rather than per request, both to keep the hot
+ * path free of schema work and because an unknown field must be a 400: a
+ * misspelled `catgeory` filter returning the unfiltered catalogue is the worse
+ * failure. `.strict()` reaches the top level only — a nested object declares
+ * `z.strictObject(...)` itself, or a field misspelled inside it is dropped in
+ * silence.
  */
 export function validate(schemas: RequestSchemas): RequestHandler {
   const strict = PARTS.flatMap((part) => {

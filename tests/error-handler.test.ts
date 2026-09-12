@@ -4,6 +4,7 @@ import request from 'supertest';
 import { errorHandler } from '../src/middleware/error-handler.js';
 import { httpLogger } from '../src/shared/logger.js';
 import { AppError } from '../src/shared/http-error.js';
+import { DrizzleQueryError } from 'drizzle-orm';
 import { captureLogger, type CapturedLogger } from './helpers/capture-logger.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
@@ -70,14 +71,21 @@ describe('unexpected errors', () => {
     await request(appThrowing(new Error('boom'), captured)).get('/boom');
 
     const logged = captured.lines.find((line) => line.level === 50);
-    expect(logged).toMatchObject({ err: { message: 'boom', stack: expect.any(String) } });
+    expect(logged).toMatchObject({
+      error: { message: 'boom', stack: expect.stringContaining('at ') },
+    });
   });
 
-  it('masks a thrown non-error value', async () => {
-    const res = await request(appThrowing('something went wrong')).get('/boom');
+  it('masks a thrown non-error value and still logs its type', async () => {
+    const captured = captureLogger();
+    const res = await request(appThrowing('something went wrong', captured)).get('/boom');
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    // Never the value itself: an unknown thrown object may be the leak.
+    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
+      error: { type: 'string' },
+    });
   });
 
   it('masks an error carrying an unmapped type', async () => {
@@ -86,6 +94,84 @@ describe('unexpected errors', () => {
     ).get('/boom');
 
     expect(res.status).toBe(500);
+  });
+});
+
+describe('an error after the response has started', () => {
+  it('does not try to write a second body over the first', async () => {
+    const captured = captureLogger();
+    const app = express();
+    app.use(httpLogger(captured.logger));
+    app.get('/stream', (_req, res, next) => {
+      res.status(200).type('json').write('{"items":[');
+      next(new Error('the query died halfway'));
+    });
+    app.use(errorHandler);
+
+    // The half-written body is not patched up with an error envelope: the
+    // connection is destroyed, so the client sees a truncated response and
+    // cannot mistake it for a complete one.
+    await expect(request(app).get('/stream')).rejects.toThrow(/aborted/);
+
+    expect(captured.lines).toContainEqual(
+      expect.objectContaining({ msg: 'unhandled error after the response started' }),
+    );
+  });
+});
+
+describe('log hygiene for driver errors', () => {
+  // The real class, not a hand-built lookalike: drizzle puts the statement and
+  // the bound row in `message` and the SQLSTATE on `cause`, and a fixture that
+  // guesses that shape certifies the leak it was written to catch.
+  const overlap = () => {
+    const pgError = Object.assign(
+      new Error('conflicting key value violates exclusion constraint "promotions_no_overlap"'),
+      {
+        name: 'PostgresError',
+        code: '23P01',
+        detail: 'Key (product_id)=(3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80) conflicts.',
+        where: 'PL/pgSQL function',
+      },
+    );
+
+    return new DrizzleQueryError(
+      'insert into "promotions" ("product_id", "discount_bp", "customer_email") values ($1, $2, $3)',
+      ['3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80', 2000, 'ayse@example.com'],
+      pgError,
+    );
+  };
+
+  it('keeps the statement and the bound row out of the log', async () => {
+    const captured = captureLogger();
+    await request(appThrowing(overlap(), captured)).get('/boom');
+
+    const serialised = JSON.stringify(captured.lines.find((line) => line.level === 50));
+    expect(serialised).not.toContain('discount_bp');
+    expect(serialised).not.toContain('customer_email');
+    expect(serialised).not.toContain('ayse@example.com');
+    expect(serialised).not.toContain('Failed query');
+    expect(serialised).not.toContain('PL/pgSQL');
+  });
+
+  it('keeps the SQLSTATE and the constraint name, which is what diagnoses it', async () => {
+    const captured = captureLogger();
+    await request(appThrowing(overlap(), captured)).get('/boom');
+
+    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
+      error: {
+        type: 'PostgresError',
+        code: '23P01',
+        message: expect.stringContaining('promotions_no_overlap'),
+        stack: expect.stringContaining('at '),
+      },
+    });
+  });
+
+  it('omits the code when the error carries none', async () => {
+    const captured = captureLogger();
+    await request(appThrowing(new Error('plain'), captured)).get('/boom');
+
+    expect(captured.lines.find((line) => line.level === 50)?.error).not.toHaveProperty('code');
   });
 });
 

@@ -91,7 +91,12 @@ rewritten.
 ### 2026-09-12 — HTTP skeleton (issue #6, branch `feat/http-skeleton`)
 
 - Strategy: gave the issue's acceptance criteria plus `REVIEW.md` (§6.6 per-request work, §8.1 boundary validation, §8.3 error shape, §8.4 no internal detail escapes, §10.1/§10.3 logging) and the already-approved ADRs as context, and asked for the four pieces (validation helper, error handler, logger, `AppError`) one failing test at a time rather than as a single scaffold. Each piece was specified by the behaviour it had to produce (status/code table, strict-schema rejection, correlation-id echo), not by the code shape.
-- Human refinement: three AI defaults were rejected and replaced — the untrusted `x-request-id` header, `redact` as the credential defence, and a wrong test expectation about zod 4's unknown-key path (all three recorded below). The owner also required the unexpected-500 stack to be logged, which `REVIEW.md` §8.4 reads as forbidding until the rule is scoped to the client-facing response; that scoping is now written into ADR-0008 so the next reviewer does not re-open it.
+- Human refinement: three AI defaults were rejected and replaced — the untrusted `x-request-id` header, `redact` as the credential defence, and a wrong test expectation about zod 4's unknown-key path (all three recorded below). The owner also required the unexpected-500 stack to be logged, which `REVIEW.md` §8.4 read as forbidding; the rule itself is amended in this PR to scope it to the client-facing response, and ADR-0008 records why, so the next reviewer does not re-open it.
+
+### 2026-09-12 — HTTP skeleton review round (PR #30)
+
+- Strategy: instead of asking for a general review, ran the advisory Claude review and the `architecture-critic` agent on the committed diff with `REVIEW.md` and the ADRs as the standard, and required each finding to name the rule it breaks or the design statement it contradicts. Findings were collected and fixed in one commit after the run finished, per the severity policy in `CONTRIBUTING.md`.
+- Human refinement: the owner adjudicated the two findings where the rulebook itself was wrong rather than the code — `redact` was deleted outright instead of being kept as "defence in depth" (a control that cannot fire is worse than none, because it reads as coverage), and REVIEW.md §8.4 was rewritten to separate the client-facing response from the log line, since the previous wording forbade the stack that issue #6 requires. Three further findings were accepted as written: the `res.headersSent` guard, `.strict()` being top-level only (recorded as a convention with a test), and the two module-level `AppError` singletons becoming plain data so one Error object is not shared across concurrent requests. SQLSTATE `23P01` was deliberately left unmapped in the middleware — ADR-0008 now records `AppError` as the seam and the promotion handler as the owner of that mapping, so the next reviewer does not re-open it.
 
 ## Judgement, challenges and verification
 
@@ -135,7 +140,7 @@ rewritten.
 
 - Challenge: the first draft satisfied "credentials never reach a log line" (REVIEW.md §10.3) with pino's `redact` option listing `authorization`, `cookie` and `x-api-key`. Two gaps: redaction paths apply to the logger instance they are configured on rather than to every derived child, and even where they do apply they mask three named headers while pino-http's default serializer still logs the full header set, the query string and the request body — so every other header, a token in a query parameter, and any personal data in a payload were still written.
 - Verification: inspected the log lines actually captured in tests instead of trusting the option's name; the captured lines contained the whole `headers` and `query` objects.
-- Resolution: narrowed the serializers so those fields are never serialised at all — `req` to `{ id, method, url }`, `res` to `{ statusCode }`. `redact` stays as defence in depth, not as the control. Recorded in ADR-0009 together with the rejected alternative.
+- Resolution: narrowed the serializers so those fields are never serialised at all — `req` to `{ id, method, path }`, `res` to `{ statusCode }`. `redact` was kept alongside them at first, until the advisory review on PR #30 pointed out that it can only mask paths the serializer has already removed: it was dead weight reading as a second control, so it was deleted. Recorded in ADR-0009 together with the rejected alternative.
 
 ### 2026-09-12 — Wrong test expectation about zod 4 unknown keys (issue #6, branch `feat/http-skeleton`)
 
@@ -143,9 +148,32 @@ rewritten.
 - Verification: ran the assertion against zod's real output rather than changing the middleware to satisfy the test — the failure was in the expectation, not in the code under test.
 - Resolution: corrected the test expectation. Worth recording because the tempting fix (re-mapping the issue onto a synthetic path inside `details()`) would have added production code to make a wrong assumption true.
 
+### 2026-09-12 — An error object logged as itself leaks the SQL statement and the request body (PR #30)
+
+- Challenge: the unexpected-500 path logged `req.log.error({ err })`. pino's default error serializer writes an error's own enumerable fields, and a Drizzle/pg error carries `query` (the failing SQL text), `params` (the bound parameters), `detail` and `where` — so the first database failure on a promotion or ingestion route would have written the customer data from the request body into a retained log. The AI had treated "the stack is allowed in a log" as settling the question and never asked what else an ORM error carries; REVIEW.md §8.4 as written ("no internal detail escapes") was read as being about the response only, so nothing flagged it.
+- Verification: caught by the `architecture-critic` run on PR #30, then confirmed against a driver-shaped error in a test that asserts the captured log line has no `query` and no `params` key (`tests/error-handler.test.ts`).
+- Resolution (before/after): before, the root logger had no `err` serializer and the handler logged the error object. After, `src/shared/logger.ts` defines `serializeError` emitting `{ type, message, stack, code }` and nothing else, wired into the pino-http `serializers` map, so the whitelist applies to every `err` logged anywhere in the process. REVIEW.md §8.4 was amended in the same PR — as its own preamble requires when a rule and the design disagree — to scope "no internal detail escapes" to the client-facing response and to forbid SQL text, bound parameters and secrets in logs while allowing a stack, ending with "logging an error object directly is a finding". Recorded in ADR-0009 and cross-referenced from ADR-0008.
+
+### 2026-09-12 — The error handler assumed nothing had been written yet (PR #30)
+
+- Challenge: the error handler always answered with `res.status(...).json(...)`. If a handler fails after a partial write, the headers are already sent: Express throws `ERR_HTTP_HEADERS_SENT`, or an error envelope is appended to a half-written body, which a client parses as corrupt JSON. The AI assumed the error handler always runs before the first byte, which holds for today's routes but not for the streamed listing ADR-0006 anticipates.
+- Verification: caught by the advisory Claude review on PR #30 and reproduced with a test that writes part of a response and then calls `next(err)`.
+- Resolution: the handler now checks `res.headersSent` first, logs the error and delegates to Express's final handler, which destroys the connection — a truncated body rather than a complete one with an error appended. Written into ADR-0008 as "the envelope holds only before the first byte", with the rule that a future streamed listing treats a mid-stream failure as a broken connection.
+
+### 2026-09-12 — An edit that silently did not apply (PR #30)
+
+- Challenge: the `redact` removal was reported as done but the edit had not been written to `src/shared/logger.ts`. The follow-up reasoning was all built on the assumption that the file already matched the decision.
+- Verification: caught only because the reviewer read the committed file rather than the change summary. No test could have caught it: `redact` was dead configuration, so removing it changes no observable behaviour.
+- Resolution: the option was deleted for real, and the lesson is a process one — a change is verified by re-reading the resulting file (or by a test that fails without it), never by the tool's own report that it succeeded.
+
 ## Overall reflection
 
 ### 2026-09-12 — after the HTTP skeleton (issue #6)
 
 - Estimated ratio: roughly 85 % of the committed text (code, tests, docs) is AI-generated, 15 % human-crafted. The proportion inverts on decisions: the architecture choice between the two competing designs, the label-and-comment PR protocol, the assign/draft endpoint shape, the alarm-simulation requirement and the "log the stack, never return it" call were all made by the owner, and the AI's role was to draft and then be corrected.
 - Blind spots noticed so far: (1) the AI reaches for a library option whose name matches the requirement (`redact` for "no credentials in logs") and stops there, without checking what the default path still emits; (2) untrusted input is treated as trusted whenever it arrives through infrastructure rather than through a request body — the `x-request-id` header is the clear case; (3) when a test fails, the first instinct is to change the code rather than to question the assertion; (4) documentation drifts silently — the README advertised `/health` after the route moved to `/api/health`, which no test could catch.
+
+### 2026-09-12 — after the PR #30 review round (issue #6)
+
+- Estimated ratio unchanged at roughly 85 % AI-generated to 15 % human-crafted text; the three corrections in this round were AI-found (the `architecture-critic` and the advisory review) but human-adjudicated, and the REVIEW.md §8.4 amendment was an owner call.
+- Blind spots added to the list: (5) the AI reasons about the field it put in the log record and not about what the object it logs carries by itself — the error-object leak is the clean example, and the same shape would recur with a job payload or a config object; (6) a stated precaution is taken as still true without re-reading the file, so a silently failed edit survives every later step that reasons about it; (7) an error path is designed for the case where it runs first, not for the case where the response has already started.
