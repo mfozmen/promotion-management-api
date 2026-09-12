@@ -357,6 +357,38 @@ rewritten.
   `db:generate` / `db:migrate` to `package.json`, which `README.md` now names
   instead of the bare `drizzle-kit` calls.
 
+### 2026-09-13 — REVIEW.md 8b/8c brought to the branch, field name restored ahead of the merge (PR #50, `d22aa5c` → `489bc27`)
+
+- Strategy: #66 landed on `main` (`79c56d6`) and raised REVIEW.md 8b (comments)
+  and 8c (one declaration per file, names) from warning to critical and
+  blocking, and rewrote `.github/workflows/claude-review.yml` to walk REVIEW.md
+  rather than carry its own copy of the rules. The branch was re-read against
+  the two sections directly, because no review run had yet applied the new
+  severity to it — the prompt was the rule text, not a review report.
+- What `489bc27` changed: three comments quoted a rule number back at the reader
+  (8b.2) — `src/shared/db/client.ts`'s pool comment and two in
+  `src/shared/db/schema.ts` — and now state the fact without the citation; the
+  `pricing_rules_version` comment reproduced the epoch-milliseconds argument
+  that already lives in ADR-0004 and in this file (8b.3) and now states the unit
+  and stops; `schema.ts`'s header named two of the four SQL objects a
+  regeneration would drop and now names all four (extension, two exclusion
+  constraints, `pricing_rules_set_updated_at` trigger with its function,
+  `reconciler_state` seed row); ADR-0003 gained that list as a trade-off; spec
+  §12's silence-counter parenthetical said the seeded rules "cannot increment"
+  it, which is only true once #36 lands (8b.5).
+- Ordering was the point, not only content: `d22aa5c` put the §5 read-model field
+  name back **before** the base merge `28b8453`, so the merge had nothing to
+  resolve on that line. The previous round made the same correction after the
+  merge and lost it.
+- Human refinement: the owner directed that the field-name fix be its own commit
+  placed ahead of the merge, which is what turned a repeated defect into a
+  procedure.
+- Open, routed to the owner, not decided here: whether 8c.2 ("one declaration
+  per file") reaches Drizzle `pgTable` / `pgEnum` consts. `src/shared/db/schema.ts`
+  exports five enums and six tables from one file, while 8c.2's own text
+  enumerates `class`, `interface`, `abstract class` and `enum`. No change made
+  on this branch either way.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -748,6 +780,60 @@ rewritten.
   third. A correction is only safe once it is on the same side of the merge as
   the text it corrects.
 
+### 2026-09-13 — A merge swallowed the same review fix twice, and what stopped the third time (PR #50, `d22aa5c` → `28b8453`)
+
+- Challenge: the read-model hash field in §5 of the domain spec was corrected
+  from `ingestionRulesVersion` to `pricingRulesVersion` in `ffb09a0`, because the
+  shipped column is `products.pricing_rules_version` (`0000_write_store.sql`
+  line 62) and no ref's SQL carries the other name. The base merge `d2ad2eb`
+  took the base's §5 table wholesale and put the old name back. That is the
+  defect this agent reported FAIL on last round. It was not a one-off: the same
+  mechanism — a correction made on the branch side, then a merge resolving the
+  surrounding block to the base without a conflict marker — had already eaten
+  two other corrections on this branch.
+- Before (`d2ad2eb`, §5, line 412): `… promotionId, promotionName, ingestionRulesVersion, updatedAt`.
+  After (`d22aa5c`, same line): `… promotionId, promotionName, pricingRulesVersion, updatedAt`.
+  §3 line 43 declares `pricing_rules_version bigint` and ADR-0004 line 129 names
+  the same form, so the document now agrees with itself and with the migration.
+- Verification: `git diff <tip-before-merge> HEAD -- docs/superpowers/specs/2026-09-12-domain-design.md`
+  is the command that exposes this class — a two-parent history hides what a
+  single-parent diff shows at once — and `grep -rn ingestion_rules_version` over
+  the migrations of every ref still finds nothing.
+- Resolution, and the part that generalises: the fix was committed as `d22aa5c`
+  **before** the merge `28b8453`, not after it. A correction on the same side of
+  the merge as the text it corrects cannot be resolved away, because the merge
+  sees one value on that line rather than two. The order of the two commits is
+  the control; the wording was already known.
+- Scenario B is the affected half: `pricingRulesVersion` is what a storefront
+  read returns to identify which ingestion rule set priced a product, so the name
+  published in §5 is a contract with every read-model consumer.
+
+### 2026-09-13 — What a warning had been hiding in this branch's comments (PR #50, `489bc27`)
+
+- Challenge: with 8b and 8c blocking (#66), the branch was re-read against them
+  and four defects surfaced that earlier green review runs had passed. Three
+  comments cited rule numbers instead of stating the fact (8b.2). One comment
+  re-argued ADR-0004's milliseconds reasoning in four lines (8b.3). `schema.ts`'s
+  header promised that the objects Drizzle cannot express are "the two promotion
+  constraints and the btree_gist extension" — two of four; the trigger with its
+  function and the `reconciler_state` seed row are equally invisible to a
+  regeneration and were unmentioned in every document.
+- Worse than incomplete, one bullet was backwards: ADR-0003 read that
+  `products.updated_at` having no trigger "keeps one clock", when the fact is the
+  opposite — the writer sets it, which is what lets the `is distinct from` guard
+  skip unchanged rows, at the cost that the value comes from the application
+  clock and so is not a watermark a sweep may filter on. `pricing_rules.updated_at`,
+  set server-side by trigger, is.
+- Verification: the four-object list was settled by reading
+  `0000_write_store.sql` for every statement with no counterpart in `schema.ts`
+  (`CREATE EXTENSION`, two `EXCLUDE USING gist`, `CREATE FUNCTION` +
+  `CREATE TRIGGER`, the `reconciler_state` insert), not by trusting the header
+  it replaced. The integration tests assert those objects exist, which is why a
+  silent regeneration is caught at all.
+- Resolution: `489bc27` for the comments and the spec, with ADR-0003 carrying the
+  four-object list as a trade-off; `README.md`'s database-schema paragraph is
+  brought to the same list in this round's documentation commit.
+
 ## Overall reflection
 
 - Estimated ratio: pending (final figure is the owner's).
@@ -805,3 +891,20 @@ rewritten.
   `git diff <tip-before-merge> HEAD` until this documentation pass did, and that
   one command is what found the reverted name. Two-parent history hides a
   regression a single-parent diff shows at a glance.
+
+### 2026-09-13 — Running estimate after the blocking-rules round (PR #50, `489bc27`)
+
+- Share, documents and comments: drafting unchanged — AI-written prose, owner's
+  decisions. This round is the clearest measurement so far of how much of that
+  prose was filler: of the comment lines this branch shipped, the ones removed
+  under 8b were all AI-written and all of them restated something a document
+  already said or cited a rule instead of the fact it encodes. None of them
+  encoded knowledge that would have been lost.
+- Blind spot noticed: a rule at warning severity is not a rule. 8b and 8c existed
+  in REVIEW.md for a day and were passed by every review run over this branch;
+  raising them to blocking (#66) found four defects in the first pass, in code
+  that had already been reviewed. The AI review answers the severity, not the
+  text.
+- Blind spot noticed, repeat class: comments that summarise an ADR drift from it
+  silently. The `products.updated_at` bullet and its comment had disagreed about
+  which side owns the clock since the column was written, and no test can see it.

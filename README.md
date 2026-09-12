@@ -68,7 +68,7 @@ docs/   design specs (docs/superpowers/specs), end-to-end cases, one file per us
 
 ## Database schema
 
-The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the enums, the six tables and the two GiST exclusion constraints that enforce one active promotion per product and per category; `0001_seed_pricing_rules.sql` seeds the three ingestion pricing rules. [`src/shared/db/schema.ts`](./src/shared/db/schema.ts) is the Drizzle mirror used by queries — it cannot express the exclusion constraints, so those live in the migration only (ADR-0003).
+The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three ingestion pricing rules. [`src/shared/db/schema.ts`](./src/shared/db/schema.ts) is the Drizzle mirror used by queries. Four of those objects have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them silently and the integration tests are what notices (ADR-0003, commit `489bc27`).
 
 ## API
 
