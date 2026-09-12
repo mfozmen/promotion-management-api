@@ -179,6 +179,25 @@ describe('unexpected errors', () => {
     });
   });
 
+  it('logs which code answered a 5xx, so a log line joins to the response', async () => {
+    const captured = captureLogger();
+    await request(
+      appThrowing(
+        new HttpError('READ_MODEL_NOT_READY', 'rebuild running', {
+          cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+        }),
+        captured,
+      ),
+    ).get('/boom');
+
+    // serializeError reports the cause's code, so without these fields the
+    // line names the driver's failure and never the 503 the client read.
+    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
+      code: 'READ_MODEL_NOT_READY',
+      status: 503,
+    });
+  });
+
   it('masks a thrown non-error value and still logs its type', async () => {
     const captured = captureLogger();
     const res = await request(appThrowing('something went wrong', captured)).get('/boom');

@@ -19,7 +19,7 @@ const MAX_DETAILS = 20;
 const SERVER_FAULT = { status: 500, code: 'INTERNAL', message: 'Internal server error' } as const;
 
 /** Public wording for a 5xx. A code without an entry says nothing to a client. */
-const SERVER_MESSAGES: Partial<Record<ErrorCode, string>> = {
+const SERVER_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = {
   READ_MODEL_NOT_READY: 'The read model is not ready yet; retry shortly',
 };
 
@@ -83,7 +83,13 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     if (isClientStatus(known.status)) {
       log.warn({ code: known.code, status: known.status }, 'request rejected');
     } else {
-      log.error({ error: serializeError(err) }, 'server fault raised by a handler');
+      // The code and status the client read: `serializeError` reports the
+      // cause's code, so without these the line names the driver's failure and
+      // nothing joins it to the response.
+      log.error(
+        { code: known.code, status: known.status, error: serializeError(err) },
+        'server fault raised by a handler',
+      );
     }
     const body: { error: Omit<ErrorMapping, 'status'> } = {
       error: { code: known.code, message: known.message },

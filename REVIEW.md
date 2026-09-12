@@ -513,10 +513,18 @@ never repeats a free-form value the caller sent: a value is not an identifier
 and there is nothing to fix by seeing it again, so a 404 does not echo the path
 and a parser's message is replaced rather than forwarded.
 
+A schema's own message is part of the response, so a custom or refinement
+message must not interpolate the value it rejected. The validator forwards what
+the schema produced, so `.refine(v => ..., { error: () => \`${input} is
+invalid\` })` puts the caller's value back in the body with nothing in the
+middleware to stop it.
+
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
 another row's fields, which they never had. `Unrecognized key: "discountTyp"` is
 correct: the client cannot fix the request without knowing which of its own keys
-was wrong.
+was wrong. The interpolation hole was found by probe on PR #30: a refinement
+message naming the received value reached the response body, past every other
+guard.
 
 8.3c Cap an echoed field name or identifier at 64 characters and truncate
 rather than omit, so a long key cannot turn an error body into a mirror.

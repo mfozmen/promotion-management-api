@@ -55,8 +55,10 @@ export class HttpError extends Error {
   }
 }
 
-/** Messages are ours, not body-parser's: body-parser's quote the input back. */
-export const CLIENT_ERRORS = new Map<number, { code: ErrorCode; message: string }>([
+/** Messages are ours, not body-parser's: body-parser's quote the input back.
+ *  Readonly, like `STATUS`: one `.set` in a route module would change the error
+ *  body of every concurrent request. */
+export const CLIENT_ERRORS: ReadonlyMap<number, { code: ErrorCode; message: string }> = new Map([
   [400, { code: 'VALIDATION_ERROR', message: 'Request body could not be read' }],
   [413, { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' }],
   [415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Request body encoding is not supported' }],

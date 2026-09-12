@@ -12,6 +12,8 @@ export interface RequestSchemas {
 const PARTS = ['body', 'query', 'params'] as const;
 
 const MAX_SHOWN_KEYS = 20;
+/** Matches the envelope's cap in `error-handler.ts`, which bounds the response. */
+const MAX_DETAILS = 20;
 const MAX_KEY_LENGTH = 64;
 
 /**
@@ -39,7 +41,11 @@ const formatPath = (part: string, path: PropertyKey[]): string =>
  * how many they send is their choice and this runs unauthenticated.
  */
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
-  return error.issues.map((issue) => ({
+  // Cut before the map, not after: a 100 kB body of failing array items is
+  // thousands of issues, and mapping them all to build twenty is an
+  // unauthenticated request allocating megabytes it never sends. The envelope
+  // caps the response for every producer; this caps the work.
+  return error.issues.slice(0, MAX_DETAILS).map((issue) => ({
     path: formatPath(part, issue.path),
     message:
       issue.code === 'unrecognized_keys'
