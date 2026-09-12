@@ -42,7 +42,9 @@ a server you launched by hand.
    produce numbers neither of them can trust, so serialising is correct rather
    than a limitation to engineer around. If another session holds the port,
    ask that session to finish rather than starting a second stack beside it.
-4. Wait until `curl -sf localhost:3000/health` returns 200 (max 30 s). If it
+4. Wait until `curl -sf localhost:3000/health` returns 200 (max 30 s). PR #30
+   moves the route to `/api/health`; follow whichever path is on the tree you
+   are testing rather than failing a healthy stack over a prefix. If it
    never does, print `docker compose logs --tail 40 api` and FAIL.
 5. **If something else holds port 3000, stop and say so; never kill it.** The
    process you did not start may be another run mid-measurement or a server
@@ -55,7 +57,8 @@ unless you created them.
 ### Exception until issue #19 lands (dated 2026-09-12)
 
 There is no `api` service and no `Dockerfile` yet — the compose
-file carries the database and Redis only, and both belong to issue #19. Until
+file carries the database and Redis only, which came from issue #34. Issue #19
+owns the `api` service and the Dockerfile. Until
 #19 lands, run the host-launch path below, which has been executed and
 verified on this machine; the load numbers it produced stay valid. **Delete
 this whole section, and nothing else, when #19 lands.**
