@@ -1,7 +1,7 @@
 # AI appendix notes
 
 Running source of truth for `Form 5_AI Appendix.docx`, maintained by the
-`docs-scribe` agent after every merge. Entries are appended and dated, never
+`docs-scribe` agent before every push. Entries are appended and dated, never
 rewritten.
 
 ## Tool manifest
@@ -18,6 +18,11 @@ rewritten.
 
 - Strategy: gave the full case study PDF and hard process constraints (TypeScript, TDD, Conventional Commits, PR-only, SonarCloud, advisory AI review). Asked for a design before any scaffolding, approved it, then let parallel agents build disjoint parts.
 - Human refinement: rejected required human approval in branch protection (owner cannot approve own PRs) in favour of a label-and-comment protocol; asked for coverage to be enforced at commit time instead of a paid SonarCloud gate; asked for the original Form 5 docx instead of a Markdown rewrite.
+
+### 2026-09-12 — Four-agent local-gates (PR #21, d8a436a, b61d4c4)
+
+- Strategy: extended the `local-gates` required check to read the PR's file list and labels and compute which local-agent labels apply — `docs-verified` is required on every PR, `architecture-verified` only when the PR touches `ADR.md`, `docs/superpowers/specs/` or carries the `scenario` label. All four labels are still stripped on every push.
+- Human refinement: the owner asked for the gate to cover all four local agents, not just `e2e-tester` and `impact-analyzer` — docs and architecture review were process-only before this and easy to skip. `docs-scribe` moved from "after every merge" to "before every push, on the branch", so documentation lands in the same PR instead of trailing it.
 
 ## Judgement, challenges and verification
 
