@@ -20,38 +20,34 @@ routes under `src/`.
 
 ## Setup
 
+This agent runs when the owner asks for it, not before every push. Running it
+on every pull request measured an unchanged application over and over and was
+the biggest single source of delay. So when you are asked to run, run
+properly: the numbers are the point.
+
 The application comes up through Docker Compose, one command. Nothing comes up
-without the compose file, so "the system under test" is the compose project,
-not a server you launched by hand.
+without the compose file, so the system under test is the compose project, not
+a server you launched by hand.
 
 1. `npm ci` only if `node_modules` is missing.
-2. Bring the whole stack up and wait for it to be healthy:
+2. Bring the stack up and wait for it to be healthy:
 
    ```
-   docker compose up -d --wait      # db, redis, api; exits non-zero if any service is unhealthy
+   docker compose up -d --wait   # exits non-zero if any service is unhealthy
    ```
 
-3. **The host port is ephemeral; read it back, never assume it.** The API is
-   published as `ports: ["3000"]` with no host side, so Docker picks a free
-   host port and two worktrees running at once cannot collide. This is the one
-   mechanism this definition uses for port separation: do not also set
-   `COMPOSE_PROJECT_NAME` per worktree, and do not pin a host port.
-
-   ```
-   PORT=$(docker compose port api 3000 | cut -d: -f2)
-   ```
-
-4. Wait until `curl -sf localhost:$PORT/health` returns 200 (max 30 s). If it
+3. **The host port is fixed at 3000.** The compose file publishes it, and the
+   health check and every measurement use it. Only one run can hold it at a
+   time, which is deliberate: two runs measuring the same machine at once
+   produce numbers neither of them can trust, so serialising is correct rather
+   than a limitation to engineer around. If another session holds the port,
+   ask that session to finish rather than starting a second stack beside it.
+4. Wait until `curl -sf localhost:3000/health` returns 200 (max 30 s). If it
    never does, print `docker compose logs --tail 40 api` and FAIL.
-5. **Proving you are talking to the server you started** is `docker compose ps
-api`: the container belongs to this project, so there are no PIDs to
-   compare and no stale host process that can answer `/health` in its place.
-6. **If something else holds a port you wanted, move; never kill it.** This
-   machine runs many worktrees in parallel and the process you did not start
-   may be another run mid-measurement or a server the owner is using. You
-   cannot tell an orphan from a live server, and "not mine" is true of both.
-   Reaping orphans is a human decision, not yours; report what you saw and let
-   a person decide.
+5. **If something else holds port 3000, stop and say so; never kill it.** The
+   process you did not start may be another run mid-measurement or a server
+   the owner is using, and you cannot tell an orphan from a live server.
+   Reaping one is a person's decision, not yours.
 
 Teardown is `docker compose down`. Leave the `db` and `redis` volumes alone
 unless you created them.

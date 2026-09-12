@@ -64,29 +64,19 @@ jobs:
           # Current and previous paths, so a file moved out of the specs directory still counts.
           files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)')
           # An agent is required by what the diff can break, not by the fact that a diff exists.
-          # A rulebook edit cannot leak a connection or deadlock a transaction, so making it wait
-          # for a load run buys nothing and costs a round trip on every pull request.
           #
-          # docs-scribe is the one that always applies: every change can outdate the ADRs, the
-          # README or the appendix, and that is the case-study deliverable.
+          # docs-scribe always applies: any change can outdate the ADRs, the README or the
+          # appendix, and the appendix is a case-study deliverable.
+          #
+          # e2e-tester is deliberately NOT here. Running it on every push was the single
+          # biggest source of delay, and almost every run re-measured an application that had
+          # not changed. It runs when the owner asks for it, and its label is applied then.
           required="docs-verified"
-          # Two groups, named once and used below, so the prose in CLAUDE.md and CONTRIBUTING.md
-          # has something to match and the two conditions cannot drift apart.
-          #
-          # behaviour: changes how the running application or its build behaves. The suffix
-          # alternatives earn their keep beyond linters: drizzle.config.ts is how the schema is
-          # generated, so do not tidy them down to a fixed list of file names.
-          behaviour='^(src/|tests/|scripts/|\.claude/agents/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|Dockerfile|(docker-)?compose.*\.ya?ml$)'
-          # judgement: changes how the work itself is judged. An agent definition is in both
-          # groups: the agent must be exercised, and every branch in flight is judged by it.
+          # impact-analyzer covers code and the paths that decide how work is judged, because
+          # a change to the judging lands on every branch in flight at once.
           judgement='^(\.github/workflows/|\.claude/agents/|\.husky/|sonar-project\.properties$)'
-          # e2e-tester needs something that can change how the running application behaves.
-          if grep -qE "$behaviour" <<<"$files"; then
-            required="$required e2e-verified"
-          fi
-          # impact-analyzer covers both groups: a change to how pull requests are judged lands on
-          # every branch in flight at once, which is the widest blast radius here.
-          if grep -qE "$behaviour|$judgement" <<<"$files"; then
+          behaviour='^(src/|tests/|scripts/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|Dockerfile|(docker-)?compose.*\.ya?ml$)'
+          if grep -qE "$behaviour" <<<"$files" || grep -qE "$judgement" <<<"$files"; then
             required="$required impact-verified"
           fi
           # Design documents, the modules that implement Scenario A and B, and the workers all

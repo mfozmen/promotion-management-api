@@ -42,7 +42,7 @@ All of these are required on `main`:
 - `ci` — lint, typecheck, tests with 100 % coverage thresholds, and the SonarCloud scan, which waits for the quality gate (`sonar.qualitygate.wait`), so a gate failure fails `ci`
 - `pr-title` — Conventional Commit PR title
 - `claude-review` — advisory AI review
-- `local-gates` — passes only when the PR carries the labels of every applicable local agent: `docs-verified` always, `e2e-verified` for the behaviour group below, `impact-verified` for the behaviour or the judgement group, plus `architecture-verified` when the PR touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules (`src/modules/vendor/`, `src/modules/promotion/`, `src/modules/pricing/`) or `src/workers/`, or carries the `scenario` label. The job prints the set it computed. Every new push strips all four, so the applicable agents must be re-run and their labels re-applied
+- `local-gates` — passes only when the PR carries the labels of every applicable local agent: `docs-verified` always and `impact-verified` for the behaviour or judgement group below (`e2e-verified` is never required; the run happens on request), plus `architecture-verified` when the PR touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules (`src/modules/vendor/`, `src/modules/promotion/`, `src/modules/pricing/`) or `src/workers/`, or carries the `scenario` label. The job prints the set it computed. Every new push strips all four, so the applicable agents must be re-run and their labels re-applied
 
 The scan runs only when the pull request touches something SonarCloud reads: the sources, the tests, a build or tool configuration, or `sonar-project.properties`. A pull request that changes only documentation or a workflow skips it, because the analysis would be a copy of the previous one. A push to `main` always scans. For that reason the required check is `ci`, which carries the scan, rather than SonarCloud's own check, which cannot report on a pull request it never analysed. The scan step carries `SONAR_TOKEN` because uploading an analysis is a write; nothing reads results back, so no other step needs it.
 
@@ -70,7 +70,7 @@ Four Claude Code agents live in `.claude/agents/`. They are part of the process,
 | Agent                 | When it runs                                                                                                                                                 | Output                                                                                           |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | `architecture-critic` | Before pushing a PR that touches `ADR.md`, `docs/superpowers/specs/`, the vendor, promotion or pricing modules, the workers, or carries the `scenario` label | SOUND / REVISE / REJECT, label `architecture-verified`                                           |
-| `e2e-tester`          | Before pushing a PR that touches the **behaviour** group                                                                                                     | PASS / FAIL, label `e2e-verified`                                                                |
+| `e2e-tester`          | When the owner asks for a run; never a required label                                                                                                        | PASS / FAIL, label `e2e-verified`                                                                |
 | `impact-analyzer`     | Before pushing a PR that touches the **behaviour** or the **judgement** group                                                                                | PASS / FAIL, label `impact-verified`                                                             |
 | `docs-scribe`         | Before every push, on the PR branch, and whenever an AI mistake is caught and fixed (this one always applies)                                                | Updates `ADR.md`, `README.md`, `docs/ai-appendix-notes.md` in the same PR, label `docs-verified` |
 
@@ -103,7 +103,7 @@ Definition of done for a PR hand-off:
 
 1. `ci`, `pr-title`, `claude-review` and `local-gates` are green on the final commit.
 2. Every review thread is answered and resolved.
-3. `e2e-verified`, `impact-verified`, `docs-verified` are present, plus `architecture-verified` for design or scenario PRs.
+3. `docs-verified` and, where the paths call for it, `impact-verified` and `architecture-verified` are present. `e2e-verified` appears only after a run the owner asked for.
 4. `needs-human-check` is added and the owner is mentioned.
 
 ## Merge strategy
