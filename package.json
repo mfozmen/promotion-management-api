@@ -19,7 +19,15 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "express": "^5"
+    "bullmq": "^6.3.4",
+    "drizzle-orm": "^0.45.2",
+    "express": "^5",
+    "ioredis": "^6.0.0",
+    "json-rules-engine": "^7.3.1",
+    "pg": "^8.23.0",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "zod": "^4.6.2"
   },
   "devDependencies": {
     "@commitlint/cli": "^19",
@@ -27,8 +35,10 @@
     "@eslint/js": "^9",
     "@types/express": "^5",
     "@types/node": "^22",
+    "@types/pg": "^8.23.1",
     "@types/supertest": "^6",
     "@vitest/coverage-v8": "^2",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-prettier": "^9",
     "husky": "^9",

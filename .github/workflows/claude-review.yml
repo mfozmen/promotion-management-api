@@ -64,6 +64,11 @@ jobs:
           # top-level summary. Without these the agent analyzes but has no
           # permitted tool to publish (silent no-op).
           #
+          # TodoWrite is granted because it is the tool the agent reaches for first
+          # to plan a multi-file review. Without it the run on PR #29 spent its
+          # opening turns on denied calls, gave up after 9 seconds with
+          # permission_denials_count 3, and posted nothing at all while still
+          # reporting success — a silent no-op review is worse than a failed one.
           # Read/Grep/Glob are also granted, read-only against the checkout
           # that's already on disk (no write, no network). Without them, a
           # review that needs anything beyond the raw hunks — e.g. whether a
@@ -79,7 +84,7 @@ jobs:
           # too low for a diff of any size. Hence 80 (issue #93).
           claude_args: |
             --max-turns 80
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob,TodoWrite"
           prompt: |
             You are reviewing this pull request as an ADVISORY reviewer for the
             ModaCo Promotion Management API project (Node.js, Express,
@@ -126,8 +131,11 @@ jobs:
               constraints, and flash-sale read/write load with category-wide
               promotions.
 
-            Group findings by severity (Critical / Warning / Suggestion), be
-            concise and specific, and always cite the file and line. Do not
+            Group findings by severity (Critical / Warning / Suggestion) and
+            keep every finding to at most three sentences: what breaks, what
+            triggers it, what to do. Cite the rule number plus file and line
+            rather than restating the rule. Skip praise, diff summaries and
+            preamble. REVIEW.md states the same rule under "Be brief". Do not
             nitpick style the linter already enforces. Spend turns
             economically — you have a limited budget and the summary must go
             out well before it runs dry.
