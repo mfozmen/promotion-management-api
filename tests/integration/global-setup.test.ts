@@ -10,6 +10,9 @@ const HOUR_MS = 3_600_000;
 // fixed fixture prefix would only move that collision rather than remove it.
 // Eight hex digits, not a whole uuid: PostgreSQL truncates a database name at 63 bytes, and
 // the name still has to carry the fixture's timestamp and label after this prefix.
+// ponytail: these fixtures sit outside the production sweep's namespace, so a crashed run
+// leaks its four databases for ever. Bounded and on a throwaway server; fold them back into
+// `pma_test_<epoch>_` if it ever bites.
 const RUN = randomUUID().replaceAll('-', '').slice(0, 8);
 const PREFIX = `pma_sweepfix_${RUN}_`;
 const PATTERN = `^${PREFIX}([0-9]+)_`;
