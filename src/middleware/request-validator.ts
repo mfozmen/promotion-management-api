@@ -32,11 +32,10 @@ const formatPath = (part: string, path: PropertyKey[]): string =>
 /**
  * A rejection names where the problem is and which of the caller's own keys it
  * concerns, never a stored value and never a free-form value they sent
- * (the echo policy settled on PR #46; not yet in this repo's REVIEW.md). The
- * distinction is that a key they typed is an identifier
+ * (REVIEW.md 8.3b). The distinction is that a key they typed is an identifier
  * they can act on — without it they cannot fix the request — while a value
  * handed back is just their own input returned to them. Keys are truncated
- * rather than omitted at 64 characters and the list is capped, because
+ * rather than omitted at 64 characters (8.3c) and the list is capped, because
  * how many they send is their choice and this runs unauthenticated.
  */
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {

@@ -55,9 +55,9 @@ function raisedError(err: HttpError): ErrorMapping {
 }
 
 export const notFoundHandler: RequestHandler = (_req, _res, next) => {
-  // The path is not echoed back, and not because it is untrusted — so is a
-  // rejected key, and that one is returned. The caller already knows the path
-  // it asked for, so echoing buys no diagnostic the log does not have.
+  // The path is not echoed back. Not because it is untrusted — so is a rejected
+  // key, and that one is returned — but because there is nothing to fix by
+  // seeing it again (REVIEW.md 8.3b).
   next(new HttpError('NOT_FOUND', 'Route not found'));
 };
 

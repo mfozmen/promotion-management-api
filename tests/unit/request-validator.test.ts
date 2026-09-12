@@ -56,7 +56,7 @@ describe('validate: body', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
     // A key they typed is an identifier they can act on; a value they sent is
-    // not (the echo policy on PR #46).
+    // not (REVIEW.md 8.3b).
     expect(res.body.error.details).toContainEqual({
       path: 'body',
       message: 'Unrecognized keys (1): "basePrice"',

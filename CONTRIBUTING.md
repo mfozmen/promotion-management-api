@@ -32,7 +32,7 @@ No implementation code is written before its failing test exists.
 - [ ] Commits follow Conventional Commits
 - [ ] Branch named `type/short-description`
 - [ ] ADR added/updated if the change affects architecture
-- [ ] `e2e-tester`, `impact-analyzer` and `docs-scribe` agents run locally and passed (labels `e2e-verified`, `impact-verified`, `docs-verified`); `architecture-critic` too for design or scenario PRs (`architecture-verified`)
+- [ ] The agents this change needs ran locally and passed, and their labels are on the PR. `local-gates` prints the set it computed from the changed paths; that is the authority
 
 ## Required checks
 
@@ -41,12 +41,16 @@ All of these are required on `main`:
 - `ci` — lint, typecheck, tests with 100 % coverage thresholds, SonarCloud scan
 - `pr-title` — Conventional Commit PR title
 - `claude-review` — advisory AI review
-- `SonarCloud Code Analysis` — quality gate
-- `local-gates` — passes only when the PR carries the labels of every applicable local agent: `e2e-verified`, `impact-verified` and `docs-verified` always, plus `architecture-verified` when the PR touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules (`src/modules/vendor/`, `src/modules/promotion/`, `src/modules/pricing/`) or `src/workers/`, or carries the `scenario` label. Every new push strips all four, so the agents must be re-run and the labels re-applied
+- `local-gates` — passes only when the PR carries the labels of every applicable local agent: `docs-verified` always, `e2e-verified` for the behaviour group below, `impact-verified` for the behaviour or the judgement group, plus `architecture-verified` when the PR touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules (`src/modules/vendor/`, `src/modules/promotion/`, `src/modules/pricing/`) or `src/workers/`, or carries the `scenario` label. The job prints the set it computed. Every new push strips all four, so the applicable agents must be re-run and their labels re-applied
 
 `local-gates` lists the pull request files and edits labels with the workflow's `GITHUB_TOKEN`; both are served by the `pull-requests` and `issues` scopes, and the job performs no checkout, so it grants no `contents` scope. A `403` on that step means the pull request comes from a fork, where the token is read-only regardless of the `permissions` block. Fork pull requests cannot pass this gate (nor the Claude review); open the branch in this repository instead.
 
-Pre-push local gates: run the `e2e-tester`, `impact-analyzer` and `docs-scribe` agents (`.claude/agents/`) against the branch before pushing, and `architecture-critic` as well for design or scenario PRs. Push only when every verdict is PASS (or SOUND) and the docs changes are committed, then apply the labels.
+Pre-push local gates: run the agents the change needs against the branch before pushing, then apply their labels. Which ones are needed follows from what the diff can break, not from the fact that a diff exists. The changed paths fall into two groups:
+
+- **Behaviour** — changes how the running application or its build behaves: `src/`, `tests/`, `scripts/`, `.claude/agents/`, `package.json`, a `*.config.ts`, `*.config.mjs` or `*.config.js`, a `tsconfig*.json`, a `Dockerfile` or a compose file (`docker-compose.yml`, `compose.yaml`).
+- **Judgement** — changes how the work itself is judged: `.github/workflows/`, `.claude/agents/`, `.husky/`, `sonar-project.properties`.
+
+An agent definition is in both groups: the agent itself must be exercised, and every branch in flight is judged by it. Push only when every applicable verdict is PASS (or SOUND) and the docs changes are committed.
 
 ## Local agents
 
@@ -55,9 +59,9 @@ Four Claude Code agents live in `.claude/agents/`. They are part of the process,
 | Agent                 | When it runs                                                                                                                                                 | Output                                                                                           |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | `architecture-critic` | Before pushing a PR that touches `ADR.md`, `docs/superpowers/specs/`, the vendor, promotion or pricing modules, the workers, or carries the `scenario` label | SOUND / REVISE / REJECT, label `architecture-verified`                                           |
-| `e2e-tester`          | Before every push                                                                                                                                            | PASS / FAIL, label `e2e-verified`                                                                |
-| `impact-analyzer`     | Before every push                                                                                                                                            | PASS / FAIL, label `impact-verified`                                                             |
-| `docs-scribe`         | Before every push, on the PR branch, and whenever an AI mistake is caught and fixed                                                                          | Updates `ADR.md`, `README.md`, `docs/ai-appendix-notes.md` in the same PR, label `docs-verified` |
+| `e2e-tester`          | Before pushing a PR that touches the **behaviour** group                                                                                                     | PASS / FAIL, label `e2e-verified`                                                                |
+| `impact-analyzer`     | Before pushing a PR that touches the **behaviour** or the **judgement** group                                                                                | PASS / FAIL, label `impact-verified`                                                             |
+| `docs-scribe`         | Before every push, on the PR branch, and whenever an AI mistake is caught and fixed (this one always applies)                                                | Updates `ADR.md`, `README.md`, `docs/ai-appendix-notes.md` in the same PR, label `docs-verified` |
 
 Agent definitions are living documents: when an endpoint, job, cache or store lands, update the relevant agent in the same PR so it knows what to test, trace or attack.
 

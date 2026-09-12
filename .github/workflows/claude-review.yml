@@ -122,6 +122,9 @@ jobs:
 
             Review the diff for:
             - Bugs, security issues, and performance problems.
+            - Comments: a comment that restates the code, narrates a named
+              function, or retells the design spec is a Warning (REVIEW.md 8b).
+              A clear function has no comment at all.
             - TDD discipline: production code backed by tests that assert real
               behavior; minimal implementations, no speculative features.
             - Conventions: TypeScript strict mode; English-only code,

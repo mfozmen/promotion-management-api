@@ -83,6 +83,59 @@ rewritten.
   commit, instead of reacting mid-run, which also closes the uncommitted-fix
   and mid-review-push gaps.
 
+### 2026-09-12 — Rulebook expansion from review findings (PR #46, `docs/comment-density`)
+
+- Strategy: six review findings this session were classes of mistake rather
+  than one-off fixes, so each became a `REVIEW.md` rule in the same PR
+  instead of a silent code fix, per the new 13b policy this PR also adds.
+- Human refinement: substantial, and in the blocking direction. The owner's
+  review (commit `3b5af3b`) reversed the 8c naming direction the model had
+  proposed and dropped the 8b comment-ratio threshold entirely: a percentage
+  gate passes every file that hits the number while still deleting
+  load-bearing contracts, so 8b now judges what a comment says rather than how
+  many lines it occupies. The owner also ruled that a mistake made
+  unstateable in the type beats a rule asking nobody to make it (8c.5, commit
+  `26a8de8`), which is the opposite of the model's instinct to add a rule per
+  finding. Each rule below states its own failure; the shape of the rules is
+  the owner's.
+  - 2b (business data lives in the database, commit `15116a6`): a story
+    written before its table invented a `DEFAULT_PRICING_RULES` constant to
+    stand in for rows, which then had to be removed, re-tested and
+    re-documented once the table existed.
+  - 8b (comments, commits `8fe3efe`, `a2aeef3`): the old comment rule
+    ("Comments earn their line", numbered 12.3 on `main` and retired here)
+    never fired — it triggered only when comments outweighed code, sat in a
+    suggestion-severity section, and the review prompt never asked anyone to
+    measure — while four files in flight sat between 34% and 67% comment
+    lines; then a trimming pass hit the new ratio on every file and still
+    deleted two load-bearing contracts, and twice in one round a fix landed
+    in the code while the identical claim stood unchanged in the ADR.
+  - 8c (names match, commit `ef1d8e5`): `src/shared/http-error.ts` exported
+    one class, `AppError`; a reader who saw the name in a stack trace grepped
+    for `app-error` and found nothing. Renumbering the section after the
+    owner's ruling then dropped the "same thing is called the same thing
+    everywhere" rule instead of moving it, which the owner's next review
+    caught; it is back as 8c.6, with ADR-0004 stating the promotion
+    precedence rule three different ways in one section as its evidence.
+  - 7.4b (a control is proved in the configuration production runs, commit
+    `936ab84`): twice in one pull request a control passed review while never
+    firing in production — Express prints a raw stack on every environment
+    except `test`, which is the one the suite runs in, and a compensating
+    `debug` log line sat under a root logger at `info` while the capture
+    logger in the test ran at `trace`.
+  - 8.3b and 8.3c (never echo what the client sent, and bound what you do
+    echo, commits `b30574a`, `936ab84`, `55b6634`): the
+    don't-echo-client-input rule was applied in two places out of three — a
+    404 withheld the path and body-parser messages were replaced, but zod
+    quoted the rejected key back and a test asserted it. The first draft of
+    the field-name exception then had no length bound, so a multi-kilobyte
+    key would have come straight back in the error body; 8.3c caps it at 64
+    characters and truncates rather than omits.
+  - 13b (the rulebook learns, commit `2a2f479`): each of the findings above
+    became a rule only because someone happened to notice; 13b makes turning
+    a recurring finding into a rule (and fixing a rule that never fires) the
+    expected step instead of a good habit.
+
 ### 2026-09-12 — CLAUDE.md trimmed to derivable content (branch `docs/trim-claude-md`)
 
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
@@ -107,6 +160,31 @@ rewritten.
 
 - Strategy: the round before had asked the agent to check the whitelist against the installed `drizzle-orm`; this one extended the same instruction to `express` and `body-parser`, and asked what each library writes or answers **by default** on the paths the code delegates to. That is what surfaced Express's `logerror` (raw `err.stack` to stderr on every env except `test`) and body-parser's actual statuses. A probe test was written before the mapping changed, to find out what the installed parser answers rather than to assume. The probe was itself wrong — see the fourth round below — which is the more useful lesson: it set `content-encoding` and never a charset, then its result was quoted in an ADR as though it had tested both.
 - Human refinement: `415` was dropped on the probe's evidence, which the next round reversed; decided the open `res.headersSent` question in favour of `res.destroy()` over a terminal handler of our own, because it removes the second place the error can escape rather than adding one more place to get right; and had REVIEW.md §8.4 reworded to read as a general rule naming one shared implementation, rather than as a description of this PR.
+
+### 2026-09-12 — Agent rounds required by changed path (PR #46, `021de82`)
+
+- Strategy: `local-gates` demanded all three agent labels on every pull
+  request, so a markdown-only branch waited for a load run that could not
+  find anything. The required set is now computed from the pull request's
+  changed paths, sorted into two named groups: **behaviour** (changes how the
+  running application or its build behaves) and **judgement** (changes how the
+  work itself is judged). `docs-scribe` always, because any change can outdate
+  the ADRs, the README or this appendix; `e2e-tester` for the behaviour group;
+  `impact-analyzer` for both; `architecture-critic` unchanged. An agent
+  definition sits in both groups — the agent must be exercised, and every
+  branch in flight is judged by it. CLAUDE.md and CONTRIBUTING.md list the
+  same two groups so the prose and the gate cannot drift.
+- Human refinement: substantial, in two rounds. The owner set the scope
+  (required by what a diff can break, not by the fact that a diff exists) and
+  named the consequence for this pull request itself, which touches
+  `.github/workflows/` and therefore needs `docs-verified` and
+  `impact-verified` but not `e2e-verified`. The owner then found five kinds
+  of file the first patterns dropped — `.claude/agents/`, `scripts/`,
+  `*.config.mjs` and `*.config.js`, `.husky/` and `sonar-project.properties`
+  — and required the restructure into two named groups rather than five
+  more alternatives bolted onto one regular expression. The sharpest of the
+  five: PR #44 rewrote the e2e tester's own definition and would have
+  shipped without a single e2e run.
 
 ## Judgement, challenges and verification
 
@@ -214,6 +292,30 @@ rewritten.
 - Verification: found by a test written to prove the _previous_ fix, not by a review — a query error with no `cause` still had the query as its message. The test failed, and it was right.
 - Resolution (before/after): before, `message: rootCause(err).message`. After, the message is replaced outright with `database query failed` when the error carries `query` or `params`, otherwise cut at the first quoted value and bounded; and stack frames are matched on their shape (`/^\s+at .*:\d+:\d+\)?$/`) so a bound value containing a newline and `at ` cannot pose as a frame.
 - Lesson: the first two whitelists were written against a described error shape, and each survived review until someone read the installed library. A field name is not a guarantee about the field's contents; only the code that produces it is.
+
+### 2026-09-12 — The two path patterns in `local-gates` disagreed (PR #46, `021de82`)
+
+- Challenge: the first version of the path-based gating wrote the
+  `e2e-tester` and `impact-analyzer` conditions as two separate regular
+  expressions. The `impact-analyzer` one silently omitted `tsconfig*.json`,
+  `Dockerfile` and the compose files, so a branch touching only a Dockerfile
+  or the compose file would have been sent for a load run with no
+  blast-radius trace — the wrong way round, since an infrastructure change is
+  exactly the kind that lands on every branch at once. Both CLAUDE.md and
+  CONTRIBUTING.md already promised “those same paths”, so the workflow
+  contradicted the two documents shipped in the same commit.
+- Verification: caught by the `impact-analyzer` round, which ran the two
+  patterns against real paths with `grep` instead of reading them —
+  `tsconfig.json`, `Dockerfile` and `docker-compose.yml` landed in the
+  `e2e` bucket and not the `impact` one. The same probe confirmed
+  `src/shared/db/migrations/0001.sql` and `vitest.config.ts` bucket
+  correctly, and that no open pull request goes from passing to failing.
+- Resolution: the path list became one shell variable used by both
+  conditions, then — on the owner's second pass — two named variables,
+  `behaviour` and `judgement`, that the prose in CLAUDE.md and CONTRIBUTING.md
+  names verbatim. The resolved bucket for every representative path is
+  tabulated in the pull request body, so a reader can check the rule without
+  running it.
 
 ## Overall reflection
 
