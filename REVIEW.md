@@ -753,6 +753,11 @@ per such invariant; everything else fails on first use by itself.
 
 Evidence: a 149-line validator plus 296 test lines replaced by 37 lines (PR #34).
 
+12.6 Complexity per function stays at 10 or below: ESLint `complexity`
+(cyclomatic, gates `npm run lint`) and Sonar S3776 (cognitive, on the PR). Above
+it, Extract Function or Replace Nested Conditional with Guard Clauses — never a
+disable comment.
+
 ---
 
 ## 13. Repository hygiene
