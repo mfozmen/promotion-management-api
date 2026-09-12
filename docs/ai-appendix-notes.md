@@ -269,9 +269,11 @@ rewritten.
   GitHub annotations. The configuration alternative was examined rather than
   assumed, keeping what was verified apart from what was reported:
   `api/qualitygates/get_by_project` reports that the project uses the built-in
-  Sonar way gate, and the owner established that a custom gate with an
-  issue-count condition is not available on this plan — that one is the owner's
-  finding, not an API result — so the gate cannot be made to fail on findings. A
+  Sonar way gate, and the owner then reported from the SonarCloud
+  interface that creating a custom gate with an issue-count condition is a paid
+  feature on this plan. That half came from the product's own screen rather than
+  from an API, and the reviewer had recommended the custom gate before anyone
+  checked what it cost — so the gate cannot be made to fail on findings. A
   third check found that every endpoint the script called answers anonymously on
   this public project: `issues/search`, the same call with `issueStatuses`, and
   `hotspots/search` each answer 200 with no credential. So
