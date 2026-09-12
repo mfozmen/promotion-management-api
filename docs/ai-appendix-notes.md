@@ -278,6 +278,12 @@ rewritten.
   with its window, what is re-resolved and the two things that would fix it,
   and deliberately not built.
 
+### 2026-09-13 — The fourth-pass findings applied, a third merge of `main`, and the branch re-read against two rules that became blocking (PR #37, `e6a1f2a`, `480c821`, `c557c13`)
+
+- Strategy: three small rounds rather than one. `architecture-critic` had returned **SOUND** on the merged tree at `a733763` and still carried two findings; `e6a1f2a` applied both, against the tree rather than against the critique, so each claim was checked in the file it describes before the sentence was rewritten. `480c821` then merged `main` up again — the same merge-not-rebase choice as `e753aca` and `a733763` — for `79c56d6` (PR #66), which raised REVIEW.md 8b (comments) and 8c (one declaration per file, names match) from warning to **critical, blocking**, and rewrote the advisory review prompt to walk REVIEW.md and take each finding's severity from its section header instead of excluding structure by name. `c557c13` is this branch read against the two newly blocking sections.
+- Human refinement: the rule change on `main` was not treated as a formality. Both of this branch's source files were read under 8b and 8c and one finding came out, fixed in `c557c13` (its own judgement entry below). The 8c reading was kept narrow and stated rather than assumed — one class, interface, abstract class or enum per file — because a wider reading (“one exported symbol per file”) would have split `src/shared/events.ts` between its schemas and the types inferred from them, which is the split REVIEW.md 8c.1 exists to prevent. Neither file declares any of the four; `src/shared/queue.ts` is one subject, the transport, at 141 lines.
+- Verification: `architecture-critic` **SOUND** and `impact-analyzer` **PASS** on `a733763` (SonarCloud quality gate passed, 0 new issues, 100 % coverage on new code). On the head `c557c13`, `npm run lint`, `npm run typecheck` and `npm run test:cov`: 51 tests, 100 % statements, branches, functions and lines, Redis on 6399. `79c56d6` changed `REVIEW.md` and `.github/workflows/claude-review.yml` only, so the API table, the getting-started steps and the schema link in README.md need nothing for it, and ADR.md nothing except the contradiction the same round surfaced (below).
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -638,6 +644,18 @@ rewritten.
   The counter is scraped but no alert rule in section 12 reads it, so nothing
   fires when it moves. Flagged, not decided here.
 
+### 2026-09-13 — “The reconciler reconciles either way” was true for every boundary except a cancel (PR #37, `a733763` review → `e6a1f2a`)
+
+- Challenge: `architecture-critic`'s largest finding on the merged tree. ADR-0003 justified the 2 s bound on queue operations with a sentence that disposed of its own worst case. Before: “The bound is a race that cancels nothing, so a timed-out operation may still land: it buys a fast failure, not a known outcome, and the reconciler reconciles either way.” The critic traced the claim into section 9 of the domain design and it does not hold for a cancel: the boundary sweep re-emits only for promotions whose `starts_at` or `ends_at` falls inside the watermark window, and a cancelled promotion has neither in it, so a cancel whose `enqueue` timed out after its PostgreSQL commit leaves a stale read-model hash that no sweep will touch. The product stays on sale in the storefront — exactly the Scenario B failure the queue exists to prevent — until something else notices.
+- Verification: by reading section 9 of the spec and ADR-0007 against the sentence, not by re-reading the diff; the sentence and the sweep it relies on were written in different documents, on different days, and the diff of this branch never touched section 9. The convergence path that does exist was then traced rather than asserted: the reconciler's sampled price check (`max(50, 1 %)` of a category per run, capped at 500, ADR-0007) reaches the stale hash eventually, which is minutes rather than one period.
+- Resolution: `e6a1f2a` rewrote the ADR-0003 sentence to say what happens — the reconciler reconciles either way “except after a cancel, where it does so only by sampling” — and named sweeping `cancelled_at` in the same window as the reconciler pull request's job, rather than claiming the gap away or widening this pull request to close it. The same commit corrected section 11 of the spec, whose `shared/` layout listed neither `events.ts` nor `shutdown.ts` although both exist, and did not say that `promotion/scheduling.ts` wraps the `shared/queue.ts` primitive with PostgreSQL's clock. In this docs round the correction was swept into ADR-0007, whose Consequences still claimed that any single failure converges within one reconciler period; it now carries the cancel exception and points at ADR-0003. That sweep is the rule from the 2026-09-12 reversal round applied on a smaller scale: a corrected claim has to be chased into the documents that repeat it, because the contradiction lands where the diff did not go.
+
+### 2026-09-13 — A docblock that handed work to another pull request (PR #37, `c557c13`)
+
+- Challenge: with REVIEW.md 8b blocking from `79c56d6` (PR #66), the `promotionBoundaryJobId` docblock in `src/shared/queue.ts` failed two of its clauses at once. It read “the reconciler PR has to re-emit `promotion.changed` with no job id instead”: an obligation on work that does not exist yet, which 8b.3 sends to ADR.md, stated in a place where 8b.5 bars it from being read as fact. The invariant it opens with — write-once per id, the returned `Job` describes the request and not what is stored — is the part only the comment can say, and that part stayed.
+- Verification: the claim was checked against the document it belongs in before the comment was allowed to point there. ADR-0007's Trade-offs already carry it in full (“the reconciler's sweep re-emits `promotion.changed` with no job id”, citing `829d6bb`), so the pointer names a real sentence rather than a heading. `npm run lint`, `npm run typecheck` and `npm run test:cov` on the result: 51 tests, 100 % on all four metrics.
+- Resolution: one line in `c557c13` — the sentence now ends “ADR-0007 says what the reconciler owes here”. The pattern worth keeping: when a rule turns blocking on `main`, the branch is read against it in its own commit, and the reading that found nothing is written down too. The 8c pass produced no structural finding and the commit message says on what reading, so the next reviewer disputes a stated criterion instead of guessing whether the section was checked at all.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
@@ -667,3 +685,9 @@ rewritten.
   the resulting file. Both failures this round — the contradiction left in an
   untouched bullet, and the 249-bullet file that passed its own absence check —
   were invisible to a diff review and obvious to anyone who opened the document.
+
+### 2026-09-13 — Running estimate after the queue branch's rule-change round (PR #37, `e6a1f2a` → `c557c13`)
+
+- Share on this branch: code roughly four-fifths AI-written against human-set contracts (the event catalogue, the bounds, the shutdown order), documents almost entirely AI-drafted. What the last three rounds moved is smaller and worth stating precisely — every correction since `a733763` came from an agent or a rule rather than from the author re-reading their own text: the critic found the cancel gap, `main`'s rule change forced the comment finding. Self-review found neither.
+- Blind spot noticed: a justification sentence that ends in a general reassurance (“the reconciler reconciles either way”) is where AI prose hides an unchecked case, and it survives review because it reads as a conclusion rather than as a claim. Both the destroyed-file round and this one were caught by reading the document the sentence depends on, never by reading the sentence.
+- Second blind spot, carried not closed: a rule that is a warning is a rule that does not exist. 8b and 8c were on the books while this branch shipped comments that violated 8b, and only the severity change on `main` produced the pass that found them.

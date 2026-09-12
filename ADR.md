@@ -240,7 +240,7 @@ Alarms: the API and workers expose Prometheus metrics (`prom-client`); a `monito
 
 ### Consequences
 
-- Any single failure (worker crash, lost event, expired lease, Redis restart) converges without operator action within one reconciler period.
+- Any single failure (worker crash, lost event, expired lease, Redis restart) converges without operator action within one reconciler period, with the one exception ADR-0003 names: a lost or timed-out `promotion.changed` for a cancel is not re-emitted by the boundary sweep, because a cancelled promotion has no `starts_at`/`ends_at` inside the watermark window, so it converges through the sampled price check instead, until the reconciler pull request sweeps `cancelled_at` in the same window.
 - Operators have a small, orthogonal set of levers: stop intake, stop consumption, retry or discard failures, rebuild a scope.
 - The read-model and queue databases are separate, so no maintenance action can destroy queued work.
 
