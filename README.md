@@ -11,6 +11,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - TypeScript (strict mode)
 - zod (request validation at the boundary)
 - pino + pino-http (structured JSON logging)
+- PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
 - Vitest + Supertest (testing)
 - ESLint + Prettier
 - SonarCloud (static analysis / quality gate)
@@ -20,6 +21,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
+- PostgreSQL 16 for the integration tests
 
 ## Getting started
 
@@ -27,23 +29,54 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 npm ci
 npm run dev
 npm test
-npm run test:cov
+npm run test:cov # needs a PostgreSQL, see below
 npm run lint
 ```
 
-`npm run dev` starts the API on `PORT` (default `3000`); `GET http://localhost:3000/api/health` should answer `{"status":"ok"}`. Read its logs on the terminal: under `tsx watch` a redirect such as `npm run dev > out.log` swallows them, so use `npx tsx src/server.ts > out.log` when you need them in a file. No database, migrations, seed or ingestion command exist yet — they are documented here as they land (ADR-0003 makes the SQL migrations the DDL deliverable).
+`npm run dev` starts the API on `PORT` (default `3000`); `GET http://localhost:3000/api/health` should answer `{"status":"ok"}`. Read its logs on the terminal: under `tsx watch` a redirect such as `npm run dev > out.log` swallows them, so use `npx tsx src/server.ts > out.log` when you need them in a file. The migrations are the DDL deliverable (ADR-0003); there is no seed or ingestion command yet, and both are documented here as they land.
+
+The suite is split into layers, so the one that needs nothing can run anywhere:
+
+| Layer                              | Command                    | Needs           | Runs                        |
+| ---------------------------------- | -------------------------- | --------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing         | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | real PostgreSQL | CI (the 100 % gate)         |
+
+The integration tests run against a real PostgreSQL, never a mock. Point them at one with
+`TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`); a
+throwaway server is one command away:
+
+```bash
+docker run -d --rm --name pma-db-test -p 55432:5432 \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promotion postgres:16-alpine
+```
+
+The integration project's `globalSetup` applies `src/shared/db/migrations/*.sql` to a template
+database once; each test file then clones that template, so files stay isolated and can run in
+parallel. The template is named after the checkout and clones carry a timestamp, so several
+worktrees can share one server without dropping each other's databases. Run one integration
+suite per worktree at a time, though: the template is rebuilt at the start of each run, so two
+runs in the same checkout would pull it out from under each other. Regenerate the
+migrations with `npm run db:generate` after changing `src/shared/db/schema.ts`, and apply
+them to a running database with `DATABASE_URL=... npm run db:migrate` (drizzle-kit reads
+`DATABASE_URL`, not `TEST_DATABASE_URL`, and defaults to port 5432).
 
 ## Project structure
 
 ```
 src/             app.ts (the Express app and the /api router), server.ts (the process entry point)
 src/middleware/  error handler (the one JSON error envelope), request validator (zod at the boundary)
-src/shared/      cross-cutting modules: logger.ts, http-error.ts
-tests/unit/      unit tests; tests/ itself holds helpers both kinds import (capture-logger.ts)
-docs/            design specs (docs/superpowers/specs)
+src/shared/      cross-cutting modules: logger.ts, http-error.ts; db/ holds the Drizzle schema, client and SQL migrations
+tests/unit/      unit tests; tests/integration/ needs a real PostgreSQL; tests/ itself holds helpers both kinds import (capture-logger.ts)
+docs/            design specs (docs/superpowers/specs), end-to-end case files (docs/e2e-cases)
 ```
 
-`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
+The module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
+
+## Database schema
+
+The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the enums, the six tables and the two GiST exclusion constraints that enforce one active promotion per product and per category; `0001_seed_pricing_rules.sql` seeds the three ingestion pricing rules. [`src/shared/db/schema.ts`](./src/shared/db/schema.ts) is the Drizzle mirror used by queries — it cannot express the exclusion constraints, so those live in the migration only (ADR-0003).
 
 ## API
 
@@ -69,8 +102,8 @@ Further endpoints are documented as they land.
 - **TDD**: every change starts with a failing test (red-green-refactor).
 - **Conventional Commits** for all commit messages.
 - All changes land through pull requests — no direct pushes to `main`.
-- A PR merges only once CI is green — CI runs the SonarCloud scan and waits for its quality gate, and the scan is skipped on a PR that touches nothing SonarCloud reads, which is why SonarCloud's own check is not a required check — every SonarCloud finding on the PR is fixed before hand-off (see [CONTRIBUTING.md](./CONTRIBUTING.md)), the advisory Claude AI review has run, the applicable local-agent labels are present (`local-gates`, PR #21; which of them apply is computed from the PR's changed paths, PR #46), and the owner has approved the `needs-human-check` hand-off in a comment — the owner cannot approve their own PR, so that comment is the merge signal, not a GitHub review approval.
-- Merges to `main` are squash merges.
+- A PR merges only once the required checks `ci` and `claude-review` are green. `ci` runs the SonarCloud scan and waits for its quality gate; the scan is skipped on a PR that touches nothing SonarCloud reads, which is why SonarCloud's own check is not required. Every SonarCloud finding on the PR is fixed before hand-off (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
+- `local-gates` runs on every PR and computes which local-agent labels apply; it does not block the merge, but its labels are read at hand-off. When the checks are green, the threads are resolved and the labels are on, the PR is labelled `needs-human-check` and the owner is mentioned; merge happens only after the owner's approving comment, as a squash. The owner cannot approve their own PR, so that comment is the merge signal rather than a GitHub review approval.
 - Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check.
 
 See [ADR.md](./ADR.md) for architectural decisions, [Form 5 — AI Appendix](./Form%205_AI%20Appendix.docx) for AI usage documentation, and [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution process.

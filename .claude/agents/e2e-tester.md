@@ -56,34 +56,64 @@ assertions.
 
 ## What to test, in this order
 
-1. **Functional scenarios** for every endpoint in scope, with `curl` and `jq`:
+0. **The cases in `docs/e2e-cases/`**, first. Each file is one user journey
+   from the case study — the vendor sending the weekly file, staff running a
+   promotion, the shopper browsing, staff running a flash sale — holding that
+   journey's user stories with their cases. Run every case whose precondition
+   the current tree satisfies, story by story, and report one line per case id:
+   PASS, FAIL, or SKIP naming the precondition that was missing. This is the
+   floor of a run, not its ceiling; everything below is what you add on top.
+
+1. **The journeys, end to end, before anything that tests a part in isolation.**
+   Endpoints can each be correct while the path through them is broken, and that
+   gap is the only thing an end-to-end run finds that a unit test cannot. So walk
+   the three people through their work, whenever the pieces exist:
+
+   - **The vendor**: upload a weekly file with pricing rules active, let the
+     chunks process, then read the catalogue back and check every row carries the
+     price the rules imply. Kill the worker mid-run and let it resume; the answer
+     must not change.
+   - **The admin**: create a promotion, watch it go live when it said it would,
+     see it applied on the products it names and on no others, then cancel it and
+     see base prices return.
+   - **The shopper**: list a category, page through it, open a product, and get
+     the same price in the list and on the detail. Do it while a flash sale is
+     starting underneath them.
+
+   Report each journey as a sequence with the state you read back at every step,
+   not as a verdict. A journey that passes every step but leaves the read model
+   disagreeing with PostgreSQL has failed.
+
+2. **Functional checks** for every endpoint in scope, with `curl` and `jq`:
    happy path, validation errors (400), not found (404), conflicts (409).
-   Assert status codes and response bodies, not just "it answered".
-2. **Business rules from the case study**, whenever the relevant endpoints exist:
+   Assert status codes and response bodies, not just "it answered". These come
+   after the journeys because a passing endpoint proves much less than a passing
+   path through several.
+3. **Business rules from the case study**, whenever the relevant endpoints exist:
    - A product has at most one active promotion; overlapping assignment is rejected or resolved exactly as the ADR says.
    - Effective price is correct for percentage and fixed discounts, never negative, and matches the base price when no promotion is active.
    - Listing supports category filter, pagination, and sorting by effective price; pagination is stable (no duplicates or gaps across pages).
    - A product created in a category with an active category promotion immediately shows the discounted price.
    - Cancelling a promotion restores base prices.
-3. **Race conditions** with concurrent requests (a small inline Node script
+4. **Race conditions** with concurrent requests (a small inline Node script
    using `Promise.all`, or `xargs -P`): assign two promotions to the same
    product at once, create a category promotion while inserting products into
    that category, cancel while reading. Verify invariants afterwards by
    reading the state back. Exactly one winner where the rule says one.
-4. **Load** with `npx autocannon@8` (no global install):
+5. **Load** with `npx autocannon@8` (no global install):
    - `GET /api/products/:id` (hottest endpoint) at `-c 100 -d 15`.
    - `GET /api/products?category=...&sort=effectivePrice` at `-c 50 -d 15`.
    - Mixed read load while a promotion is created and cancelled in a loop.
      Record requests/s, p50/p99 latency, non-2xx count, and errors/timeouts.
-5. **Resource usage** during load. Sample the server process every 2 s:
+6. **Resource usage** during load. Sample the server process every 2 s:
    `powershell -NoProfile -c "(Get-Process -Id <pid>).WorkingSet64"` on
    Windows, `ps -o rss= -p <pid>` elsewhere. Report peak RSS in MB and whether
    it kept growing after load stopped (leak signal).
-6. **Ingestion jobs** (when they exist): run the ingestion handler against the
+7. **Ingestion jobs** (when they exist): run the ingestion handler against the
    fixture file the caller names, kill it midway with SIGTERM, run it again,
    and verify the final row count and no duplicates. Report peak RSS.
 
-7. **Deadlocks** (REVIEW.md 3.7). Provoke two concurrent writers that touch
+8. **Deadlocks** (REVIEW.md 3.7). Provoke two concurrent writers that touch
    the same rows in opposite orders: a category recompute against a
    product-level assign on a product in that category, and two ingestion
    chunks upserting overlapping SKU sets. Observe that no request exceeds its
@@ -91,20 +121,20 @@ assertions.
    The compose file needs `command: postgres -c log_min_messages=warning` for
    the log to carry it at all; `-c log_lock_waits=on -c deadlock_timeout=200ms`
    also reports the waits that precede one.
-8. **N+1 queries** (REVIEW.md 6.4). Call the product list at `pageSize=10` and
+9. **N+1 queries** (REVIEW.md 6.4). Call the product list at `pageSize=10` and
    again at `pageSize=100`, plus the promotion list and the storefront read
    that resolves the applied promotion. Count statements per request from
    `log_statement=all` (or `log_min_duration_statement=0`). The count must not
    scale with the page size: a list of 100 that issues 101 statements is a
    FAIL whatever its p99 says.
-9. **Cache stampede** on both caches the design has, the Redis read model
-   (ADR-0006) and the 60 s pricing rule set (ADR-0005). Expire the hot key or
-   sit on the TTL boundary, then run `autocannon -c 100` against it. Observe
-   one rebuild rather than a hundred: PostgreSQL statement count during the
-   window near one, and one `select` from `pricing_rules` per worker per
-   window. The in-flight promise cache is the intended mechanism and this is
-   the test that proves it holds under concurrency.
-10. **Memory leaks**, as a pass condition rather than an observation. Run
+10. **Cache stampede** on both caches the design has, the Redis read model
+    (ADR-0006) and the 60 s pricing rule set (ADR-0005). Expire the hot key or
+    sit on the TTL boundary, then run `autocannon -c 100` against it. Observe
+    one rebuild rather than a hundred: PostgreSQL statement count during the
+    window near one, and one `select` from `pricing_rules` per worker per
+    window. The in-flight promise cache is the intended mechanism and this is
+    the test that proves it holds under concurrency.
+11. **Memory leaks**, as a pass condition rather than an observation. Run
     60 seconds of load on the storefront read, then 60 seconds idle, three
     times. Heap used must return within 10 % of the pre-load baseline each
     cycle; a monotonic climb across the three is a FAIL. Do the same for a

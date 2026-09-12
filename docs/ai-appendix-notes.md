@@ -160,6 +160,18 @@ rewritten.
 
 - Strategy: the round before had asked the agent to check the whitelist against the installed `drizzle-orm`; this one extended the same instruction to `express` and `body-parser`, and asked what each library writes or answers **by default** on the paths the code delegates to. That is what surfaced Express's `logerror` (raw `err.stack` to stderr on every env except `test`) and body-parser's actual statuses. A probe test was written before the mapping changed, to find out what the installed parser answers rather than to assume. The probe was itself wrong — see the fourth round below — which is the more useful lesson: it set `content-encoding` and never a charset, then its result was quoted in an ADR as though it had tested both.
 - Human refinement: `415` was dropped on the probe's evidence, which the next round reversed; decided the open `res.headersSent` question in favour of `res.destroy()` over a terminal handler of our own, because it removes the second place the error can escape rather than adding one more place to get right; and had REVIEW.md §8.4 reworded to read as a general rule naming one shared implementation, rather than as a description of this PR.
+### 2026-09-12 — Write store: schema, migrations, integration harness (branch `feat/write-store`, issue #5)
+
+- Strategy: gave the approved design spec (section 3) as the single source of truth and asked for the Drizzle schema, generated `drizzle-kit` migrations and an integration harness that exercises the constraints against a real PostgreSQL rather than asserting on the TypeScript model. The constraint tests name the invariant (unique SKU, non-negative money and stock, the promotion window, both GiST exclusions, one running job per vendor) instead of restating the DDL.
+- Human refinement: kept the decision that the invariants live in the database, not in service code, so the tests assert the SQLSTATE PostgreSQL raises rather than an application error type. Rejected mocking PostgreSQL and rejected truncating shared tables between files, in favour of migrating one template database and cloning it per test file, which keeps the suite parallel-safe; CI gained a `postgres:16-alpine` service for the same reason (ADR-0002).
+- Two mid-flight design changes absorbed rather than re-litigated. The branch first followed #35's revision, where a promotion names the class that prices it and `discount_type`/`value` become `calculator`/`params`; the owner then reversed that on #29 — promotion and pricing are separate modules and a promotion keeps the case's own vocabulary — so the table went back to a `discount_type` enum plus `value` with `CHECK` constraints, matching `src/modules/promotion/promotion.ts`. The migration was regenerated from the schema rather than hand-edited, the REVIEW.md 1.5 and 2.4 amendments that only existed to justify jsonb were taken back out, and the test asserting that an unknown calculator name is accepted was replaced by one asserting that `value = 0`, `value = -1` and a percentage above 10 000 basis points are rejected by the database.
+- The ingestion rule seed and the engine wrapper on #39 had invented two different rule vocabularies independently, and neither side's tests could see it: #39 tests against an in-memory array, this branch tested that the seeded JSON round-trips. The owner ruled the wrapper's `adjustPercentBps` vocabulary correct against issue #9, so the seed was rewritten to it (`Electronics` with a capital E, `stockQuantity > 100` at -300 basis points, a commission on every row rather than on a `vendor` fact no chunk parser supplies) and both sides are now pinned to the same rule shapes: an integration test here asserts the seeded rows rule by rule, #39 a unit test that its compiler accepts exactly that shape.
+- Two findings from the local agents changed the DDL: the ingestion provenance columns gained `check ((ingest_job_id is null) = (ingest_source_offset is null))`, because the design's last-writer guard compares them as a row value and would silently skip a row if one were null alone, and the rule seed gained a unique name with `on conflict do nothing`, because a hand-applied re-run would otherwise double a markup across the catalogue with nothing to distinguish the copy.
+- Two more found in review of the schema and the test harness, both fixed in commit `ed58b6f`. `products.pricing_rules_version` was `integer`, but the value it stores is the rule set's `max(updated_at)` in epoch seconds, which leaves `int4` in 2038; it is now `bigint`. The stale-clone sweep filtered `pg_database` with a regex and cast the captured epoch separately, but PostgreSQL orders qualifiers by cost rather than left to right, so the cast could run on a name the regex was meant to exclude and abort the whole setup with `22P02`; it is one `substring(datname from $2)::bigint` now, which yields `NULL` on a non-match, with a test that a database which is not a clone of this harness is never considered.
+- Correction to the bullet above, 2026-09-13: the unit is epoch **milliseconds**, not seconds (`c504203`). The `bigint` widening and its
+  reason stand; only the unit was stated wrong, and `src/shared/db/schema.ts`
+  and spec §3 both say milliseconds. Recorded as an appended line because entries here are never rewritten.
+- A flake no test could have caught, found by reading the config rather than by running it (commit `88339fc`). The integration project set Vitest's `testTimeout` to 30 s for database work but left `hookTimeout` at its 10 s default, and the clone and drop live in `beforeAll`/`afterAll`, so the coverage gate failed about one run in four on a hook Vitest was timing against a limit nobody had set. The lesson recorded rather than the constant: AI-written config is where an assumption hides silently, because a wrong value there fails intermittently instead of failing a test.
 
 ### 2026-09-12 — SonarCloud issue gate, then two owner-review corrections (PR #56)
 
@@ -210,6 +222,120 @@ rewritten.
   was deleted (commit `b91db0d`); what the earlier PR #56 entry in this section
   describes is therefore history, not the shipped state — see "A CI gate built,
   reviewed twice, then deleted" under Judgement.
+
+### 2026-09-12 — Reversal reconciled in the documents before the code (PR #35, `7105a12`)
+
+- Strategy: the owner reversed the design this branch had been building for
+  seven commits — promotion and pricing stay separate modules, and a promotion
+  keeps `discount_type` plus `value` instead of a `calculator` registry key and
+  a `params` jsonb bag. The reconciliation was asked for as a document change
+  first: rewrite section 4 of the domain spec and ADR-0004 so the rule event
+  names the winning _level_ and nothing else, and the arithmetic is one pure
+  function, `applyPromotion(basePriceCents, promotion)` returning a
+  `PricingOutcome` union. Then let the code branches (#29, #50) follow.
+- Human refinement: the ordering is the point and it is the owner's. The
+  advisory review had asked three times on #29 for the decision to be recorded
+  before the implementation, and this is the first round where that happened:
+  the design that was reversed was described in enough detail that anyone
+  implementing the resolver top to bottom would have built a rule event
+  carrying a calculator name and resolved nothing for every product. What was
+  left after `7105a12` was therefore superseded prose rather than a missing
+  update — a smaller and more findable class of defect, but not a free one, as
+  the next entry records.
+
+### 2026-09-12 — Three owner rulings closed the precedence round (PR #35, `beba163`)
+
+- Strategy: the round was run as three separate questions rather than one
+  "fix the docs" pass — what the seeded precedence policy is, whether a test
+  may assert it, and what the 60 s rule cache does on a policy edit. Each was
+  put to the owner with the passages that would have to change, so the ruling
+  arrived as a decision rather than as an edit to review.
+- Human refinement: the owner ruled the lower effective price, in the
+  customer's favour, with a higher-priority rule overriding — the reverse of
+  the product-level default the branch had carried and the reverse of the
+  correction made in the previous documentation pass. REVIEW.md 7.4 was
+  amended to match and "precedence by larger discount" left ADR-0004's
+  rejected alternatives, since it is the default under another name.
+  Product-level precedence took its place there, with the reason. The owner
+  also ruled the capped-discount bullet out of scope and corrected the
+  required-check set in CONTRIBUTING and the infrastructure spec to the live
+  one (`ci` and `claude-review`; `local-gates` runs and is read at hand-off
+  but does not block; the title job is gone); README.md was brought to the
+  same set in this pass.
+- The 60 s rule cache has no invalidation. Recorded in ADR-0004 as a known gap
+  with its window, what is re-resolved and the two things that would fix it,
+  and deliberately not built.
+
+### 2026-09-12 — Rule-engine rewrite merged into the write store (PR #50, merge `3e6722d`)
+
+- Strategy: `origin/docs/promotion-rule-engine` had been rewritten under this
+  branch. The calculator/factory/registry/params design is gone: a promotion is
+  a row with a `discount_type` enum and a `value`, and the rule engine picks the
+  winning promotion without naming a calculator. The merge was resolved file by
+  file against whichever side is the shipped truth, not wholesale per branch —
+  base for ADR-0004's decision text (the later decision), `.github/workflows/ci.yml`
+  and `CLAUDE.md`; this branch for the design spec's schema block, which matches
+  the `promotion_discount_type` enum actually created by
+  `0000_write_store.sql`; both sides kept in `docs/ai-appendix-notes.md`, because
+  entries here are appended and never rewritten.
+- Human refinement: the per-file rule was the owner's. The pre-push agent round
+  then found that "resolve to base" had been applied too widely in two of those
+  files, and that two documents described a state no ref carries; all four were
+  corrected in the working tree before the push (the two Judgement entries
+  below). Resulting state: `ci.yml` carries the `postgres:16-alpine` service and
+  `TEST_DATABASE_URL` again, `CLAUDE.md` and `CONTRIBUTING.md` describe the hook
+  `.husky/pre-commit` actually runs, the design spec states promotion precedence
+  once, and ADR-0004 claims only the half this branch proves.
+- Reconciled, 2026-09-13 (merge `d75e845`): "this branch for the design spec's
+  schema block" was stated a whole file too broadly. It holds for the two
+  identifiers the shipped migration proves (`promotion_discount_type`,
+  `pricing_rules_version bigint`) and for the constraints this branch added to
+  that block (the `(ingest_job_id is null) = (ingest_source_offset is null)`
+  pairing check, the unique `pricing_rules.name`). The rest of the block — the
+  `value > 0` and 10 000 basis-point checks and the integer-not-bigint rationale
+  — is the base's, and the later merge took it from there. The narrower claim is
+  the one that survives.
+
+### 2026-09-13 — Base merged into the write store a second time, resolved per file (PR #50, merge `d75e845`)
+
+- Strategy: the per-file rule of `3e6722d` applied again, but stated before the
+  merge instead of discovered inside it. Base wording wherever the base carries
+  the later decision — promotion resolution, precedence and the promotion schema
+  shape in `ADR.md`, `README.md` and the domain design spec. This branch only
+  where it can point at a shipped artefact. Both sides kept in date order in this
+  file, because entries here are appended and never rewritten.
+- Human refinement: the owner's rule is that the later decision wins unless the
+  branch ships the thing the text describes. Two places where that exception
+  fired, each checked against `src/shared/db/migrations/0000_write_store.sql`
+  rather than against the surrounding prose. (1) The base spec declared
+  `create type discount_type`; the migration creates `promotion_discount_type`
+  (line 7, mirrored by `promotionDiscountType` in `src/shared/db/schema.ts`).
+  (2) The base spec's `products` table carried
+  `ingestion_rules_version integer`; the migration creates
+  `pricing_rules_version bigint` — renamed in `fbe8a9f`, widened from `int4` in
+  `ed58b6f`, pinned to epoch milliseconds in `c504203`. A grep for the base
+  names across the SQL of every ref finds neither, so taking the base there
+  would have put two dead identifiers into the document section 3 is the source
+  of truth for.
+- The test-layer bullets kept this branch's `tests/unit` / `tests/integration`
+  layout for the same reason: the base predates the two Vitest projects
+  `vitest.workspace.ts` actually defines (`794aa3c`, ADR-0002).
+- Precedence was fact-checked rather than merged. The base states the seeded
+  default as the lower effective price, which is the owner's ruling on PR #35
+  (`beba163`); this branch's text still described the product-level default that
+  ruling retired, so the base wording was taken throughout ADR-0004 and the
+  spec. The PR #50 judgement entry whose resolution argued the retired policy
+  was given a "Superseded, same day" bullet instead of an edit — the entry
+  records what was believed at the time, and the correction is dated beside it.
+- `495d2dd` added `docs/e2e-cases/5.md`, a per-issue case file for #5, and the
+  owner rejected the shape the same day: cases live in four journey files named
+  for the person and what they are doing, written from the case study's user
+  stories, and a task — a schema, a migration, a test harness — owes no case,
+  because the system does not come up without it. The file was removed and no
+  replacement written; #5 reports NO STORY. The AI error worth recording is not
+  the file but the premise behind it: cases were being generated per issue
+  because the issues were the input nearest to hand, and the case study's
+  journeys — the thing the cases exist to verify — were one hop further away.
 
 ## Judgement, challenges and verification
 
@@ -658,3 +784,300 @@ rewritten.
 - Human refinement, and the one rule both branches edited: `REVIEW.md` 8.4. `main` carries the short form ("no internal detail escapes … in a response or a log line"); this branch amended it, in the PR that hit the leak, to separate the client-facing response from the log line, to allow the stack a 500 diagnosis needs, and to require `serializeError` under an `error` key. The amendment was kept and every other rule `main` added was taken as written (12.3 scope creep, 13.6 SonarCloud findings), because the short form forbids the logging issue #6 requires and was written before the `DrizzleQueryError` findings recorded above. No other rule was touched on both sides.
 - Scope of the other three: the two seams in this file were additive on both sides — this branch's HTTP-skeleton review rounds and `main`'s PR #56/#46/#44 entries — so both were kept, each side's internal order preserved, nothing merged into a single entry and nothing dropped; the tool manifest keeps this branch's filled effectiveness column over `main`'s `pending`. `README.md`'s merge bullet takes `main`'s accurate SonarCloud wording (the scan runs inside `ci` and is skipped when the PR touches nothing analysable, which is why SonarCloud's own check is not required) and this branch's hand-off wording, and deliberately drops `main`'s closing "at least one human reviewer has approved": CONTRIBUTING.md's hand-off section says merge follows the owner's own approval comment on a `needs-human-check` PR, and the owner cannot approve their own pull request, so the dropped clause described a gate that cannot exist here.
 - Caught by the merge and closed in the same commit: `.claude/agents/e2e-tester.md` resolved to `main`'s rewrite, which restored the pre-`/api` load targets (`GET /products/:id`, `GET /products?category=…`) that this branch had corrected. Every route is mounted under `/api` (ADR-0008), so those two steps and the matching pass criterion would have 404ed on the first run. The three prefixes were corrected and nothing else from the branch's retired copy came back. It is the shape of blind spot (28) in reverse: taking a file wholesale is right for the parts that were rewritten and wrong for the parts that were already correct, and only reading the file says which is which.
+### 2026-09-12 — A reversal verified against a tree that had already moved (PR #35, `9cfdf12`, `c769001`)
+
+- Challenge: the reconciliation commit `7105a12` was written against a branch
+  head seven commits old, and every one of those seven commits (`5df9e6d`
+  through `9bab6b9` locally, `b86c909` through `796c201` on the remote) _added_
+  the design being reversed: the calculator registry, the factory, the
+  strategy vocabulary and the largest-discount default. Merging origin/main
+  (`9cfdf12`) and then the remote copy of this branch (`c769001`) brought those
+  commits back. Conflicting hunks were resolved in favour of the reversal and
+  were visible while resolving; the non-conflicting ones merged silently, which
+  is exactly where the retired vocabulary survived.
+- Verification: the stale-term sweep was re-run over the merged working tree
+  rather than trusted from the first pass, with `git blame` on every surviving
+  passage to attribute it to a commit. Three passages in section 4 of the
+  domain spec still carry the retired reasoning, each blaming to a
+  retired-design commit rather than to `7105a12`: "under the seeded default the
+  one that prices lower is applied" and "that rule wins over the largest-discount
+  rule" (both `4332243`), which contradict the product-level default the same
+  section now states two bullets earlier, and "not to the strategies"
+  (`09c9915`), which names the registry that no longer exists. The behaviour in
+  each sentence reads plausibly; only the justification belongs to the replaced
+  design.
+- Resolution: in ADR.md, the consequence bullet claiming the write store "still
+  has `calculator text` and `params jsonb`" was corrected — that half of the
+  reversal had landed too, on PR #50 in `e48dee9`, which regenerated
+  `0000_write_store.sql` with a `promotion_discount_type` enum and an integer
+  `value`. Before: "only the first half has landed … the schema still has
+  `calculator text` and `params jsonb`". After: both halves are written, each on
+  an open pull request, with the commit named for each, and `main` carries
+  neither. The spec passages are the owner's file and are reported to the
+  coordinator rather than edited here. The lesson generalises: a reversal
+  verified against one tree is not verified against a tree that moved, and the
+  check that counts is the one run last — after the final merge, not before it.
+
+### 2026-09-12 — The right method on the wrong premise (PR #35, `beba163`)
+
+- Challenge: the previous pass changed the seeded default to product-level
+  precedence, and the argument for it was a good one — REVIEW.md 7.4 and
+  section 3 of the domain spec both said product level wins, the ADR said
+  something else, and three documents against one is normally the answer.
+  Citing the rulebook and the spec against the ADR is the correct method.
+  It was applied to a premise nobody had checked: whether the rulebook was
+  current. It was not. The owner's ruling reversed it and amended REVIEW.md,
+  which is what an out-of-date rule is supposed to trigger.
+- Verification: precedence had by then been stated three ways in one section
+  (REVIEW.md 8c.6 records this as its evidence), so agreement between
+  documents was never proof — the documents had been edited from each other.
+  What settled it was the owner, not a further reading.
+- Resolution, reusable: a rule cited as authority is only authority while it
+  is current, and "three documents agree" is worth nothing when the three were
+  copied from one another. When the documents disagree about a policy, the
+  question goes to the owner as a decision, not to the documents as a vote.
+
+### 2026-09-12 — A test that would have frozen a policy stored as data (PR #35, `beba163`)
+
+- Challenge: the `architecture-critic` run objected that the rule layer earned
+  nothing — if precedence is fixed and a test pins it, `json-rules-engine`,
+  the `pricing_rules` table and the 60 s cache are ceremony around a constant,
+  and the honest move is to delete the layer and hard-code the precedence.
+  The objection was sound about the state it found; the planned suite did
+  assert the seeded production default.
+- Verification: the objection was tested by asking what a red build would mean
+  after a production policy edit. Before: a test asserts that a product-level
+  promotion beats a larger category one — so editing the seeded row turns CI
+  red, and the policy cannot change without a code change. After: the test
+  inserts the rule row it asserts against and checks the mechanism — given
+  this rule, the engine selects this candidate — and no test in the suite
+  names the seeded default. The seeded row is then editable in production,
+  which is the property the layer exists for.
+- Resolution: the layer stayed and the test changed. The principle is the
+  sharper of the two from this round — a test that pins a policy stored as
+  data is asserting configuration, not behaviour, and it removes exactly the
+  freedom the data storage was bought for. It also decides which of the two
+  the critic's objection was: not "the abstraction is unjustified" but "the
+  test was cancelling the justification". Recorded in ADR-0004, REVIEW.md 7.4
+  and section 4 of the domain spec.
+
+### 2026-09-12 — The contradiction reappeared inside the commit that resolved it (PR #35, `b580f4a`)
+
+- Challenge: `b580f4a` was the commit that adopted lowest-price selection across
+  the documents. It did so in five places and wrote the retired policy — product
+  level wins, so a 50 % category sale skips an accessory that carries its own
+  promotion — into the sixth, section 4 of the domain spec. A commit whose
+  message announces a policy is the last place a reader looks for the policy it
+  replaces, which is precisely why it survived the author's own read.
+- Verification: not by reasoning. Two independent reviews of the same diff
+  (`docs-scribe` as a blocking finding, `architecture-critic` separately) each
+  named the bullet; the author did not, on either pass. The rule holds that the
+  sweep must run over the whole document after the edit, not over the hunks the
+  edit touched — a stale-term search reads the file, a diff review reads the
+  change, and a contradiction between an unchanged line and a changed one is
+  invisible to the second.
+- Resolution: the bullet now says the seeded rule applies whichever candidate
+  prices the product lower, matching the other five places (`bc55689`). The
+  reusable part: when a policy changes, the count of places stating it is the
+  quantity to verify, and it is verified by searching for the old policy's words,
+  not by re-reading the diff.
+
+### 2026-09-12 — A scripted edit that matched nothing, and shipped (PR #35, `b580f4a` → `bc55689`, rule in `fd46829`)
+
+- Challenge: the commit that fixed the finding above ran a Python edit whose end
+  index came from `s.index("\n\n### Trade-offs")` — a heading that appears in
+  five of the seven ADRs — so the slice matched an earlier ADR and came out
+  empty, and `str.replace("", new)` inserts the replacement between every
+  character of the file. All seven ADRs became 249 copies of one bullet, and
+  the result was pushed, because the post-edit check asked whether the old text
+  was gone, which a file of 249 identical bullets passes.
+- Verification and repair: `bc55689` restored ADR.md from `beba163`, the last
+  commit before the destruction, and re-applied the two intended edits with
+  anchors asserting a single occurrence. A restore from an earlier commit is
+  where an unrelated edit gets silently reverted, so the restored file was
+  diffed against `beba163` rather than eyeballed: the only differences are the
+  two intended hunks in ADR-0004, both earlier corrections (the rules-cache
+  bullet and the branch-scoped claim about `promotion.ts` in `1e624f5` and
+  `0000_write_store.sql` in `e48dee9`) are present, and all seven ADRs carry
+  their Context, Decision, Consequences, Trade-offs and Rejected alternatives.
+- Resolution: REVIEW.md 13.7 (`fd46829`) requires a scripted edit to assert its
+  anchor matches exactly once, with this failure as its evidence. The
+  destruction is the loud version of a quieter bug that had already shipped
+  twice on this project without being noticed: a replace that matches nothing
+  reports success and ships a document contradicting its own commit message.
+  The guard is asserting the match count; asserting presence, or asserting the
+  old text is absent afterwards, catches neither form.
+
+### 2026-09-12 — The coverage removed by a ruling had to land somewhere (PR #35, `b580f4a`)
+
+- Challenge: dropping the test that pinned the seeded precedence (previous
+  round, `beba163`) was right — it asserted configuration and froze a policy
+  stored as a row — but it deleted real coverage: nothing then exercised the
+  seeded rule set at all, and a seed that fires no rule, or a migration that
+  ships a malformed condition, would have passed the suite.
+- Verification: the gap was stated as a question — what breaks silently now that
+  no test reads the seed? — and answered by naming the failure the removed test
+  had incidentally caught.
+- Resolution: section 4 of the domain spec names a case that loads the seeded
+  rule set for a product with both a product-level and a category-level
+  candidate and asserts that a winner exists, never which one. A seed that
+  selects nothing fails; a seed edited from lowest-price to product-level still
+  passes. The principle: a ruling that removes a test names the weaker assertion
+  that keeps the mechanism covered, in the same round.
+
+### 2026-09-12 - The reversal reached ADR-0004 and stopped there (PR #35, `8a95ea7` review)
+
+- Challenge: the reversal round rewrote ADR-0004 and section 4 of the domain
+  spec, and left two sentences elsewhere in ADR.md arguing the replaced design.
+  ADR-0006 still listed "a `pricing_rules` layer for promotions" as a rejected
+  alternative, which ADR-0004 now adopts for candidate selection, and ADR-0005
+  still loaded ingestion rules from `pricing_rules` with no filter, written
+  before the table gained the `type` column that made the unfiltered read load
+  the promotion rules too.
+- Verification: not a diff review - the diff of this branch never touched
+  ADR-0005 or ADR-0006. The check that found it was reading every ADR that
+  names `pricing_rules` after the edit, which is the same rule the destroyed-file
+  round produced: search the document for the old policy's words, not the change.
+- Resolution: ADR-0006's rejected alternative now says what is actually
+  rejected - storing the promotions themselves as rule rows - and ADR-0005
+  names `type = 'ingestion'`. Both in this pass. The reusable part: a decision
+  reversal has to be swept across every ADR that cites the reversed one, because
+  the contradiction lands in the ADRs the diff did not touch.
+
+### 2026-09-12 — "Resolve to the base" dropped a CI service and a hook fact (PR #50, merge `3e6722d`)
+
+- Challenge: two files were taken from the base wholesale rather than merged.
+  (1) `.github/workflows/ci.yml` lost the `postgres:16-alpine` service block and
+  the `TEST_DATABASE_URL` environment on the coverage step — the base predates
+  the integration layer, so the merged file ran `npm run test:cov` with no
+  database. The required `ci` check would have failed on the first push, on a
+  branch whose entire subject is a PostgreSQL write store. (2) `CLAUDE.md`'s
+  coverage sentence reverted to "the pre-commit hook runs typecheck and
+  coverage", which stopped being true when the suite was split into two Vitest
+  projects (ADR-0002); `CONTRIBUTING.md`'s PR checklist carried the same stale
+  claim independently.
+- Verification: `git show 3e6722d:.github/workflows/ci.yml` greps clean for
+  `postgres` and `services`, against a working tree that has both; `.husky/pre-commit`
+  reads `npx lint-staged`, `npm run typecheck`, `npm test` — the unit project
+  only, with no coverage step and no database.
+- Resolution: the service block and `TEST_DATABASE_URL` restored with a comment
+  naming ADR-0002 as the reason the database is real; both documents rewritten to
+  say what the hook runs (lint-staged, typecheck, the unit layer, no database
+  needed to commit) and where the 100 % gate lives now (the required `ci` check,
+  both layers). The general lesson: a conflict resolved "to the base" is a claim
+  that the base is newer about that whole file, and it is false for any file the
+  branch itself extended.
+
+### 2026-09-12 — Promotion precedence stated three ways, and an ADR claiming a file this branch has not got (PR #50, merge `3e6722d`)
+
+- Challenge: the largest Scenario B defect of this merge. The design spec
+  `docs/superpowers/specs/2026-09-12-domain-design.md` carried, on this branch's
+  side of the merge (`70a298d`), a "Superseded in part, pending #35" banner over a
+  section the rewritten base had already replaced, and stated the promotion precedence policy three incompatible ways in
+  one document — largest discount, lower price, and product-level. ADR-0004's
+  decision text (taken from the base, correctly) says the seeded default is
+  product-level precedence and lists "precedence by larger discount" as a
+  rejected alternative, so the spec contradicted the accepted decision and itself.
+  Separately, ADR-0004's consequence section asserted that
+  `src/modules/promotion/promotion.ts` "declares `DiscountType`" and that
+  `applyPromotion` "branches on the two literal types" — present tense, on a
+  branch whose tree has no `src/modules/` at all.
+- Verification: read for contradiction, then checked against refs rather than
+  against the prose. `git ls-tree -r HEAD` shows `src/` holds only `app.ts`,
+  `server.ts` and `shared/`; `git log --all -- 'src/modules/promotion/*'` finds the
+  file on exactly one branch, `feat/pricing-core` (PR #29, open, based on the
+  rule-engine branch), and nowhere on `main` or here. So the claim was neither
+  true nor pure invention: it described a sibling PR as if it were merged.
+- Resolution, before and after. Spec, before: "that rule wins over the
+  largest-discount rule" and "under the seeded default the one that prices lower
+  is applied"; after: "that rule wins over the seeded product-level default" and
+  "the product-level one is applied and nothing stacks, as stated once above" —
+  one statement, matching ADR-0004. The banner was dropped in the merge resolution
+  itself (`3e6722d`), the two precedence sentences in the working tree. ADR-0004,
+  before: "The retired shape is unconstructible in both halves.
+  `src/modules/promotion/promotion.ts` declares …"; after: "The retired shape is
+  unstorable as of this branch", naming the enum and the two `CHECK` constraints
+  in `0000_write_store.sql` as what is proven here, and naming PR #29 as the open,
+  unmerged home of the TypeScript half. The rescope was itself corrected in this
+  round: the first version said the file did not exist yet, which a `git log --all`
+  disproved — an ADR that under-claims is as wrong as one that over-claims, and
+  the fix is to name the ref, not to hedge.
+- Superseded, same day: the owner's ruling on PR #35 (`beba163`) reversed the
+  precedence policy back to the lower effective price, in the customer's
+  favour. The precedence half of the resolution above therefore describes a
+  state no ref carries any more — the later merge of the rewritten base took
+  the base's wording throughout, and "product level wins" is gone from ADR-0004
+  and the design spec. The ADR-scope half of the entry still stands.
+
+### 2026-09-12 — Two prices for one defective promotion (PR #35, `8a95ea7` → `b2ff55c`)
+
+- Challenge: `architecture-critic` rejected `8a95ea7` with three findings, all
+  in section 4 of the domain spec. The largest was a product whose own
+  promotion cannot be priced having two stated outcomes. Before: the new bullet
+  said an unpriceable candidate is absent to the rules, so `category-only`
+  fires, while the older sentence left standing said the handler "logs it with
+  the `promotionId` and writes the base price". One says a product in a 50 %
+  category sale gets the sale price, the other says it stands at full price
+  inside it, and a test written from either passes while the other is false.
+  After: one sentence — the handler writes the price the surviving candidates
+  resolve to, the base price only when no candidate priced.
+- Verification: by the agent report, not by re-reading the diff. The
+  contradiction was between a line the round added and a line it did not touch,
+  which is the same shape as the two previous rounds: the correcting text was
+  added in front of the text it supersedes instead of replacing it. Third
+  occurrence of that habit on this branch; the older sentence is now rewritten.
+- Resolution of the other two, same commit: `applyPromotion` no longer takes
+  the promotion window, because `3a10c17` deliberately dropped
+  `starts_at`/`ends_at` from the resolution query — the signature could only
+  have been satisfied by re-adding two columns per candidate to a query that
+  runs over 50 000 products per flash sale, and the query has already filtered
+  to active promotions. And the silence counter added in `8a95ea7` was in no
+  metrics list, so the failure it exists to catch stayed invisible; it is named
+  `promotion_rules_no_event_total` in the section 12 metrics list.
+- Blind spot this round adds: a metric named in one list is not yet observed.
+  The counter is scraped but no alert rule in section 12 reads it, so nothing
+  fires when it moves. Flagged, not decided here.
+
+## Overall reflection
+
+- Estimated ratio: pending (final figure is the owner's).
+- Running estimate, 2026-09-12 (PR #50): close to all first-draft text and code
+  in the repository is AI-generated; the human share is concentrated in the
+  decisions (the CQRS core, the reversal of the calculator design, the severity
+  policy, the two-project test split) and in rejecting AI output that reads
+  well and is false. Two entries above are net-negative AI work — a CI gate
+  built, reviewed twice and deleted, and an e2e definition that reproduced the
+  bug it cured — so the useful measure is not share of lines but how much
+  review each line needed.
+- Blind spot noticed, 2026-09-12: AI statements about the environment pass
+  review because they are plausible. A workflow's `services` block, a git
+  hook's contents, and whether a source file exists were all asserted
+  confidently and were all wrong in the same merge (PR #50); each took one
+  command — `git show`, `cat .husky/pre-commit`, `git log --all` — to settle.
+  Prose review cannot catch this class; only running something can.
+- Key takeaway: pending.
+
+### 2026-09-12 — Running estimate after the precedence round (PR #35, `beba163`)
+
+- Share, documents only: prose is close to fully AI-drafted, but every
+  decision in it is the owner's, and three of this round's four substantive
+  changes (the precedence reversal, the no-test-on-the-default ruling, the
+  capped-discount scope cut) originated with the owner against AI-written text
+  that read as settled. The share that matters is not who typed the sentence
+  but who owns the premise, and on this branch that was the human every time.
+- Blind spot noticed: AI-written prose defends whatever it last wrote, so a
+  reversal leaves sentences whose behaviour is corrected and whose "because"
+  clause still argues the replaced policy. Two passes on this branch both
+  found that class of defect after a merge, never before one.
+
+### 2026-09-12 — Running estimate after the destroyed-file round (PR #35, `fd46829`)
+
+- Share, documents only: unchanged in drafting — prose AI-written, decisions the
+  owner's. What moved this round is the tooling around the prose: the edits
+  themselves are scripted, and a scripted edit is AI-authored code operating on
+  documents nobody diffs line by line, which is a category of AI output this
+  appendix had not been counting.
+- Blind spot noticed: verification that reads the intended change rather than
+  the resulting file. Both failures this round — the contradiction left in an
+  untouched bullet, and the 249-bullet file that passed its own absence check —
+  were invisible to a diff review and obvious to anyone who opened the document.
