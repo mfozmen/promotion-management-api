@@ -109,6 +109,14 @@ columns are null together (as `ingest_job_id` and `ingest_source_offset` are:
 both written by the same upsert), say so next to the guard and test the
 all-null case; otherwise test each column null on its own.
 
+2.7 State that depends on time or on other rows — "is this promotion active",
+"which candidate applies" — is decided in SQL on the database clock, as a view
+or the query's `WHERE`, never re-derived in code. A predicate that exists in
+both a query and a function is a finding.
+
+Evidence: `isActive(promotion, now)` duplicated the resolution query's
+`tstzrange(...) @> now()` on a second clock (PR #29, issue #28).
+
 ---
 
 ## 2b. Business data lives in the database
