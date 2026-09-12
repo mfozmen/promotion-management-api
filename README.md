@@ -41,7 +41,7 @@ Stop the stack with `docker compose down`, or `docker compose down -v` to drop t
 
 ### Configuration
 
-`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` validates the environment once at startup and fails with the name of the offending variable. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. `POSTGRES_PORT` and `REDIS_PORT` are the ports `docker-compose.yml` publishes; nothing derives `DATABASE_URL` or `REDIS_URL` from them, so startup rejects a loopback URL that dials a different port — change both together.
+`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` validates the environment once at startup and fails with the name of the offending variable. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432 and 6379 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL` or `REDIS_URL` to match.
 
 The compose file holds the two stores only. Issue #19 adds the application containers (api, event-handler, ingestion-worker, reconciler), the migration step and the `monitoring` and `tools` profiles on top of it, so that a single `docker compose up` brings the whole stack up.
 

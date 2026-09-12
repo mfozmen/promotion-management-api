@@ -217,6 +217,22 @@ describe('loadConfig', () => {
     );
   });
 
+  it.each([
+    ['equal to', '60000', 60_000],
+    ['one millisecond above', '60001', 60_001],
+  ])('accepts a lease %s the time budget', (_label, lease, expected) => {
+    // Equality is legal for now. The margin a reclaim sweep will need cannot be
+    // chosen before the sweep exists, so this pins today's behaviour rather than
+    // guessing tomorrow's.
+    const config = loadConfig({
+      ...validEnv,
+      INGESTION_BUDGET_MS: '60000',
+      INGESTION_LEASE_MS: lease,
+    });
+
+    expect(config.ingestion.leaseMs).toBe(expected);
+  });
+
   it('rejects a lease shorter than the time budget', () => {
     expect(() =>
       loadConfig({ ...validEnv, INGESTION_BUDGET_MS: '60000', INGESTION_LEASE_MS: '30000' }),
@@ -257,93 +273,6 @@ describe('loadConfig', () => {
       });
 
       expect(config.redisQueueUrl).toBe('rediss://localhost:6379/1');
-    });
-  });
-
-  describe('published port against connection URL', () => {
-    it('rejects a published PostgreSQL port the connection string does not dial', () => {
-      expect(() => loadConfig({ ...validEnv, POSTGRES_PORT: '55432' })).toThrow(
-        'Invalid environment variable POSTGRES_PORT: the stack publishes 55432 but DATABASE_URL dials 5432 on localhost',
-      );
-    });
-
-    it('rejects a published Redis port the connection string does not dial', () => {
-      expect(() => loadConfig({ ...validEnv, REDIS_PORT: '6399' })).toThrow(
-        'Invalid environment variable REDIS_PORT: the stack publishes 6399 but REDIS_URL dials 6379 on localhost',
-      );
-    });
-
-    it('accepts a published port the connection string does dial', () => {
-      const config = loadConfig({
-        DATABASE_URL: 'postgres://promo:promo@127.0.0.1:55432/promotion',
-        REDIS_URL: 'redis://127.0.0.1:6399',
-        POSTGRES_PORT: '55432',
-        REDIS_PORT: '6399',
-      });
-
-      expect(config.redisQueueUrl).toBe('redis://127.0.0.1:6399/1');
-    });
-
-    it('compares against the default port when the URL states none', () => {
-      expect(() =>
-        loadConfig({
-          ...validEnv,
-          REDIS_URL: 'redis://localhost',
-          REDIS_PORT: '6399',
-        }),
-      ).toThrow('the stack publishes 6399 but REDIS_URL dials 6379 on localhost');
-    });
-
-    it.each([
-      ['an uppercase host', 'postgres://promo:promo@LOCALHOST:5432/promotion'],
-      ['a trailing dot', 'postgres://promo:promo@localhost.:5432/promotion'],
-      ['another 127/8 address', 'postgres://promo:promo@127.0.0.2:5432/promotion'],
-    ])('still catches the mismatch with %s', (_label, databaseUrl) => {
-      expect(() =>
-        loadConfig({ ...validEnv, DATABASE_URL: databaseUrl, POSTGRES_PORT: '55432' }),
-      ).toThrow(
-        'Invalid environment variable POSTGRES_PORT: the stack publishes 55432 but DATABASE_URL dials 5432',
-      );
-    });
-
-    it.each([
-      ["Kubernetes' Service form", 'tcp://10.96.1.5:5432'],
-      ['a host and port', '10.96.1.5:5432'],
-      ['a non-numeric value', 'postgres'],
-    ])('ignores %s, which is not this compose file speaking', (_label, value) => {
-      const config = loadConfig({ ...validEnv, POSTGRES_PORT: value });
-
-      expect(config.databaseUrl).toBe(validEnv.DATABASE_URL);
-    });
-
-    it('catches the mismatch on an IPv6 loopback URL', () => {
-      expect(() =>
-        loadConfig({
-          ...validEnv,
-          DATABASE_URL: 'postgres://promo:promo@[::1]:5432/promotion',
-          POSTGRES_PORT: '55432',
-        }),
-      ).toThrow('the stack publishes 55432 but DATABASE_URL dials 5432 on [::1]');
-    });
-
-    it('ignores the published port when the URL names a container host', () => {
-      const config = loadConfig({
-        DATABASE_URL: 'postgres://promo:promo@postgres:5432/promotion',
-        REDIS_URL: 'redis://redis:6379',
-        POSTGRES_PORT: '55432',
-        REDIS_PORT: '6399',
-      });
-
-      expect(config.redisQueueUrl).toBe('redis://redis:6379/1');
-    });
-
-    it.each([
-      ['absent', undefined],
-      ['blank', '   '],
-    ])('ignores a %s published port, which no compose file set', (_label, value) => {
-      const config = loadConfig({ ...validEnv, POSTGRES_PORT: value, REDIS_PORT: value });
-
-      expect(config.port).toBe(3000);
     });
   });
 });

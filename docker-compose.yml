@@ -31,15 +31,23 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-promo}
       POSTGRES_DB: ${POSTGRES_DB:-promotion}
     ports:
-      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+      - '127.0.0.1:5432:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - promotion
     healthcheck:
-      # The database name is needed too: pg_isready succeeds against the
-      # bootstrap database while the real one is still being created.
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-promo} -d ${POSTGRES_DB:-promotion}']
+      # An authenticated query, not pg_isready: that only sends a startup packet,
+      # so it reports healthy for a server whose credentials or database no longer
+      # match .env, which is what a changed password against an already-initialised
+      # volume looks like. psql authenticates over the socket as POSTGRES_USER and
+      # reads the credentials from the container's own environment, so nothing
+      # secret reaches the process list.
+      test:
+        [
+          'CMD-SHELL',
+          'psql --quiet --no-align --tuples-only -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
+        ]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -54,7 +62,7 @@ services:
     # and must never be silently evicted.
     command: ['redis-server', '--appendonly', 'yes']
     ports:
-      - '127.0.0.1:${REDIS_PORT:-6379}:6379'
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis-data:/data
     networks:
