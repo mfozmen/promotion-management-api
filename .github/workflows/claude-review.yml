@@ -107,6 +107,14 @@ jobs:
             severities, and a blocking rule violated is always a Critical
             finding, cited by rule number.
 
+            If this PR already carries summary comments from earlier runs of
+            this review, read them (`gh pr view --comments`) and review
+            incrementally: verify that each earlier finding is fixed or
+            answered, then review only the commits pushed since the last
+            summary. Do not repeat a finding that is already resolved on a
+            thread, and do not re-review unchanged lines. Say in the summary
+            which commits you reviewed.
+
             Review the diff for:
             - Bugs, security issues, and performance problems.
             - TDD discipline: production code backed by tests that assert real

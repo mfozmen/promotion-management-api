@@ -61,6 +61,13 @@ Agent definitions are living documents: when an endpoint, job, cache or store la
 
 ## Review rules
 
+Severity policy for review findings, from any reviewer:
+
+- **Critical**, and any violation of a REVIEW.md rule marked blocking: fixed before the owner is asked to check.
+- **Warning**: answered on the thread; fixed in the same PR when the fix is small and local, otherwise recorded as an issue that the reply links, then resolved.
+- **Suggestion**: answered and resolved; adopted only when it is cheaper to do than to defer.
+- Findings are collected until the review run has finished, then fixed in one commit. Pushing while a review is in flight cancels it and restarts the whole cycle.
+
 `REVIEW.md` lists the rules every review enforces (money and time exactness, database-enforced invariants, race conditions, serverless constraints, storefront reads Redis only, high-traffic hygiene, TDD and coverage, errors, size, hygiene) with severities. Blocking findings are fixed before the owner is asked to check.
 
 ## Review process

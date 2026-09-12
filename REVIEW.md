@@ -90,6 +90,12 @@ an invariant.
 runs the operations in parallel and asserts the invariant afterwards. "Should be
 fine" is not a test.
 
+2.6 A `WHERE` clause on a nullable column states its `NULL` branch explicitly.
+`NULL` compared with anything, including inside a row-value comparison, is
+`NULL`, not `TRUE`; a guard such as `ON CONFLICT DO UPDATE ... WHERE (a, b) >
+(c, d)` silently skips the row when `c` is `NULL`. Write `c IS NULL OR (a, b) >
+(c, d)`, and test the null case.
+
 ---
 
 ## 3. Concurrency and ordering
