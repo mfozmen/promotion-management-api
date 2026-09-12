@@ -1,12 +1,12 @@
 import type { ErrorRequestHandler } from 'express';
-import { CLIENT_ERRORS } from '../shared/client-errors.js';
-import type { ErrorCode } from '../shared/error-code.js';
-import { MAX_DETAILS } from '../shared/max-details.js';
-import { MAX_MESSAGE } from '../shared/max-message.js';
-import { OTHER_CLIENT_ERROR } from '../shared/other-client-error.js';
+import { CLIENT_ERRORS } from './client-errors.js';
+import type { ErrorCode } from './error-code.js';
+import { MAX_DETAILS } from './max-details.js';
+import { MAX_MESSAGE } from './max-message.js';
+import { OTHER_CLIENT_ERROR } from './other-client-error.js';
 import type { ErrorMapping } from './error-mapping.js';
-import { HttpError } from '../shared/http-error.js';
-import { logger, serializeError } from '../shared/logger.js';
+import { HttpError } from './http-error.js';
+import { logger, serializeError } from './logger.js';
 
 /** The two codes whose whole meaning is "come back later". Without a number a
  *  client retries as fast as it can, which amplifies the outage it met. */

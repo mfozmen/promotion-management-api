@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import express, { type Express } from 'express';
 import request from 'supertest';
-import { errorHandler } from '../../src/middleware/error-handler.js';
-import { httpLogger } from '../../src/shared/logger.js';
-import { HttpError } from '../../src/shared/http-error.js';
+import { errorHandler } from '../../../../src/shared/http/error-handler.js';
+import { httpLogger } from '../../../../src/shared/http/logger.js';
+import { HttpError } from '../../../../src/shared/http/http-error.js';
 import { DrizzleQueryError } from 'drizzle-orm';
-import { captureLogger, type CapturedLogger } from '../capture-logger.js';
+import { captureLogger, type CapturedLogger } from '../../../capture-logger.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
 function appThrowing(error: unknown, captured: CapturedLogger = captureLogger()): Express {

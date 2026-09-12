@@ -1,9 +1,9 @@
 import type { RequestHandler } from 'express';
 import type { ZodError } from 'zod';
-import { HttpError } from '../shared/http-error.js';
-import { MAX_DETAILS } from '../shared/max-details.js';
+import { HttpError } from './http-error.js';
+import { MAX_DETAILS } from './max-details.js';
 import type { RequestSchemas } from './request-schemas.js';
-import { logger } from '../shared/logger.js';
+import { logger } from './logger.js';
 
 const PARTS = ['body', 'query', 'params'] as const;
 

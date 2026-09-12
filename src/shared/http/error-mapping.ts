@@ -1,5 +1,5 @@
-import type { ErrorCode } from '../shared/error-code.js';
-import type { ValidationDetail } from '../shared/validation-detail.js';
+import type { ErrorCode } from './error-code.js';
+import type { ValidationDetail } from './validation-detail.js';
 
 export interface ErrorMapping {
   status: number;
