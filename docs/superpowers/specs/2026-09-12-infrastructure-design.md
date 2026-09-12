@@ -17,8 +17,10 @@ Promotion Management API case study before any domain code is written.
 ## Repository and branching
 
 - Public repo `mfozmen/promotion-management-api`.
-- `main` is protected: no direct pushes, required checks `ci`, `pr-title`,
-  `claude-review` and `local-gates`. SonarCloud's own check is not required:
+- `main` is protected: no direct pushes. Required checks are `ci` and
+  `claude-review`. `local-gates` still runs and its labels are read at
+  hand-off, but it does not block; the title job is gone. SonarCloud's own
+  check is not required either:
   the scan is skipped when a pull request touches nothing Sonar reads, and a
   required check that never reports would block such a merge forever.
 - Squash merge only; PR title must be a Conventional Commit (checked in CI).

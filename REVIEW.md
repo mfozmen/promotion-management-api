@@ -263,8 +263,14 @@ read-model database only. `KEYS` in any code path is a finding.
 databases; no maintenance operation can reach the queue.
 
 5.5 Pagination is bounded: page size has a hard cap, the cap is enforced server
-side, and the sort is total (a tiebreaker column) so pages cannot repeat or skip
-rows within one version.
+side, and the sort is total — a tiebreaker column — so a single snapshot cannot
+repeat or skip a row. Where the sort key can change under a reader, say so: the
+storefront's ZSET scores are rewritten progressively while a category is
+rescanned, so an offset page taken during a sale can repeat a row or miss one,
+and the route states that window rather than claiming it cannot happen. The
+cursor form (`ZRANGEBYSCORE` with an exclusive `(score, id)` cursor) is the
+upgrade, and "within one version" is not a guarantee this design offers,
+because it has no version.
 
 5.6 A cache entry whose freshness depends on another key states how the two are
 kept consistent. A key that can be written without its index (`HSET` without the
@@ -452,12 +458,23 @@ _Promotions and inheritance_
 
 - A product created in a category with an active promotion is discounted on
   its first read, with no extra event.
-- A product carrying both a product-level and a category-level promotion gets
-  whichever of the two prices lower, so a deeper category discount wins over
-  the product's own; an exact tie goes to the lower promotion id.
-- Cancelling the category promotion restores base price for every product
-  that had no promotion of its own, and returns every product that has one to
-  its own promotion's price.
+- A product carrying both a product-level and a category-level active promotion
+  gets the lower of the two effective prices, in the customer's favour, and a
+  higher-priority rule overrides that default. The test inserts the rule row it
+  asserts against: a test that pinned the seeded production default would be
+  asserting a configuration value, and a policy that lives in a row is not a
+  policy a test may freeze.
+- Cancelling the category promotion restores base price for every product that
+  had no promotion of its own, and its own effective price for the rest — under
+  lowest-price precedence the category promotion may have been the one applied,
+  so "leaves the others untouched" would pin the retired policy.
+- The **seeded** rules, read from the migrated database, select the lower price
+  for a two-candidate product and the only candidate for a one-candidate one.
+  That is a test of code: the seed is a migration row, changed by commit, and
+  the test changes with it. What must not exist is a test pinning the row a
+  _running_ database holds — an operator editing it changes neither code nor
+  test, and that is what keeps the policy data rather than configuration
+  frozen by CI.
 
 _Concurrency_
 
@@ -759,6 +776,21 @@ qualifier and an enum value in DDL: SQL has no constant to declare for either
 (PR #56, `6a0a9c1`).
 
 ---
+
+13.7 A scripted edit asserts its anchor matches exactly once before replacing
+it. Presence is not enough: assert the count, not that the text is in the file.
+Both failure modes are silent at the moment they happen and only surface when
+something downstream reads the document.
+
+Evidence, both from one day on this repository: a slice whose end index came
+from a heading that appears in several ADRs matched the wrong one, produced an
+empty string, and `str.replace("", new)` inserted the replacement between every
+character — all seven ADRs became 249 copies of one bullet, and it was pushed,
+because the check afterwards looked for the absence of the old text, which a
+file of 249 identical bullets passes. The quiet version of the same bug is a
+replace that matches nothing, reports success, and ships a document saying the
+opposite of what its commit message claims; that one shipped twice before it
+was noticed.
 
 ## 13b. The rulebook learns
 

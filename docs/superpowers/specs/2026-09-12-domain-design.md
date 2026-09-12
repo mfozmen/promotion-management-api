@@ -40,7 +40,7 @@ create table products (
   category               text not null,
   base_price_cents       bigint not null check (base_price_cents >= 0),
   stock_quantity         integer not null check (stock_quantity >= 0),
-  pricing_rules_version  integer,                -- set by ingestion, null for manual creates
+  ingestion_rules_version  integer,                -- set by ingestion, null for manual creates
   ingest_job_id          bigint,                 -- ingestion job that last wrote this product (identity, monotonic)
   ingest_source_offset   bigint,                 -- byte offset of that row inside its file
   created_at             timestamptz not null default now(),
@@ -56,6 +56,11 @@ create table promotions (
   name           text not null,
   discount_type  discount_type not null,                        -- 'percentage' | 'fixed'
   value          integer not null check (value > 0),            -- basis points, or minor units
+  -- integer, not bigint like products.base_price_cents: a percentage is at
+  -- most 10 000 basis points, and a fixed discount is capped at ~21 M minor
+  -- units, which is a promotion rather than a price. Matches the migration on
+  -- the write-store branch; REVIEW.md 1.1 names bigint for prices, and this
+  -- column is a discount.
   check (discount_type <> 'percentage' or value <= 10000),      -- 100 % is the ceiling
   starts_at      timestamptz not null,
   ends_at        timestamptz not null,
@@ -139,18 +144,25 @@ create table ingestion_chunks (
 
 ## 4. Promotion resolution and effective price
 
-- **Active** = `status = 'active' and starts_at <= now() < ends_at`.
+- **Active** = `status = 'active' and starts_at <= now() < ends_at`, decided by
+  the **database clock**. The application never forms its own opinion: a
+  resolver that needs the predicate in TypeScript takes the instant the query
+  returned and passes it in, so one `now` decides a boundary a millisecond wide
+  (REVIEW.md 1.7). Two clocks for one predicate is how a read model publishes a
+  discount for a promotion SQL considers expired.
 - **Applied promotion** for a product is decided by `json-rules-engine`, not by
   hard-coded precedence (owner decision, 2026-09-12). The resolver collects
   every active promotion that could apply to the product (its product-level
   one and its category's), builds a fact object, and runs the promotion rules
   loaded from `pricing_rules` where `type = 'promotion'`. The rule that fires
   with the highest priority names the winning candidate; ties break on the
-  lower promotion id so the result is deterministic. The rules are data, so
+  `<=` in `lower-price-product`, which is a row like the rest of the policy.
+  There is no resolver-side id tiebreak: the exclusion constraints already
+  guarantee one candidate per level, so two candidates never share one, and an
+  equal price is decided by that `<=` before any id would be consulted. A
+  tiebreak in code would be a branch no test could reach. The rules are data,
+  so
   the precedence policy changes without a deploy.
-- Facts given to the engine, per candidate: `level` (`product` or `category`),
-  `discountType`, `value`, `basePriceCents`, `stockQuantity`, `category`,
-  `startsAt`, `endsAt`.
 - **The rule decides which promotion wins; it does not decide how one is
   computed.** A matching rule's event names the winner and nothing else:
   `{ type: 'selectCandidate', params: { level: 'product' | 'category' } }`.
@@ -158,8 +170,8 @@ create table ingestion_chunks (
   bag — it is one pure function over a typed row.
 - **One function, one vocabulary.** `applyPromotion(basePriceCents, promotion)`
   in `src/modules/promotion/` takes the `Promotion` the row already is —
-  `discountType` of `percentage | fixed`, `value` in basis points or minor
-  units, the window — and returns a `PricingOutcome`, a discriminated union of
+  `discountType` of `percentage | fixed` and `value` in basis points or minor
+  units — and returns a `PricingOutcome`, a discriminated union of
   `{ ok: true, effectivePriceCents }` or `{ ok: false, reason }`. A failure
   carries no price, so a caller cannot publish one by mistake. Percentage is
   `base - floor(base * bps / 10000)`, fixed is `max(base - value, 0)`,
@@ -169,9 +181,10 @@ create table ingestion_chunks (
   than one that can hold anything.
 - **Selection compares candidates, so each is priced first.** The resolver
   runs `applyPromotion` for every candidate, then runs the engine once over a
-  single fact set holding `basePriceCents`, `category`, `stockQuantity` and,
-  per candidate, its `level`, `discountType`, `value` and
-  `effectivePriceCents`. A rule can therefore compare them, which
+  single fact set — the only one, so a rule author has one list to read, and it
+  is the flat shape given below. The candidates' windows are not in it: the
+  resolution query already filters to active promotions, so a window fact could
+  only ever describe an active one and no rule could learn anything from it. A rule can therefore compare them, which
   `json-rules-engine` supports by giving an operator a `{ fact: ... }` value
   rather than a literal. The resolver applies the outcome it already computed
   for the winning level, so each candidate is priced once.
@@ -183,35 +196,145 @@ create table ingestion_chunks (
   them is what this design tried and the owner reversed — the two look alike
   only at the level of "something changes a number".
 
-- **The seeded default is the lower effective price.** Of the two candidates
-  the one that prices lower for the customer is applied, so a category flash
-  sale deeper than a product's own promotion wins (owner decision,
-  2026-09-12). This is not a free choice: REVIEW.md 7.4 makes it a required
-  edge case and section 4 of this document states it with its consequence for
-  admins, so the rule that ships in the migration encodes it. The alternative
-  — unconditional product-level precedence — would show a customer a worse
-  price than the campaign advertises, which is why ADR-0004 now lists it as a
-  rejected alternative.
+- **The seeded default is the lower effective price, in the customer's favour**
+  (owner decision). Whichever candidate prices the product lower is applied, so
+  a 50 % category sale also covers an accessory carrying its own 5 % promotion,
+  which is what a shopper expects a sale to mean. An equal price is decided by
+  the `<=` in `lower-price-product`, not by an id.
+  A higher-priority rule overrides the default by naming the
+  other candidate — which is how a product whose own price was set deliberately
+  keeps it inside a category sale. It cannot select _nothing_: the event
+  vocabulary is `product | category`, so a product with no promotion of its own
+  cannot be held out of a category sale without a `level: 'none'` the design
+  does not have. Say so rather than promise the general case.
+- **The promotion rules are cached for 60 seconds and nothing invalidates
+  them.** After a policy edit, workers hold two policies for up to a minute,
+  and thereafter only products that receive an event are re-resolved directly.
+  The reconciler's sampled sweep does heal the rest — it compares a sample per
+  category against PostgreSQL and enqueues a rebuild on a mismatch — so the
+  exposure is probabilistic over several runs rather than indefinite, which is
+  a weaker guarantee than it sounds and is why it is written down. Closing it
+  properly needs a version to compare (`pricing_rules.updated_at` is the
+  obvious carrier; there is no version column today) and a write path to hang
+  the trigger on (there is no `pricing_rules` endpoint in section 10). Neither
+  is built here.
+- **No test pins the runtime policy, and one test does read the seed.** A test
+  asserting the row a running database happens to hold would make the policy
+  unchangeable without turning CI red, and a policy that cannot change is not
+  data. Reading the _seeded_ rules out of the migrated database is a different
+  thing: the seed is a migration row — code, reviewed, changed by commit — so a
+  test that it selects the lower price is a test that the seed we ship is the
+  seed we meant, and the two change together. Everything else inserts the rule
+  row it asserts against and checks the mechanism: given this rule, the engine
+  selects this candidate.
+- `category` and `stockQuantity` are product facts the seeded rules do not
+  read. They stay because they are already selected for the product row and are
+  what an operator's first two rules would key on — a margin floor by category,
+  a stock-based adjustment. **They are as fresh as the product's last event, and
+  no fresher.** A product is re-resolved when it receives one; nothing watches
+  stock. There is no stock-update endpoint in section 10, so on this design a
+  rule reading `stockQuantity` re-evaluates on the next ingestion run — weekly,
+  not when stock crosses the threshold. Such a rule passes its test and lags in
+  production, which is the whole of the warning. The candidates' windows were in this list and are
+  not any more: the query filters to active promotions, so they carried no
+  information a rule could use, and the columns feeding them came back out of
+  the query with them.
 
-- The commercial exception has a home without a code change: a product whose
-  price must not fall further, because of a margin floor, a supplier agreement
-  or a minimum advertised price, gets a higher-priority rule naming it, and
-  that rule wins over the lower-price rule. This is why the policy is a
-  row: the default serves the customer, the exception serves the contract, and
-  neither is a branch in a resolver.
 - Exactly one rule applies per product. Rules are evaluated in priority order
   and the highest-priority match wins, which is what keeps the case's "at most
   one active promotion" true at the applied level. Letting several stack would
-  be a change to that one selection step, not to the strategies.
+  be a change to that one selection step, not to the pricing function.
+- **A failed computation is not a silent base price.** `applyPromotion` returns
+  `{ ok: false, reason }` for a row the boundary should have rejected — a value
+  above 10 000 basis points, a base price outside the safe-integer range. The
+  event handler logs it with the `promotionId` and writes the price the
+  surviving candidates resolve to — the base price only when no candidate
+  priced. An unpriceable candidate is absent to the rules, so a product whose
+  own promotion is defective still takes its category's sale price rather than
+  standing at full price inside it. The product is priced and the defect is
+  visible; ingestion counts it as a
+  rejected row rather than aborting the batch. Neither path leaves the previous
+  price in Redis with nothing recorded.
+- **The fact set always carries both candidate slots, and an absent one is
+  `null` rather than missing.** Most products in a category sale have no
+  promotion of their own, so arity one is the ordinary case, not the edge: a
+  seeded rule that only compares two candidates would match nothing for them,
+  no rule would fire, and a 50 % sale would publish base prices for 50 000
+  products while a two-candidate test stayed green. The seeded rule set covers
+  arity one explicitly — one candidate present means that candidate wins — and
+  section 12 runs the seed over a one-candidate product for exactly this
+  reason.
+- **The fact set is flat, and an absent candidate is JSON `null` in every one
+  of its keys.** `basePriceCents`, `category`, `stockQuantity`, then
+  `productDiscountType`, `productValue`, `productEffectivePriceCents` and the
+  same three under `category…`. Flat rather than nested because a rule tests an
+  absent candidate with `equal: null`, and `path: '$.id'` into a `null` object
+  yields `undefined`, which is not `null` under `json-rules-engine`'s `equal` —
+  a nested shape would make every arity-one rule silently never fire.
+- **The slot is the effective price.** "Slot non-null" in the table below means
+  `productEffectivePriceCents` / `categoryEffectivePriceCents`, never the
+  discount type or the value. A candidate that exists but cannot be priced —
+  `applyPromotion` returned `{ ok: false }` — is `null` in **all three** of its
+  keys plus a defect log carrying the `promotionId`, so it is absent to the
+  rules rather than half-present. Without this the two readings diverge on a
+  real customer: null the keys and the category discount applies with the
+  product promotion silently gone; write the base price into the price key and
+  `lower-price-category` fires instead. Both are defensible, so the spec picks
+  one.
+- **The seeded rule set is four rules, not three**, because a rule carries one
+  event and "the lower price wins" is two outcomes. One rule comparing the
+  candidates could only ever name one level; the other comparison would match
+  nothing, no event would fire, and the product would publish its base price in
+  the middle of the sale.
+
+  | priority | rule                   | condition                                              | event                   |
+  | -------- | ---------------------- | ------------------------------------------------------ | ----------------------- |
+  | 30       | `product-only`         | product slot non-null **and** category slot `null`     | `{ level: 'product' }`  |
+  | 20       | `category-only`        | category slot non-null **and** product slot `null`     | `{ level: 'category' }` |
+  | 12       | `lower-price-product`  | both non-null, `productEffective <= categoryEffective` | `{ level: 'product' }`  |
+  | 11       | `lower-price-category` | both non-null, `categoryEffective < productEffective`  | `{ level: 'category' }` |
+
+  Each condition names **both** slots. A single-sided condition — "category
+  slot is null" alone — matches a product carrying no promotion at all, which
+  is most of the catalogue, and would emit an event naming a candidate that is
+  not there: one defect log per product, half a million of them per ingestion
+  recompute. With both slots named, arity zero matches nothing and the base
+  price stands, which is the intended path rather than a defect path.
+
+- **Priorities 10–30 are reserved for the seed; an operator override sits above 30.** The four seeded rules are mutually exclusive, so their order decides
+  nothing between themselves — the band matters against rules added later. An
+  override written at 25 to protect a deliberately set product price beats
+  `lower-price-*` but is shadowed by `product-only` at 30, so the same intent
+  would behave differently depending on whether a category sale happened to be
+  running. Distinct priorities are a contract rather than a convention:
+  `json-rules-engine` evaluates equal priorities concurrently and the order of
+  `results` is not guaranteed. The resolver **selects the event whose rule
+  carries the highest `priority` in `results`** — not `results[0]`, and not the
+  first event emitted. `json-rules-engine` evaluates every rule and returns
+  every match; it does not stop at the first success. Reading positionally is
+  correct only by accident of buckets running in descending priority while
+  rules inside a bucket run concurrently, which the library does not promise
+  across versions. The first operator override above 30 makes two events fire
+  on the same product, and that is the ordinary case, not a defect. A priority
+  collision is still logged at load, which is a seed defect.
 - If no rule fires, no promotion is applied and the base price stands. A rule
   that names a candidate which is not in the fact set is a defect, logged and
   ignored rather than thrown, so a bad rule cannot take the storefront down.
+- **Silence with a candidate present is counted.** "No rule fired" and "no
+  candidate existed" are the same outcome — the base price — and only one of
+  them is intended. A counter increments when the fact set holds at least one
+  non-null candidate and no event fired. For the seeded four that condition is
+  unreachable, so it reads zero until the policy breaks; the alternative is
+  that an operator's mistyped condition drops a sale across 500 000 products
+  with nothing in the logs, and the reconciler cannot catch it because it
+  resolves through the same rules.
 - The rule the case calls "at most one active promotion per product" is
   implemented as **at most one applied promotion**. A product-level and a
-  category-level promotion may both exist; under the seeded default the one
-  that prices lower is applied, so nothing is skipped and nothing stacks. The
-  storefront response names the promotion that was applied, so an admin can
-  always tell which of the two won and why.
+  category-level promotion may both exist; the seeded rule applies whichever
+  prices the product lower, so a 50 % category sale also covers an accessory
+  carrying its own 5 % promotion, and nothing stacks. The storefront response
+  names the promotion that was
+  applied, so an admin can always tell which of the two won and why.
 - Same-level overlap (two active product promotions on one product, or two on
   one category, overlapping in time) is still rejected with `409` by the
   exclusion constraints (SQLSTATE 23P01), and the handler selects the
@@ -274,12 +397,12 @@ where p.id = any($1);
 
 ## 5. Read model (Redis DB 0)
 
-| Key                   | Type | Content                                                                                                                                   |
-| --------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, pricingRulesVersion, updatedAt` |
-| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                        |
-| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                           |
-| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                      |
+| Key                   | Type | Content                                                                                                                                     |
+| --------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, ingestionRulesVersion, updatedAt` |
+| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                          |
+| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                             |
+| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                        |
 
 - `GET /api/products/:id` = `HGETALL product:{id}` (zero PostgreSQL reads).
 - `GET /api/products` = `ZRANGE <zset> -inf +inf BYSCORE LIMIT offset size`
@@ -395,8 +518,8 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
 3. **Batch** 1 000 lines: parse, validate (zod), **dedupe by SKU in a `Map`
    (last row wins) and sort by `sku`** (a consistent lock order, so
    concurrent batches on overlapping SKUs cannot deadlock), run each row through the ingestion rules
-   (`json-rules-engine`, rules loaded from `pricing_rules` and cached for
-   60 s), producing `base_price_cents` and `pricing_rules_version`. Invalid
+   (`json-rules-engine`, rules loaded from `pricing_rules` where
+   `type = 'ingestion'` and cached for 60 s), producing `base_price_cents` and `ingestion_rules_version`. Invalid
    rows are counted as rejected and logged with their byte offset; they never
    abort the batch.
 4. **Commit** one transaction: multi-row
@@ -458,7 +581,7 @@ on its first read; expiry and scheduled starts happen on time.
    Writes are progressive by design; building `category:{c}:new` and switching with `RENAME` is the upgrade if the mixed window ever matters.
 3. Storefront reads are pure Redis: `ZRANGE ... BYSCORE` for listings, `HGETALL` for detail. PostgreSQL load during the sale is the handler's scan only.
 4. New product in the category: `POST /api/products` → `product.upserted` → recompute finds the active category promotion → discounted entry written before the product is visible at all (a product exists in the storefront only once its hash exists).
-5. Cancel: `status = 'cancelled'` → delayed jobs removed → immediate `promotion.changed` → category rescanned → each product falls back to its own active promotion if it has one, else to base price.
+5. Cancel: `status = 'cancelled'` → delayed jobs removed → immediate `promotion.changed` → category rescanned → base price restored for products with no promotion of their own, and their own effective price for the rest.
 6. Scheduled start/end: the delayed `activate`/`expire` jobs fire at the boundary; the read model changes within the handler's scan time, not on a cache TTL.
 
 Base-price changes during a sale (vendor ingestion, the only update channel) go through
@@ -492,7 +615,9 @@ Alarms (monitoring stack, compose profile `monitoring`): the API and every
 worker expose `GET /metrics` with `prom-client` (default Node metrics plus
 `queue_waiting`, `queue_failed`, `queue_oldest_job_age_seconds`,
 `readmodel_drift_products`, `http_request_duration_seconds`,
-`ingestion_rows_processed_total`, `ingestion_chunks_stuck`). Prometheus
+`ingestion_rows_processed_total`, `ingestion_chunks_stuck`,
+`promotion_rules_no_event_total` — the silence counter of section 4, which the
+seeded rules cannot increment). Prometheus
 scrapes them; Grafana ships with a provisioned dashboard and alert rules:
 queue depth > 10 000, any failed (DLQ) job, drift > 1 %, API p95 > 500 ms,
 5xx rate > 1 %, worker RSS > 90 % of its limit, stuck ingestion chunk,
@@ -521,6 +646,8 @@ served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 | GET    | `/api/health`                                  | —        | PostgreSQL, Redis, queue reachability; `readmodel:ready`                                                              |
 | *      | `/api/admin/...`                               | —        | section 9                                                                                                             |
 
+`GET /api/products` pages by offset over ZSET scores that a category rescan rewrites progressively, so a page taken while a sale is being applied can repeat a row or miss one until the scan finishes. Stated rather than claimed away (REVIEW.md 5.5); an exclusive `(score, id)` cursor is the upgrade.
+
 ## 11. Layout
 
 ```
@@ -528,7 +655,7 @@ src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
-    promotion/   promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts, effective-price.ts (pure)
+    promotion/   promotion.ts (the Promotion row as a type), effective-price.ts (applyPromotion, pure), selection-rules.ts (loads the type='promotion' rules, holds their cache, runs the engine), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
     pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
@@ -554,6 +681,20 @@ Dockerfile           one image, command per service
   first read, a budget release leaving `failures` untouched while an
   error increments it, and a reconciler catch-up after an outage longer than
   its period (watermark sweep re-emits the missed boundary).
+- Named case: the **seeded** rule set, read from the migrated database, applies
+  `min(candidates)` for a two-candidate product and the only candidate for a
+  one-candidate one. It asserts the seed's policy, not merely that a winner
+  exists — a seed whose comparison is inverted would still name _a_ winner and
+  would charge the higher of the two discounted prices through every flash
+  sale. The one-candidate case is there because a category sale over products
+  with no promotion of their own is the ordinary case, and a rule that only
+  compares pairs matches nothing for it: without that assertion, 50 000
+  products publish base prices with the suite green.
+- Named case, required by REVIEW.md 7.4: two candidates active on one product,
+  the lower effective price is applied, and a higher-priority rule overrides
+  it. That test inserts the rule rows it asserts against. No test reads the row
+  a **running** database holds — the seed is code and is tested as code; the
+  runtime row is data and an operator editing it must not turn CI red.
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
 - Integration: real PostgreSQL and Redis from `docker compose`, database
