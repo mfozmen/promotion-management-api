@@ -573,48 +573,6 @@ describe('priceRow', () => {
   });
 });
 
-describe('the seeded case-study rules', () => {
-  // Mirrors migration 0001: +15 % on Electronics, -3 % above 100 units, +5 % commission.
-  // The rows themselves are read from the database by the integration test.
-  const seeded = () =>
-    compileRules([
-      ruleRow({
-        id: 1,
-        name: 'electronics category markup',
-        priority: 30,
-        conditions: categoryIs('Electronics'),
-        event: percent(1500),
-      }),
-      ruleRow({
-        id: 2,
-        name: 'bulk stock discount',
-        priority: 20,
-        conditions: stockAbove(100),
-        event: percent(-300),
-      }),
-      ruleRow({
-        id: 3,
-        name: 'vendor commission',
-        priority: 10,
-        conditions: always,
-        event: percent(500),
-      }),
-    ]);
-
-  it('marks up electronics, discounts bulk stock and adds the vendor commission', async () => {
-    // 80000 +15 % = 92000, -3 % = 89240, +5 % commission = 93702.
-    await expect(priceRow(await seeded(), vendorRow())).resolves.toMatchObject({
-      basePriceCents: 93_702,
-    });
-  });
-
-  it('leaves a non-electronics row with low stock to the commission alone', async () => {
-    await expect(
-      priceRow(await seeded(), vendorRow({ category: 'Apparel', stockQuantity: 10 })),
-    ).resolves.toMatchObject({ basePriceCents: 84_000 });
-  });
-});
-
 describe('createRuleSetLoader', () => {
   const rowsAt = (iso: string): PricingRuleRow[] => [
     ruleRow({
