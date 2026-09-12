@@ -216,7 +216,7 @@ rows within one version.
 
 5.6 A cache entry whose freshness depends on another key states how the two are
 kept consistent. A key that can be written without its index (`HSET` without the
-\1
+matching `ZADD`) is a finding.
 
 5.7 The read model has no TTL and no database fallback by design; freshness
 comes from events and the reconciler. A PR that introduces a TTL, a lazy
