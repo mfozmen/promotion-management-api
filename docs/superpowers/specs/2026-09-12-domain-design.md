@@ -370,9 +370,11 @@ rows for the same SKU in different chunks resolve by **file position, not
 commit order**: `products.ingest_job_id` and `products.ingest_source_offset`
 record which job and which byte offset last wrote the product, and the upsert
 carries
-`where (excluded.ingest_job_id, excluded.ingest_source_offset) > (products.ingest_job_id, products.ingest_source_offset)`
-(row-value comparison; both columns are null on manually created products,
-which therefore accept their first ingested row). Job ids come from the
+`where products.ingest_job_id is null or (excluded.ingest_job_id, excluded.ingest_source_offset) > (products.ingest_job_id, products.ingest_source_offset)`
+(row-value comparison with the null case stated first: both columns are null
+on manually created products, and a row comparison against null yields null,
+not true, so without the explicit `is null` branch the first ingested row for
+such a product would be silently dropped). Job ids come from the
 identity column and only one job per vendor runs at a time, so a newer file
 always carries a higher job id: within a file the later row wins no matter
 which worker commits first, and across files the newer file wins even when its
@@ -478,7 +480,8 @@ Dockerfile           one image, command per service
 - Edge cases that must have a named test: cancel an unassigned draft (no
   target, allowed by the CHECKs), assign a non-draft (`409`), assign with
   both or neither target (`400`), a vendor row with a negative price or stock
-  rejected without aborting its batch, a category promotion whose category matches
+  rejected without aborting its batch, an ingested row updating a manually
+  created product (null ingest columns), a category promotion whose category matches
   no product (`201` with `productCount: 0` and a warning log), assigning a draft whose `endsAt` has passed
   (`409`), two concurrent assigns of one draft (one `200`, one `409`), a
   product created in a category with an active promotion is discounted on its
