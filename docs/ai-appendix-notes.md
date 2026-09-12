@@ -229,6 +229,49 @@ rewritten.
 - Human refinement: `main` changed the process while this branch was open, so the documents this branch owns were re-read against it. Branch protection now requires `ci` and `claude-review` only (`gh api .../branches/main/protection` reports exactly those two contexts); `local-gates` still runs and still prints the label set it computed, but no longer blocks a merge; the `pr-title` job is gone; and a review Warning is fixed in the pull request that finds it rather than filed as an issue. The README's merge paragraph said something else and was corrected. The same cleanup closed issues #47, #52 and #53 as not planned — #47 because it is a recorded ADR-0003 trade-off and not open work, #52 folded into #10 (the guard arrives with the product create endpoint), #53 folded into #18 (the metrics story) — so ADR-0003's three "tracked in issue" citations named closed issues and now name the story that carries the work instead.
 - Verification: `npm run lint`, `npm run typecheck` and `npm run test:cov` on the merge result — 51 tests, 100 % statements, branches, functions and lines, Redis on 6399. The closed-issue claims were read from `gh issue view`, including the closing comments, rather than assumed from the issue numbers still appearing in the text.
 
+### 2026-09-12 — Reversal reconciled in the documents before the code (PR #35, `7105a12`)
+
+- Strategy: the owner reversed the design this branch had been building for
+  seven commits — promotion and pricing stay separate modules, and a promotion
+  keeps `discount_type` plus `value` instead of a `calculator` registry key and
+  a `params` jsonb bag. The reconciliation was asked for as a document change
+  first: rewrite section 4 of the domain spec and ADR-0004 so the rule event
+  names the winning _level_ and nothing else, and the arithmetic is one pure
+  function, `applyPromotion(basePriceCents, promotion)` returning a
+  `PricingOutcome` union. Then let the code branches (#29, #50) follow.
+- Human refinement: the ordering is the point and it is the owner's. The
+  advisory review had asked three times on #29 for the decision to be recorded
+  before the implementation, and this is the first round where that happened:
+  the design that was reversed was described in enough detail that anyone
+  implementing the resolver top to bottom would have built a rule event
+  carrying a calculator name and resolved nothing for every product. What was
+  left after `7105a12` was therefore superseded prose rather than a missing
+  update — a smaller and more findable class of defect, but not a free one, as
+  the next entry records.
+
+### 2026-09-12 — Three owner rulings closed the precedence round (PR #35, `beba163`)
+
+- Strategy: the round was run as three separate questions rather than one
+  "fix the docs" pass — what the seeded precedence policy is, whether a test
+  may assert it, and what the 60 s rule cache does on a policy edit. Each was
+  put to the owner with the passages that would have to change, so the ruling
+  arrived as a decision rather than as an edit to review.
+- Human refinement: the owner ruled the lower effective price, in the
+  customer's favour, with a higher-priority rule overriding — the reverse of
+  the product-level default the branch had carried and the reverse of the
+  correction made in the previous documentation pass. REVIEW.md 7.4 was
+  amended to match and "precedence by larger discount" left ADR-0004's
+  rejected alternatives, since it is the default under another name.
+  Product-level precedence took its place there, with the reason. The owner
+  also ruled the capped-discount bullet out of scope and corrected the
+  required-check set in CONTRIBUTING and the infrastructure spec to the live
+  one (`ci` and `claude-review`; `local-gates` runs and is read at hand-off
+  but does not block; the title job is gone); README.md was brought to the
+  same set in this pass.
+- The 60 s rule cache has no invalidation. Recorded in ADR-0004 as a known gap
+  with its window, what is re-resolved and the two things that would fix it,
+  and deliberately not built.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -394,7 +437,221 @@ rewritten.
 - Verification: the two files were diffed against each other rather than resolved by recency, and each block was traced to the commit that introduced it. `main`'s Redis-free CI was checked against this branch's test list: the queue and shutdown suites open real connections, so they fail without the service. The merged result was then run locally — `npm run lint`, `npm run typecheck`, `npm run test:cov`: 51 tests, 100 % statements, branches, functions and lines against Redis on 6399.
 - Resolution: `main`'s version was taken as the base and the only thing re-applied on top was the `services: redis` block. `docs/ai-appendix-notes.md` conflicted the same way — `main` had appended entries for PR #56 and PR #46, this branch the PR #37 chain — and both were kept in full in both sections, `main`'s block first, with nothing deleted; an appendix that records history cannot resolve a conflict by choosing a side.
 
+### 2026-09-12 — A reversal verified against a tree that had already moved (PR #35, `9cfdf12`, `c769001`)
+
+- Challenge: the reconciliation commit `7105a12` was written against a branch
+  head seven commits old, and every one of those seven commits (`5df9e6d`
+  through `9bab6b9` locally, `b86c909` through `796c201` on the remote) _added_
+  the design being reversed: the calculator registry, the factory, the
+  strategy vocabulary and the largest-discount default. Merging origin/main
+  (`9cfdf12`) and then the remote copy of this branch (`c769001`) brought those
+  commits back. Conflicting hunks were resolved in favour of the reversal and
+  were visible while resolving; the non-conflicting ones merged silently, which
+  is exactly where the retired vocabulary survived.
+- Verification: the stale-term sweep was re-run over the merged working tree
+  rather than trusted from the first pass, with `git blame` on every surviving
+  passage to attribute it to a commit. Three passages in section 4 of the
+  domain spec still carry the retired reasoning, each blaming to a
+  retired-design commit rather than to `7105a12`: "under the seeded default the
+  one that prices lower is applied" and "that rule wins over the largest-discount
+  rule" (both `4332243`), which contradict the product-level default the same
+  section now states two bullets earlier, and "not to the strategies"
+  (`09c9915`), which names the registry that no longer exists. The behaviour in
+  each sentence reads plausibly; only the justification belongs to the replaced
+  design.
+- Resolution: in ADR.md, the consequence bullet claiming the write store "still
+  has `calculator text` and `params jsonb`" was corrected — that half of the
+  reversal had landed too, on PR #50 in `e48dee9`, which regenerated
+  `0000_write_store.sql` with a `promotion_discount_type` enum and an integer
+  `value`. Before: "only the first half has landed … the schema still has
+  `calculator text` and `params jsonb`". After: both halves are written, each on
+  an open pull request, with the commit named for each, and `main` carries
+  neither. The spec passages are the owner's file and are reported to the
+  coordinator rather than edited here. The lesson generalises: a reversal
+  verified against one tree is not verified against a tree that moved, and the
+  check that counts is the one run last — after the final merge, not before it.
+
+### 2026-09-12 — The right method on the wrong premise (PR #35, `beba163`)
+
+- Challenge: the previous pass changed the seeded default to product-level
+  precedence, and the argument for it was a good one — REVIEW.md 7.4 and
+  section 3 of the domain spec both said product level wins, the ADR said
+  something else, and three documents against one is normally the answer.
+  Citing the rulebook and the spec against the ADR is the correct method.
+  It was applied to a premise nobody had checked: whether the rulebook was
+  current. It was not. The owner's ruling reversed it and amended REVIEW.md,
+  which is what an out-of-date rule is supposed to trigger.
+- Verification: precedence had by then been stated three ways in one section
+  (REVIEW.md 8c.6 records this as its evidence), so agreement between
+  documents was never proof — the documents had been edited from each other.
+  What settled it was the owner, not a further reading.
+- Resolution, reusable: a rule cited as authority is only authority while it
+  is current, and "three documents agree" is worth nothing when the three were
+  copied from one another. When the documents disagree about a policy, the
+  question goes to the owner as a decision, not to the documents as a vote.
+
+### 2026-09-12 — A test that would have frozen a policy stored as data (PR #35, `beba163`)
+
+- Challenge: the `architecture-critic` run objected that the rule layer earned
+  nothing — if precedence is fixed and a test pins it, `json-rules-engine`,
+  the `pricing_rules` table and the 60 s cache are ceremony around a constant,
+  and the honest move is to delete the layer and hard-code the precedence.
+  The objection was sound about the state it found; the planned suite did
+  assert the seeded production default.
+- Verification: the objection was tested by asking what a red build would mean
+  after a production policy edit. Before: a test asserts that a product-level
+  promotion beats a larger category one — so editing the seeded row turns CI
+  red, and the policy cannot change without a code change. After: the test
+  inserts the rule row it asserts against and checks the mechanism — given
+  this rule, the engine selects this candidate — and no test in the suite
+  names the seeded default. The seeded row is then editable in production,
+  which is the property the layer exists for.
+- Resolution: the layer stayed and the test changed. The principle is the
+  sharper of the two from this round — a test that pins a policy stored as
+  data is asserting configuration, not behaviour, and it removes exactly the
+  freedom the data storage was bought for. It also decides which of the two
+  the critic's objection was: not "the abstraction is unjustified" but "the
+  test was cancelling the justification". Recorded in ADR-0004, REVIEW.md 7.4
+  and section 4 of the domain spec.
+
+### 2026-09-12 — The contradiction reappeared inside the commit that resolved it (PR #35, `b580f4a`)
+
+- Challenge: `b580f4a` was the commit that adopted lowest-price selection across
+  the documents. It did so in five places and wrote the retired policy — product
+  level wins, so a 50 % category sale skips an accessory that carries its own
+  promotion — into the sixth, section 4 of the domain spec. A commit whose
+  message announces a policy is the last place a reader looks for the policy it
+  replaces, which is precisely why it survived the author's own read.
+- Verification: not by reasoning. Two independent reviews of the same diff
+  (`docs-scribe` as a blocking finding, `architecture-critic` separately) each
+  named the bullet; the author did not, on either pass. The rule holds that the
+  sweep must run over the whole document after the edit, not over the hunks the
+  edit touched — a stale-term search reads the file, a diff review reads the
+  change, and a contradiction between an unchanged line and a changed one is
+  invisible to the second.
+- Resolution: the bullet now says the seeded rule applies whichever candidate
+  prices the product lower, matching the other five places (`bc55689`). The
+  reusable part: when a policy changes, the count of places stating it is the
+  quantity to verify, and it is verified by searching for the old policy's words,
+  not by re-reading the diff.
+
+### 2026-09-12 — A scripted edit that matched nothing, and shipped (PR #35, `b580f4a` → `bc55689`, rule in `fd46829`)
+
+- Challenge: the commit that fixed the finding above ran a Python edit whose end
+  index came from `s.index("\n\n### Trade-offs")` — a heading that appears in
+  five of the seven ADRs — so the slice matched an earlier ADR and came out
+  empty, and `str.replace("", new)` inserts the replacement between every
+  character of the file. All seven ADRs became 249 copies of one bullet, and
+  the result was pushed, because the post-edit check asked whether the old text
+  was gone, which a file of 249 identical bullets passes.
+- Verification and repair: `bc55689` restored ADR.md from `beba163`, the last
+  commit before the destruction, and re-applied the two intended edits with
+  anchors asserting a single occurrence. A restore from an earlier commit is
+  where an unrelated edit gets silently reverted, so the restored file was
+  diffed against `beba163` rather than eyeballed: the only differences are the
+  two intended hunks in ADR-0004, both earlier corrections (the rules-cache
+  bullet and the branch-scoped claim about `promotion.ts` in `1e624f5` and
+  `0000_write_store.sql` in `e48dee9`) are present, and all seven ADRs carry
+  their Context, Decision, Consequences, Trade-offs and Rejected alternatives.
+- Resolution: REVIEW.md 13.7 (`fd46829`) requires a scripted edit to assert its
+  anchor matches exactly once, with this failure as its evidence. The
+  destruction is the loud version of a quieter bug that had already shipped
+  twice on this project without being noticed: a replace that matches nothing
+  reports success and ships a document contradicting its own commit message.
+  The guard is asserting the match count; asserting presence, or asserting the
+  old text is absent afterwards, catches neither form.
+
+### 2026-09-12 — The coverage removed by a ruling had to land somewhere (PR #35, `b580f4a`)
+
+- Challenge: dropping the test that pinned the seeded precedence (previous
+  round, `beba163`) was right — it asserted configuration and froze a policy
+  stored as a row — but it deleted real coverage: nothing then exercised the
+  seeded rule set at all, and a seed that fires no rule, or a migration that
+  ships a malformed condition, would have passed the suite.
+- Verification: the gap was stated as a question — what breaks silently now that
+  no test reads the seed? — and answered by naming the failure the removed test
+  had incidentally caught.
+- Resolution: section 4 of the domain spec names a case that loads the seeded
+  rule set for a product with both a product-level and a category-level
+  candidate and asserts that a winner exists, never which one. A seed that
+  selects nothing fails; a seed edited from lowest-price to product-level still
+  passes. The principle: a ruling that removes a test names the weaker assertion
+  that keeps the mechanism covered, in the same round.
+
+### 2026-09-12 - The reversal reached ADR-0004 and stopped there (PR #35, `8a95ea7` review)
+
+- Challenge: the reversal round rewrote ADR-0004 and section 4 of the domain
+  spec, and left two sentences elsewhere in ADR.md arguing the replaced design.
+  ADR-0006 still listed "a `pricing_rules` layer for promotions" as a rejected
+  alternative, which ADR-0004 now adopts for candidate selection, and ADR-0005
+  still loaded ingestion rules from `pricing_rules` with no filter, written
+  before the table gained the `type` column that made the unfiltered read load
+  the promotion rules too.
+- Verification: not a diff review - the diff of this branch never touched
+  ADR-0005 or ADR-0006. The check that found it was reading every ADR that
+  names `pricing_rules` after the edit, which is the same rule the destroyed-file
+  round produced: search the document for the old policy's words, not the change.
+- Resolution: ADR-0006's rejected alternative now says what is actually
+  rejected - storing the promotions themselves as rule rows - and ADR-0005
+  names `type = 'ingestion'`. Both in this pass. The reusable part: a decision
+  reversal has to be swept across every ADR that cites the reversed one, because
+  the contradiction lands in the ADRs the diff did not touch.
+
+### 2026-09-12 — Two prices for one defective promotion (PR #35, `8a95ea7` → `b2ff55c`)
+
+- Challenge: `architecture-critic` rejected `8a95ea7` with three findings, all
+  in section 4 of the domain spec. The largest was a product whose own
+  promotion cannot be priced having two stated outcomes. Before: the new bullet
+  said an unpriceable candidate is absent to the rules, so `category-only`
+  fires, while the older sentence left standing said the handler "logs it with
+  the `promotionId` and writes the base price". One says a product in a 50 %
+  category sale gets the sale price, the other says it stands at full price
+  inside it, and a test written from either passes while the other is false.
+  After: one sentence — the handler writes the price the surviving candidates
+  resolve to, the base price only when no candidate priced.
+- Verification: by the agent report, not by re-reading the diff. The
+  contradiction was between a line the round added and a line it did not touch,
+  which is the same shape as the two previous rounds: the correcting text was
+  added in front of the text it supersedes instead of replacing it. Third
+  occurrence of that habit on this branch; the older sentence is now rewritten.
+- Resolution of the other two, same commit: `applyPromotion` no longer takes
+  the promotion window, because `3a10c17` deliberately dropped
+  `starts_at`/`ends_at` from the resolution query — the signature could only
+  have been satisfied by re-adding two columns per candidate to a query that
+  runs over 50 000 products per flash sale, and the query has already filtered
+  to active promotions. And the silence counter added in `8a95ea7` was in no
+  metrics list, so the failure it exists to catch stayed invisible; it is named
+  `promotion_rules_no_event_total` in the section 12 metrics list.
+- Blind spot this round adds: a metric named in one list is not yet observed.
+  The counter is scraped but no alert rule in section 12 reads it, so nothing
+  fires when it moves. Flagged, not decided here.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
 - Key takeaway: pending.
+
+### 2026-09-12 — Running estimate after the precedence round (PR #35, `beba163`)
+
+- Share, documents only: prose is close to fully AI-drafted, but every
+  decision in it is the owner's, and three of this round's four substantive
+  changes (the precedence reversal, the no-test-on-the-default ruling, the
+  capped-discount scope cut) originated with the owner against AI-written text
+  that read as settled. The share that matters is not who typed the sentence
+  but who owns the premise, and on this branch that was the human every time.
+- Blind spot noticed: AI-written prose defends whatever it last wrote, so a
+  reversal leaves sentences whose behaviour is corrected and whose "because"
+  clause still argues the replaced policy. Two passes on this branch both
+  found that class of defect after a merge, never before one.
+
+### 2026-09-12 — Running estimate after the destroyed-file round (PR #35, `fd46829`)
+
+- Share, documents only: unchanged in drafting — prose AI-written, decisions the
+  owner's. What moved this round is the tooling around the prose: the edits
+  themselves are scripted, and a scripted edit is AI-authored code operating on
+  documents nobody diffs line by line, which is a category of AI output this
+  appendix had not been counting.
+- Blind spot noticed: verification that reads the intended change rather than
+  the resulting file. Both failures this round — the contradiction left in an
+  untouched bullet, and the 249-bullet file that passed its own absence check —
+  were invisible to a diff review and obvious to anyone who opened the document.
