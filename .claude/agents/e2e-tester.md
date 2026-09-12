@@ -20,9 +20,52 @@ routes under `src/`.
 
 ## Setup
 
+The application comes up through Docker Compose, one command. Nothing comes up
+without the compose file, so "the system under test" is the compose project,
+not a server you launched by hand.
+
 1. `npm ci` only if `node_modules` is missing.
-2. Start dependencies if a `docker-compose.yml` exists: `docker compose up -d --wait`.
-3. **Build, then run the built server.** Never `npm run dev`: that is `tsx watch`,
+2. Bring the whole stack up and wait for it to be healthy:
+
+   ```
+   docker compose up -d --wait      # db, redis, api; exits non-zero if any service is unhealthy
+   ```
+
+3. **The host port is ephemeral; read it back, never assume it.** The API is
+   published as `ports: ["3000"]` with no host side, so Docker picks a free
+   host port and two worktrees running at once cannot collide. This is the one
+   mechanism this definition uses for port separation: do not also set
+   `COMPOSE_PROJECT_NAME` per worktree, and do not pin a host port.
+
+   ```
+   PORT=$(docker compose port api 3000 | cut -d: -f2)
+   ```
+
+4. Wait until `curl -sf localhost:$PORT/health` returns 200 (max 30 s). If it
+   never does, print `docker compose logs --tail 40 api` and FAIL.
+5. **Proving you are talking to the server you started** is `docker compose ps
+api`: the container belongs to this project, so there are no PIDs to
+   compare and no stale host process that can answer `/health` in its place.
+6. **If something else holds a port you wanted, move; never kill it.** This
+   machine runs many worktrees in parallel and the process you did not start
+   may be another run mid-measurement or a server the owner is using. You
+   cannot tell an orphan from a live server, and "not mine" is true of both.
+   Reaping orphans is a human decision, not yours; report what you saw and let
+   a person decide.
+
+Teardown is `docker compose down`. Leave the `db` and `redis` volumes alone
+unless you created them.
+
+### Exception until issue #19 lands (dated 2026-09-12)
+
+`ponytail:` there is no `api` service and no `Dockerfile` yet — the compose
+file carries the database and Redis only, and both belong to issue #19. Until
+#19 lands, run the host-launch path below, which has been executed and
+verified on this machine; the load numbers it produced stay valid. **Delete
+this whole section, and nothing else, when #19 lands.**
+
+1. Start dependencies if a compose file exists: `docker compose up -d --wait`.
+2. **Build, then run the built server.** Never `npm run dev`: that is `tsx watch`,
    which spawns a child for the server and respawns it, so killing the PID you
    launched leaves the child holding the port. Eighteen orphans on one machine
    came from exactly that. Use the production path instead:
@@ -40,11 +83,11 @@ routes under `src/`.
    shell records in `$!` is the wrapper: killing it leaves the node grandchild
    listening and still answering `/health`, which is the same orphan
    `npm run dev` produces. `node dist/server.js` is one process, `$!` is its
-   PID, `kill` ends it and frees the port. The numbers still come from the
-   build the case study ships. If a run must exercise TypeScript directly,
-   `tsx src/server.ts` without `watch` has the same single-process shape.
+   PID, `kill` ends it and frees the port. If a run must exercise TypeScript
+   directly, `tsx src/server.ts` without `watch` has the same single-process
+   shape.
 
-4. **Prove the port is free before binding it**, with a command that runs in
+3. **Prove the port is free before binding it**, with a command that runs in
    your own shell, which is Bash:
 
    ```
@@ -56,13 +99,10 @@ routes under `src/`.
    and FAIL. If the check itself cannot run, FAIL: an unverified port is how a
    stale server went unnoticed once.
 
-5. **If a listener appears on your port anyway, move; never kill it.** This
-   machine runs many worktrees in parallel and the process you did not start
-   may be another run mid-measurement or a server the owner is using. You
-   cannot tell an orphan from a live server, and "not mine" is true of both.
-   Pick another port and re-verify. Reaping orphans is a human decision, not
-   yours; report what you saw and let a person decide.
-6. **Prove you are talking to the server you started.** Take the PID from the
+4. **If a listener appears on your port anyway, move; never kill it** — the
+   same rule as step 6 above, discovered one step later. Pick another port and
+   re-verify.
+5. **Prove you are talking to the server you started.** Take the PID from the
    listener check and confirm it is the process you launched or its child:
 
    ```
@@ -75,21 +115,21 @@ routes under `src/`.
    Bash `$!` is a shell pseudo-PID, not the Windows PID of the listener, so
    the two never match even when the process is yours.
 
-7. Wait until `curl -sf localhost:<port>/health` returns 200 (max 30 s). If it
+6. Wait until `curl -sf localhost:<port>/health` returns 200 (max 30 s). If it
    never does, print the last 40 lines of `e2e-server.log` and FAIL.
 
-Always tear down at the end, and verify it: `kill` the shell job, then confirm
-nothing listens on the port any more with the same command from step 4. If the
-port is still held, kill the listener PID that check printed — it is yours, you
-proved that in step 6 — with `taskkill //PID <pid> //F //T` on Windows or
-`kill -9 <pid>` elsewhere, and check the port once more. A teardown you did not verify is how the next run
-inherits an orphan. Leave docker services up unless you started them. Delete
-`e2e-server.log` after quoting what matters.
+Tear down this path and verify it: `kill` the shell job, then confirm nothing
+listens on the port any more with the same command from step 3. If the port is
+still held, kill the listener PID that check printed — it is yours, you proved
+that in step 5 — with `taskkill //PID <pid> //F //T` on Windows or
+`kill -9 <pid>` elsewhere, and check the port once more. A teardown you did not
+verify is how the next run inherits an orphan. Leave docker services up unless
+you started them. Delete `e2e-server.log` after quoting what matters.
 
 Windows notes: `jq` may be missing, so use a `node -e` one-liner for JSON
 assertions — and give it a `C:/...` path, because node does not resolve Git
 Bash's `/c/...` or `/tmp/...` mount aliases. `ss` is not available in Git Bash;
-the `netstat -ano` form in step 4 is the one that runs here.
+the `netstat -ano` form is the one that runs here.
 
 ## What to test, in this order
 

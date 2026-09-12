@@ -78,7 +78,7 @@ Never merge `main` into a branch that is part of a stack; the merge commit break
 Severity policy for review findings, from any reviewer:
 
 - **Critical**, and any violation of a REVIEW.md rule marked blocking: fixed before the owner is asked to check.
-- **Warning**: answered on the thread; fixed in the same PR when the fix is small and local, otherwise recorded as an issue that the reply links, then resolved.
+- **Warning**: answered on the thread and fixed in the pull request that found it, then resolved. A finding that genuinely belongs to another branch is routed to that branch; nothing is filed as an issue to be dealt with later, because a filed warning is not progress — it moves the work sideways and makes the pull request look cleaner than it is.
 - **Suggestion**: answered and resolved; adopted only when it is cheaper to do than to defer.
 - Findings are collected until the review run has finished, then fixed in one commit. Pushing while a review is in flight cancels it and restarts the whole cycle.
 
