@@ -318,6 +318,45 @@ rewritten.
   because the issues were the input nearest to hand, and the case study's
   journeys — the thing the cases exist to verify — were one hop further away.
 
+### 2026-09-13 — Retargeted to `main` and merged a third time (PR #50, `ffb09a0` → `d2ad2eb`)
+
+- Strategy: #35 merged, so PR #50 was retargeted from `docs/promotion-rule-engine`
+  to `main` and the new base was merged. The per-file rule of `3e6722d` and
+  `d75e845` applied once more: base wording wherever the base carries the later
+  decision (promotion resolution, precedence, the promotion schema shape;
+  `CONTRIBUTING.md` wholesale), this branch only where it can point at a shipped
+  artefact, both sides kept in date order in this file.
+- What this branch kept, each checked against a file rather than against the
+  surrounding prose: `promotion_discount_type` and `pricing_rules_version bigint`
+  (`0000_write_store.sql`), the `tests/unit` / `tests/integration` layout
+  (`vitest.workspace.ts`, ADR-0002), and `CLAUDE.md`'s pre-commit bullet, because
+  the base describes a hook this tree does not run — `.husky/pre-commit` is
+  lint-staged, typecheck and the unit layer, with no coverage step. What it took
+  from the base: the narrowed `applyPromotion` parameter
+  (`Pick<Promotion, 'discountType' | 'value'>`, spec §4) and the removal of a
+  duplicated pair of `value` `CHECK`s the previous merge had left in the §3 DDL.
+- `CLAUDE.md`'s `test-case-generator` sentence still described per-issue
+  `docs/e2e-cases/<issue>.md` files, which the base's own
+  `.claude/agents/test-case-generator.md` had already replaced with four journey
+  files; the sentence was rewritten to match the agent it describes. The same
+  stale shape survives in `CONTRIBUTING.md`'s agent table, which the merge took
+  from the base wholesale — a base defect, recorded here and not fixed on this
+  branch.
+- `docs/e2e-cases/5.md` was removed in `d2ad2eb`; the bullet recording its
+  creation was rewritten in place above, in the same unpushed round that created
+  it. `README.md`'s project-structure line now reads "one file per user journey",
+  so no document this agent maintains still implies the per-issue shape.
+- Before the merge, `ffb09a0` closed what the previous one had left disagreeing:
+  spec §5 published `ingestionRulesVersion` against a shipped
+  `pricing_rules_version` column, spec §3 said migration `0001` seeds
+  `pricing_rules` when it seeds `type = 'ingestion'` only (the promotion rules
+  arrive with #36), and the rules-version unit was stated in seconds where
+  `c504203` pinned it to epoch milliseconds. The same commit gave ADR-0004 the
+  two trade-offs `architecture-critic` asked for — the version cannot see a rule
+  deletion, and the promotion policy is empty until #36 — and added
+  `db:generate` / `db:migrate` to `package.json`, which `README.md` now names
+  instead of the bare `drizzle-kit` calls.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -683,6 +722,32 @@ rewritten.
   The counter is scraped but no alert rule in section 12 reads it, so nothing
   fires when it moves. Flagged, not decided here.
 
+### 2026-09-13 — The merge put back a name corrected two minutes earlier (PR #50, `ffb09a0` → `d2ad2eb`)
+
+- Challenge: `ffb09a0` renamed the read-model hash field in §5 of the domain
+  spec from `ingestionRulesVersion` to `pricingRulesVersion`, because the column
+  this branch ships is `products.pricing_rules_version` and no ref's SQL carries
+  the other name. Two and a half minutes later the base merge `d2ad2eb` took the
+  base's §5 table and put `ingestionRulesVersion` back — in a merge whose own
+  message states that the spec keeps `pricing_rules_version`. Before (`ffb09a0`,
+  §5): `… promotionName, pricingRulesVersion, updatedAt`. After (`d2ad2eb`, §5,
+  line 412): `… promotionName, ingestionRulesVersion, updatedAt`. The document
+  now contradicts itself — §3 line 43 declares `pricing_rules_version bigint`
+  and §5 publishes a different name to every read-model consumer — and ADR-0004's
+  trade-off bullet names the §3 form.
+- Verification: `git diff ffb09a0 HEAD -- docs/superpowers/specs/2026-09-12-domain-design.md`
+  shows the field reverting inside the merge, and a grep for
+  `ingestion_rules_version` across the migrations of every ref finds nothing.
+- Resolution: not made here. The spec is outside the three documents this agent
+  edits; one word on line 412 restores it, and this round reports FAIL until it
+  is restored. Scenario A is the affected half: the field is what a storefront
+  read would key on to tell which ingestion rule set priced a product.
+- The class, not the instance: the conflicted hunks of a merge get reviewed, the
+  hunks resolved silently do not. Both earlier merge entries on this branch
+  record defects in text the merge did not mark as conflicting, and this is the
+  third. A correction is only safe once it is on the same side of the merge as
+  the text it corrects.
+
 ## Overall reflection
 
 - Estimated ratio: pending (final figure is the owner's).
@@ -726,3 +791,17 @@ rewritten.
   the resulting file. Both failures this round — the contradiction left in an
   untouched bullet, and the 249-bullet file that passed its own absence check —
   were invisible to a diff review and obvious to anyone who opened the document.
+
+### 2026-09-13 — Running estimate after the third merge round (PR #50, `d2ad2eb`)
+
+- Share, documents only: unchanged in drafting — prose AI-written, decisions the
+  owner's (the retarget, the per-file merge rule, the ruling that a task owes no
+  e2e case). The AI's net contribution to the design spec this round is
+  negative: a correction it wrote at `ffb09a0` was undone by a merge it resolved
+  at `d2ad2eb`, so that field ends the round where it started, having cost two
+  commits and one review.
+- Blind spot noticed: a merge is reviewed as a list of conflicts, not as a diff
+  against the branch's own tip. Nothing in the pre-push routine ran
+  `git diff <tip-before-merge> HEAD` until this documentation pass did, and that
+  one command is what found the reverted name. Two-parent history hides a
+  regression a single-parent diff shows at a glance.
