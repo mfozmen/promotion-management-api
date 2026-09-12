@@ -446,7 +446,10 @@ Dockerfile           one image, command per service
 
 - Edge cases that must have a named test: cancel an unassigned draft (no
   target, allowed by the CHECKs), assign a non-draft (`409`), assign with
-  both or neither target (`400`).
+  both or neither target (`400`), two concurrent assigns of one draft (one
+  `200`, one `409`), a budget release leaving `failures` untouched while an
+  error increments it, and a reconciler catch-up after an outage longer than
+  its period (watermark sweep re-emits the missed boundary).
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
 - Integration: real PostgreSQL and Redis from `docker compose`, database

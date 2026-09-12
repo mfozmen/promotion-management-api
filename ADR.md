@@ -183,7 +183,7 @@ A category promotion must affect tens of thousands of products the moment it is 
 - Write amplification on the write store: zero product-row updates per flash sale.
 - Read traffic reaching PostgreSQL: none; a missing hash is a `404`, an unready read model is a `503`.
 - Out-of-order handlers (cancel then assign on one category): a single event-handler instance runs with concurrency 1 and always recomputes from the current truth.
-- Missed boundary: the reconciler sweeps promotions whose boundaries passed in the last ten minutes and re-emits the event.
+- Missed boundary: the reconciler sweeps promotions whose boundaries passed since its last successful sweep (persisted watermark, ADR-0007) and re-emits the event.
 - Cold start or Redis loss: the API triggers a full rebuild and refuses storefront reads until it completes.
 
 ### Trade-offs
