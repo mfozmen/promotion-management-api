@@ -473,6 +473,36 @@ memory on the smallest configured container.
 
 ---
 
+## 8b. Comments
+
+**Severity: warning.**
+
+8b.1 A comment earns its line by saying something the code cannot: a
+non-obvious invariant, a unit that is not in the name, a reason the obvious
+approach was rejected, a shortcut's ceiling, a contract a caller must honour.
+
+8b.2 These are findings, every time:
+
+- restating the next line, or the line above;
+- narrating a function already named after what it does;
+- a docblock on a type that repeats the type's name
+  (`/** A row of the pricing_rules table */` above `type PricingRuleRow`);
+- documenting a parameter whose type already documents it;
+- quoting a REVIEW.md rule number back at the reader;
+- a module docblock that retells the design spec. Link the section instead:
+  the spec changes and the copy does not.
+
+8b.3 **Measure it.** More than one comment line per four lines of code in a
+source file is a finding unless every surviving comment passes 8b.1. Count the
+whole file, docblocks included. The number is not a budget to spend: a file at
+ten per cent with one comment that restates its function still fails 8b.2, and
+a file at thirty per cent whose comments are all contracts passes on appeal,
+stated in the reply.
+
+8b.4 Prose that explains a decision belongs in `ADR.md`, and prose that
+explains a mechanism belongs in the design spec. A comment points at them; it
+does not reproduce them.
+
 ## 9. Failure handling and operations
 
 **Severity: warning. Blocking when a failure path has no recovery.**
@@ -539,17 +569,9 @@ change.
 12.2 A deliberate shortcut carries a comment naming its ceiling and the upgrade
 path, so the reviewer can tell a decision from an oversight.
 
-12.3 Comments earn their line. Write one where the code cannot speak: a
-non-obvious invariant, a unit that is not in the name, a reason the obvious
-approach was rejected, a shortcut's ceiling. Do not restate what the next line
-says, do not narrate a function already named after what it does, do not quote
-a REVIEW.md rule back at the reader, and do not document a parameter whose type
-already documents it. A module whose comments outweigh its code is a finding:
-trim the prose, or move it to the ADR if it is a decision rather than a note.
+12.3 A PR delivers one story. Scope creep is a finding; open another issue.
 
-12.4 A PR delivers one story. Scope creep is a finding; open another issue.
-
-12.5 Dependencies: prefer the standard library, then something already
+12.4 Dependencies: prefer the standard library, then something already
 installed. A new dependency for a few lines of code is a finding.
 
 ---
