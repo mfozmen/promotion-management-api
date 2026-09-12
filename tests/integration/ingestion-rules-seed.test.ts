@@ -1,4 +1,4 @@
-import { asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import {
   compileRules,
@@ -13,12 +13,14 @@ const db = useTestDatabase();
 
 /** The loader the chunk processor (#16) will hold: one query, newest priority
  *  first, ingestion rules only. Written here because the seeded rows are the
- *  only thing that proves the wrapper and the migration speak one language. */
+ *  only thing that proves the wrapper and the migration speak one language.
+ *  Both predicates are needed to reach `pricing_rules_active_idx`, which is
+ *  partial on `active`; `type` alone plans as a sequential scan. */
 const loadSeededRules = (): Promise<PricingRuleRow[]> =>
   db()
     .select()
     .from(pricingRules)
-    .where(eq(pricingRules.type, 'ingestion'))
+    .where(and(eq(pricingRules.type, 'ingestion'), eq(pricingRules.active, true)))
     .orderBy(desc(pricingRules.priority), asc(pricingRules.id));
 
 const vendorRow = (over: Partial<Record<string, unknown>> = {}) => ({
@@ -74,15 +76,19 @@ describe('the seeded rules through the engine wrapper', () => {
   });
 
   it('refuses to price anything once the rules are deactivated', async () => {
-    await db()
-      .update(pricingRules)
-      .set({ active: false })
-      .where(eq(pricingRules.type, 'ingestion'));
+    const setActive = (active: boolean) =>
+      db().update(pricingRules).set({ active }).where(eq(pricingRules.type, 'ingestion'));
 
-    // The catalogue would otherwise be stored at raw vendor cost with the job
-    // reporting success, so the whole run stops here instead.
-    await expect(compileRules(await loadSeededRules())).rejects.toThrowError(
-      /no active ingestion pricing rules/,
-    );
+    await setActive(false);
+    try {
+      // The catalogue would otherwise be stored at raw vendor cost with the
+      // job reporting success, so the whole run stops here instead.
+      await expect(compileRules(await loadSeededRules())).rejects.toThrowError(
+        /no active ingestion pricing rules/,
+      );
+    } finally {
+      // Restored, so the file does not depend on this being its last test.
+      await setActive(true);
+    }
   });
 });
