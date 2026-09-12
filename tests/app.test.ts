@@ -104,6 +104,21 @@ describe('request body size cap', () => {
     });
   });
 
+  it('answers an unsupported charset with 415, not a 500 the on-call is paged for', async () => {
+    const res = await request(createApp())
+      .post('/api/health')
+      .set('content-type', 'application/json; charset=iso-8859-9')
+      .send('{}');
+
+    expect(res.status).toBe(415);
+    expect(res.body).toEqual({
+      error: {
+        code: 'UNSUPPORTED_MEDIA_TYPE',
+        message: 'Request body encoding is not supported',
+      },
+    });
+  });
+
   it('answers a body that will not decompress as the client error it is', async () => {
     // Before the mapping keyed off the status, only two body-parser types were
     // named and everything else was masked as a 500 — so a client's own mistake

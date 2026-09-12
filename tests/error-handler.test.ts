@@ -19,6 +19,27 @@ function appThrowing(error: unknown, captured: CapturedLogger = captureLogger())
   return app;
 }
 
+// The real class, not a hand-built lookalike: drizzle puts the statement and
+// the bound row in `message` and the SQLSTATE on `cause`, and a fixture that
+// guesses that shape certifies the leak it was written to catch.
+const overlap = () => {
+  const pgError = Object.assign(
+    new Error('conflicting key value violates exclusion constraint "promotions_no_overlap"'),
+    {
+      name: 'PostgresError',
+      code: '23P01',
+      detail: 'Key (product_id)=(3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80) conflicts.',
+      where: 'PL/pgSQL function',
+    },
+  );
+
+  return new DrizzleQueryError(
+    'insert into "promotions" ("product_id", "discount_bp", "customer_email") values ($1, $2, $3)',
+    ['3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80', 2000, 'ayse@example.com'],
+    pgError,
+  );
+};
+
 describe('AppError mapping', () => {
   it.each([
     [400, 'VALIDATION_ERROR', 'Invalid request body'],
@@ -104,7 +125,7 @@ describe('an error after the response has started', () => {
     app.use(httpLogger(captured.logger));
     app.get('/stream', (_req, res, next) => {
       res.status(200).type('json').write('{"items":[');
-      next(new Error('the query died halfway'));
+      next(overlap());
     });
     app.use(errorHandler);
 
@@ -116,31 +137,15 @@ describe('an error after the response has started', () => {
     expect(captured.lines).toContainEqual(
       expect.objectContaining({ msg: 'unhandled error after the response started' }),
     );
+    // The path the fix created is a path the whitelist still has to hold on.
+    const serialised = JSON.stringify(captured.lines);
+    expect(serialised).not.toContain('discount_bp');
+    expect(serialised).not.toContain('ayse@example.com');
+    expect(serialised).not.toContain('Failed query');
   });
 });
 
 describe('log hygiene for driver errors', () => {
-  // The real class, not a hand-built lookalike: drizzle puts the statement and
-  // the bound row in `message` and the SQLSTATE on `cause`, and a fixture that
-  // guesses that shape certifies the leak it was written to catch.
-  const overlap = () => {
-    const pgError = Object.assign(
-      new Error('conflicting key value violates exclusion constraint "promotions_no_overlap"'),
-      {
-        name: 'PostgresError',
-        code: '23P01',
-        detail: 'Key (product_id)=(3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80) conflicts.',
-        where: 'PL/pgSQL function',
-      },
-    );
-
-    return new DrizzleQueryError(
-      'insert into "promotions" ("product_id", "discount_bp", "customer_email") values ($1, $2, $3)',
-      ['3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80', 2000, 'ayse@example.com'],
-      pgError,
-    );
-  };
-
   it('keeps the statement and the bound row out of the log', async () => {
     const captured = captureLogger();
     await request(appThrowing(overlap(), captured)).get('/boom');
@@ -206,6 +211,49 @@ describe('log hygiene for driver errors', () => {
     await request(appThrowing(new Error('plain'), captured)).get('/boom');
 
     expect(captured.lines.find((line) => line.level === 50)?.error).not.toHaveProperty('code');
+  });
+});
+
+describe('exposed client errors that body-parser did not raise', () => {
+  it('keeps the status of any other exposed client error', async () => {
+    const teapot = Object.assign(new Error('I am a teapot'), { status: 418, expose: true });
+    const res = await request(appThrowing(teapot)).get('/boom');
+
+    expect(res.status).toBe(418);
+    expect(res.body).toEqual({
+      error: { code: 'BAD_REQUEST', message: 'Request could not be processed' },
+    });
+  });
+
+  it('never relabels a server fault as the caller mistake', async () => {
+    const pretender = Object.assign(new Error('upstream died'), { status: 503, expose: true });
+    const res = await request(appThrowing(pretender)).get('/boom');
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+  });
+
+  it('ignores an exposed error with no status', async () => {
+    const res = await request(appThrowing(Object.assign(new Error('x'), { expose: true }))).get(
+      '/boom',
+    );
+
+    expect(res.status).toBe(500);
+  });
+});
+
+describe('mounted without the http logger', () => {
+  it('still answers, instead of throwing inside the error handler', async () => {
+    const app = express();
+    app.get('/boom', (_req, _res, next) => {
+      next(new AppError(409, 'CONFLICT', 'Overlap'));
+    });
+    app.use(errorHandler);
+
+    const res = await request(app).get('/boom');
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Overlap' } });
   });
 });
 

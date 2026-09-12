@@ -103,6 +103,11 @@ rewritten.
 - Strategy: re-ran the advisory Claude review and the `architecture-critic` agent on the committed diff, but this time asked the agent to check the error-logging whitelist against the **installed** `drizzle-orm` 0.45 in `node_modules` rather than against the shape the previous round had assumed. The same run was asked to assert what a 500 log line MUST contain, not only what it must not, which is what exposed the pino-http serializer trap. Findings were fixed in one commit after the run finished, per the severity policy in `CONTRIBUTING.md`.
 - Human refinement: the owner required the log form itself to become a rule rather than a habit, so `REVIEW.md` 8.4 now states that an error reaches a log through `serializeError` under an `error` key and that handing a logger the error itself, under any key, is a finding. The owner also deferred `SIGTERM` draining deliberately and had it recorded as a stated gap in ADR-0008 instead of implemented in a skeleton, and had the comments across `src/` trimmed against the new REVIEW.md 12.3.
 
+### 2026-09-12 — Third review round on the HTTP skeleton (PR #30, commit `c6e4ff2`)
+
+- Strategy: the round before had asked the agent to check the whitelist against the installed `drizzle-orm`; this one extended the same instruction to `express` and `body-parser`, and asked what each library writes or answers **by default** on the paths the code delegates to. That is what surfaced Express's `logerror` (raw `err.stack` to stderr on every env except `test`) and body-parser's actual statuses. A probe test was written before the mapping changed, to find out what the installed parser answers for an unsupported charset and content-encoding rather than to assume `415`.
+- Human refinement: the owner rejected `415` on the probe's evidence and kept the published code list unchanged; decided the open `res.headersSent` question in favour of `res.destroy()` over a terminal handler of our own, because it removes the second place the error can escape rather than adding one more place to get right; and had REVIEW.md §8.4 reworded to read as a general rule naming one shared implementation, rather than as a description of this PR.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -197,6 +202,19 @@ rewritten.
 - Resolution: the `err` key is abandoned; errors are logged under an `error` key with `serializeError` called explicitly at the log site, one key and one shape everywhere including the workers. A thrown non-`Error` now logs its type and never its value. REVIEW.md 8.4 requires that form, so the next reviewer does not re-introduce a serializer.
 - Lesson: a negative assertion alone cannot tell "the secret is gone" from "everything is gone". Each redaction test needs a positive twin.
 
+### 2026-09-12 — The framework's own error printer leaked what the whitelist removed (PR #30, commit `c6e4ff2`)
+
+- Challenge: after `res.headersSent` the error handler logged through the whitelist and then called `next(err)`. Express's final handler writes the raw `err.stack` to stderr on every environment except `test` — the one the suite runs in — so the statement and the bound row reached production logs while every test stayed green. This is the second time in this PR that a green test covered a leak.
+- Verification: the `architecture-critic` agent read `logerror` in the installed `express/lib/application.js` and quoted the `NODE_ENV !== 'test'` guard, which also explains why no test could have caught it.
+- Resolution (before/after): before, `if (res.headersSent) { log; return next(err); }`. After, `if (res.headersSent) { log; res.destroy(); return; }` — the client sees the same truncated body, and the error is never handed to Express. ADR-0008 records socket destruction as the decision and its trade-off (an unexplained connection reset) in place of the sentence that called the fix undecided.
+
+### 2026-09-12 — A whitelisted field is not a safe field: the message composes the secret (PR #30, commit `c6e4ff2`)
+
+- Challenge: `message` had survived two whitelists because it is a name every error has. But an error that carries a statement builds its message out of it, so the message is only safe when it comes from the cause — and even then some driver messages quote what the caller sent (`invalid input syntax for type uuid: "..."`).
+- Verification: found by a test written to prove the _previous_ fix, not by a review — a query error with no `cause` still had the query as its message. The test failed, and it was right.
+- Resolution (before/after): before, `message: rootCause(err).message`. After, the message is replaced outright with `database query failed` when the error carries `query` or `params`, otherwise cut at the first quoted value and bounded; and stack frames are matched on their shape (`/^\s+at .*:\d+:\d+\)?$/`) so a bound value containing a newline and `at ` cannot pose as a frame.
+- Lesson: the first two whitelists were written against a described error shape, and each survived review until someone read the installed library. A field name is not a guarantee about the field's contents; only the code that produces it is.
+
 ## Overall reflection
 
 ### 2026-09-12 — after the HTTP skeleton (issue #6)
@@ -213,3 +231,8 @@ rewritten.
 
 - Estimated ratio: unchanged at roughly 85 % AI-generated to 15 % human-crafted text overall, but this round moves where the human share sits. All four defects were found by AI reviewers; what was human was the instruction to check the installed dependency instead of the assumed shape, the decision to promote the log form into `REVIEW.md` 8.4 rather than leave it a habit, and the call to defer `SIGTERM` as a recorded gap.
 - Blind spots added to the list: (8) a whitelist, a redaction or any other "only these fields" control is written against an imagined shape of the thing it filters, so it reads as a control while the real producer walks straight past it — the fix is to read the installed version, not the documentation; (9) fixtures are invented to match the implementation's assumptions, so the test certifies the bug; (10) redaction is tested only negatively, which cannot distinguish "the sensitive field is gone" from "the whole record is gone"; (11) a leak is treated as closed after the first fix, and the second-order paths (the message, the stack's first line, a framework's own stderr writer) are not traced — ADR-0008 now records the `res.headersSent` path, where Express prints the raw stack, as still open.
+
+### 2026-09-12 — after the third PR #30 review round (issue #6, commit `c6e4ff2`)
+
+- Estimated ratio: unchanged at roughly 85 % AI-generated to 15 % human-crafted text. One of this round's two defects was found by a test the AI wrote to prove the previous fix, which is the first time the suite caught a leak before a reviewer did; the human share was again the instruction (check what the delegated-to library does by default), the call on `res.destroy()`, and the refusal to publish a `415` the parser never returns.
+- Blind spot (11) from the previous round is now closed rather than restated: the `res.headersSent` path no longer reaches Express. Added: (12) a field that appears on a whitelist stops being questioned — `message` passed two reviews on the strength of its name while being composed out of the statement; (13) the AI adds an error code to a public list because the scenario sounds plausible (`415` for an unsupported charset), where a three-line probe against the installed parser says `400`; (14) a control's coverage is assumed to extend to the framework's own default path, which runs after ours and obeys different rules — here, a different `NODE_ENV`.
