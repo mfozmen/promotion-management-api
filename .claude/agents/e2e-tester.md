@@ -28,8 +28,12 @@ routes under `src/`.
    came from exactly that. Use the production path instead:
 
    ```
-   npm run build && PORT=<port> node dist/server.js > e2e-server.log 2>&1 &
+   npm run build
+   PORT=<port> node dist/server.js > e2e-server.log 2>&1 &
    ```
+
+   Two commands, not `npm run build && ... &`: `&` backgrounds the whole `&&`
+   list, so `$!` would be the subshell and `kill $!` would leave node running.
 
    Run the built entry point directly, not `npm start`. On Windows `npm start`
    is npm -> `cmd.exe /d /s /c node dist/server.js` -> node, so the PID your
