@@ -200,11 +200,19 @@ create table ingestion_chunks (
 - Seeded calculators at launch: `PercentageDiscount` (`valueBasisPoints`) and
   `FixedDiscount` (`valueCents`). They exist because the case names percentage
   and fixed-amount discounts, not because the design needs exactly two.
-- The seeded default rules reproduce the case's requirement: a product-level
-  candidate outranks a category-level one, and each emits the adjustment its
-  promotion describes. They are rows, not an `if`, so "largest discount wins"
-  or "category wins during a flash sale" is a rule edit rather than a code
-  change.
+- **The seeded default is the largest discount, in the customer's favour**
+  (owner decision). The case requires "at most one active promotion" and says
+  conflicts must be "handled logically" without saying which wins, so this is
+  ours to choose. Whichever candidate produces the lower effective price wins;
+  a "50 % off Accessories" sale therefore also covers an accessory that
+  carries its own 5 % promotion, which is what a shopper expects a sale to
+  mean. Ties break on the lower promotion id.
+- The commercial exception has a home without a code change: a product whose
+  price must not fall further, because of a margin floor, a supplier agreement
+  or a minimum advertised price, gets a higher-priority rule naming it, and
+  that rule wins over the largest-discount rule. This is why the policy is a
+  row: the default serves the customer, the exception serves the contract, and
+  neither is a branch in a resolver.
 - Exactly one rule applies per product. Rules are evaluated in priority order
   and the highest-priority match wins, which is what keeps the case's "at most
   one active promotion" true at the applied level. Letting several stack would
@@ -214,10 +222,10 @@ create table ingestion_chunks (
   ignored rather than thrown, so a bad rule cannot take the storefront down.
 - The rule the case calls "at most one active promotion per product" is
   implemented as **at most one applied promotion**. A product-level and a
-  category-level promotion may both exist; the product-level one wins even
-  when the category discount is larger. Consequence, stated to admins: a
-  "50 % off Accessories" sale skips accessories that carry their own
-  promotion.
+  category-level promotion may both exist; under the seeded default the one
+  that prices lower is applied, so nothing is skipped and nothing stacks. The
+  storefront response names the promotion that was applied, so an admin can
+  always tell which of the two won and why.
 - Same-level overlap (two active product promotions on one product, or two on
   one category, overlapping in time) is still rejected with `409` by the
   exclusion constraints (SQLSTATE 23P01), and the handler selects the
