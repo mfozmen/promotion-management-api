@@ -141,6 +141,21 @@ rewritten.
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
 - Human refinement: none needed — `impact-analyzer` confirmed no doc or config referenced the removed sections and every named script (`dev`, `test`, `test:cov`, `lint`) still exists in `package.json`.
 
+### 2026-09-12 — Agent rounds required by changed path (PR #46, `021de82`)
+
+- Strategy: `local-gates` demanded all three agent labels on every pull
+  request, so a markdown-only branch waited for a load run that could not
+  find anything. The required set is now computed from the pull request's
+  changed paths: `docs-scribe` always (any change can outdate the ADRs, the
+  README or this appendix), `e2e-tester` for paths that change how the
+  running application behaves, `impact-analyzer` for those paths and
+  `.github/workflows/`, `architecture-critic` unchanged. CLAUDE.md and
+  CONTRIBUTING.md were rewritten to state the same rule.
+- Human refinement: the owner set the scope — required by what a diff can
+  break, not by the fact that a diff exists — and named the consequence for
+  this pull request itself, which touches `.github/workflows/` and therefore
+  needs `docs-verified` and `impact-verified` but not `e2e-verified`.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -172,6 +187,27 @@ rewritten.
 - Challenge: the four verification labels (`e2e-verified`, `impact-verified`, `docs-verified`, `architecture-verified`) had only ever been created by hand in the repo's label set; `gh pr edit --remove-label` on a label that does not exist fails, so a fresh clone would break on the first `synchronize` strip. The fix step (`gh label create --force`) was first added to run unconditionally, over-creating the labels on every `labeled`/`unlabeled`/`reopened` event too.
 - Verification: caught by the `impact-analyzer` agent reasoning through the workflow's `on.pull_request.types` list against the create step's `if` condition.
 - Resolution: scoped the create step to `if: contains(fromJSON('["opened", "synchronize"]'), github.event.action)`, the only events that precede the strip step, so labels are created idempotently once per event that needs them instead of on every label change.
+
+### 2026-09-12 — The two path patterns in `local-gates` disagreed (PR #46, `021de82`)
+
+- Challenge: the first version of the path-based gating wrote the
+  `e2e-tester` and `impact-analyzer` conditions as two separate regular
+  expressions. The `impact-analyzer` one silently omitted `tsconfig*.json`,
+  `Dockerfile` and the compose files, so a branch touching only a Dockerfile
+  or the compose file would have been sent for a load run with no
+  blast-radius trace — the wrong way round, since an infrastructure change is
+  exactly the kind that lands on every branch at once. Both CLAUDE.md and
+  CONTRIBUTING.md already promised “those same paths”, so the workflow
+  contradicted the two documents shipped in the same commit.
+- Verification: caught by the `impact-analyzer` round, which ran the two
+  patterns against real paths with `grep` instead of reading them —
+  `tsconfig.json`, `Dockerfile` and `docker-compose.yml` landed in the
+  `e2e` bucket and not the `impact` one. The same probe confirmed
+  `src/shared/db/migrations/0001.sql` and `vitest.config.ts` bucket
+  correctly, and that no open pull request goes from passing to failing.
+- Resolution: the path list is now one shell variable used by both
+  conditions, with `.github/workflows/` appended for `impact-analyzer` only,
+  so the two sets cannot drift apart again.
 
 ## Overall reflection
 

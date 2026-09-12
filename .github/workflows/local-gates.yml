@@ -71,12 +71,15 @@ jobs:
           # README or the appendix, and that is the case-study deliverable.
           required="docs-verified"
           # e2e-tester needs something that can change how the running application behaves.
-          if grep -qE '^(src/|tests/|package(-lock)?\.json$|.*\.config\.ts$|tsconfig.*\.json$|Dockerfile|docker-compose.*\.ya?ml$)' <<<"$files"; then
+          # One pattern, used twice, so the two lists cannot drift apart.
+          app='^(src/|tests/|package(-lock)?\.json$|.*\.config\.ts$|tsconfig.*\.json$|Dockerfile|docker-compose.*\.ya?ml$)'
+          if grep -qE "$app" <<<"$files"; then
             required="$required e2e-verified"
           fi
-          # impact-analyzer also covers the workflows, because a change to how pull requests are
-          # judged lands on every branch in flight at once; that is the widest blast radius here.
-          if grep -qE '^(src/|tests/|package(-lock)?\.json$|.*\.config\.ts$|\.github/workflows/)' <<<"$files"; then
+          # impact-analyzer covers those same paths and the workflows, because a change to how
+          # pull requests are judged lands on every branch in flight at once; that is the widest
+          # blast radius here.
+          if grep -qE "$app|^\.github/workflows/" <<<"$files"; then
             required="$required impact-verified"
           fi
           # Design documents, the modules that implement Scenario A and B, and the workers all
