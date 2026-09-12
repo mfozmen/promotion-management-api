@@ -72,8 +72,6 @@ create table promotions (
   created_at     timestamptz not null default now(),
   cancelled_at   timestamptz,
   check (ends_at > starts_at),
-  check (value > 0),
-  check (discount_type <> 'percentage' or value <= 10000),       -- 10 000 bps is a free product
   check (status <> 'active' or (product_id is null) <> (category is null)), -- active = exactly one target
   check (status <> 'draft' or (product_id is null and category is null)),  -- draft = no target
   -- cancelled keeps whatever shape it had (a cancelled draft has no target)
@@ -173,11 +171,19 @@ create table ingestion_chunks (
   The arithmetic is not in the rule, not in a registry and not in a parameter
   bag — it is one pure function over a typed row.
 - **One function, one vocabulary.** `applyPromotion(basePriceCents, promotion)`
-  in `src/modules/promotion/` takes the `Promotion` the row already is —
-  `discountType` of `percentage | fixed` and `value` in basis points or minor
-  units — and returns a `PricingOutcome`, a discriminated union of
+  in `src/modules/promotion/` takes
+  `Pick<Promotion, 'discountType' | 'value'>` — `discountType` of
+  `percentage | fixed`, `value` in basis points or minor units — and returns a
+  `PricingOutcome`, a discriminated union of
   `{ ok: true, effectivePriceCents }` or `{ ok: false, reason }`. A failure
-  carries no price, so a caller cannot publish one by mistake. Percentage is
+  carries no price, so a caller cannot publish one by mistake. The parameter is
+  narrowed rather than the whole row because the resolution query stopped
+  selecting `starts_at`/`ends_at` once the windows left the fact set: a
+  parameter typed `Promotion` demands `status`, `startsAt` and `endsAt`, which
+  the resolver has no columns to supply. `applyPromotion` on #29 takes the full
+  interface today and narrows to this `Pick` — the function body already reads
+  neither the window nor the status, so the change is the signature only.
+  Percentage is
   `base - floor(base * bps / 10000)`, fixed is `max(base - value, 0)`,
   arithmetic in `bigint`, the result clamped to `[0, base]`. A third kind of
   discount is a migration that widens the enum, and that is the right cost:
@@ -401,12 +407,12 @@ where p.id = any($1);
 
 ## 5. Read model (Redis DB 0)
 
-| Key                   | Type | Content                                                                                                                                   |
-| --------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, pricingRulesVersion, updatedAt` |
-| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                        |
-| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                           |
-| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                      |
+| Key                   | Type | Content                                                                                                                                     |
+| --------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, ingestionRulesVersion, updatedAt` |
+| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                          |
+| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                             |
+| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                        |
 
 - `GET /api/products/:id` = `HGETALL product:{id}` (zero PostgreSQL reads).
 - `GET /api/products` = `ZRANGE <zset> -inf +inf BYSCORE LIMIT offset size`

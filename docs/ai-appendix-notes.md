@@ -308,10 +308,15 @@ rewritten.
   spec. The PR #50 judgement entry whose resolution argued the retired policy
   was given a "Superseded, same day" bullet instead of an edit — the entry
   records what was believed at the time, and the correction is dated beside it.
-- `495d2dd` added `docs/e2e-cases/5.md`: five cases derived from issue #5's
-  acceptance criteria, two admin-facing (overlapping active promotions rejected
-  with SQLSTATE 23P01, the draft/active target `CHECK`) and three probes over
-  the migration, the clone-per-file harness and the `pricing_rules` seed.
+- `495d2dd` added `docs/e2e-cases/5.md`, a per-issue case file for #5, and the
+  owner rejected the shape the same day: cases live in four journey files named
+  for the person and what they are doing, written from the case study's user
+  stories, and a task — a schema, a migration, a test harness — owes no case,
+  because the system does not come up without it. The file was removed and no
+  replacement written; #5 reports NO STORY. The AI error worth recording is not
+  the file but the premise behind it: cases were being generated per issue
+  because the issues were the input nearest to hand, and the case study's
+  journeys — the thing the cases exist to verify — were one hop further away.
 
 ## Judgement, challenges and verification
 
@@ -526,13 +531,11 @@ rewritten.
 
 - Challenge: the commit that fixed the finding above ran a Python edit whose end
   index came from `s.index("\n\n### Trade-offs")` — a heading that appears in
-
-five of the seven ADRs — so the slice matched an earlier ADR and came out
-empty, and `str.replace("", new)` inserts the replacement between every
-character of the file. All seven ADRs became 249 copies of one bullet, and the
-result was pushed, because the post-edit check asked whether the old text was
-gone, which a file of 249 identical bullets passes.
-
+  five of the seven ADRs — so the slice matched an earlier ADR and came out
+  empty, and `str.replace("", new)` inserts the replacement between every
+  character of the file. All seven ADRs became 249 copies of one bullet, and
+  the result was pushed, because the post-edit check asked whether the old text
+  was gone, which a file of 249 identical bullets passes.
 - Verification and repair: `bc55689` restored ADR.md from `beba163`, the last
   commit before the destruction, and re-applied the two intended edits with
   anchors asserting a single occurrence. A restore from an earlier commit is
@@ -650,6 +653,35 @@ gone, which a file of 249 identical bullets passes.
   state no ref carries any more — the later merge of the rewritten base took
   the base's wording throughout, and "product level wins" is gone from ADR-0004
   and the design spec. The ADR-scope half of the entry still stands.
+
+### 2026-09-12 — Two prices for one defective promotion (PR #35, `8a95ea7` → `b2ff55c`)
+
+- Challenge: `architecture-critic` rejected `8a95ea7` with three findings, all
+  in section 4 of the domain spec. The largest was a product whose own
+  promotion cannot be priced having two stated outcomes. Before: the new bullet
+  said an unpriceable candidate is absent to the rules, so `category-only`
+  fires, while the older sentence left standing said the handler "logs it with
+  the `promotionId` and writes the base price". One says a product in a 50 %
+  category sale gets the sale price, the other says it stands at full price
+  inside it, and a test written from either passes while the other is false.
+  After: one sentence — the handler writes the price the surviving candidates
+  resolve to, the base price only when no candidate priced.
+- Verification: by the agent report, not by re-reading the diff. The
+  contradiction was between a line the round added and a line it did not touch,
+  which is the same shape as the two previous rounds: the correcting text was
+  added in front of the text it supersedes instead of replacing it. Third
+  occurrence of that habit on this branch; the older sentence is now rewritten.
+- Resolution of the other two, same commit: `applyPromotion` no longer takes
+  the promotion window, because `3a10c17` deliberately dropped
+  `starts_at`/`ends_at` from the resolution query — the signature could only
+  have been satisfied by re-adding two columns per candidate to a query that
+  runs over 50 000 products per flash sale, and the query has already filtered
+  to active promotions. And the silence counter added in `8a95ea7` was in no
+  metrics list, so the failure it exists to catch stayed invisible; it is named
+  `promotion_rules_no_event_total` in the section 12 metrics list.
+- Blind spot this round adds: a metric named in one list is not yet observed.
+  The counter is scraped but no alert rule in section 12 reads it, so nothing
+  fires when it moves. Flagged, not decided here.
 
 ## Overall reflection
 
