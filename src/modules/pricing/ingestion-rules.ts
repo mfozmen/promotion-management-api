@@ -17,6 +17,10 @@ import { z } from 'zod';
 /** A row of the `pricing_rules` table (design §3). */
 export type PricingRuleRow = {
   id: number;
+  /** Which engine prices with this rule. The promotion layer keeps its rules in
+   *  the same table and its events mean nothing here, so they are skipped
+   *  rather than parsed and rejected. */
+  type: 'ingestion' | 'promotion';
   name: string;
   conditions: unknown;
   event: unknown;
@@ -34,7 +38,7 @@ export type VendorRowFacts = {
 
 export type CompiledRuleSet = {
   engine: Engine;
-  /** Max `updated_at` of the active rules, in epoch seconds; 0 when there are none. */
+  /** Max `updated_at` of the active ingestion rules, in epoch seconds. */
   pricingRulesVersion: number;
 };
 
@@ -93,16 +97,21 @@ const withoutPriorities = (node: unknown): unknown => {
   );
 };
 
-/** Inactive rows are ignored; a malformed row is a descriptive error, never a
- *  silently skipped rule. */
+/** Inactive rows and promotion-layer rows are ignored; a malformed row is a
+ *  descriptive error, never a silently skipped rule, and a set with no rule
+ *  left in it is an error rather than a catalogue priced at vendor cost. */
 export async function compileRules(rows: readonly PricingRuleRow[]): Promise<CompiledRuleSet> {
   // Sorted so the evaluation order is total: `pricing_rules.priority` defaults
   // to 0, and two rules sharing a priority would otherwise be evaluated in
   // parallel by the engine. The adjustments do not commute, so that would make
   // the price depend on insertion order. The stored id breaks the tie.
   const active = rows
-    .filter((row) => row.active)
+    .filter((row) => row.active && row.type === 'ingestion')
     .sort((a, b) => b.priority - a.priority || a.id - b.id);
+  // Without a rule the wrapper would price 500 000 rows at the raw vendor
+  // price, with no markup and no commission, and report the job completed.
+  // Stopping is the only safe reading of an empty set.
+  if (active.length === 0) throw new Error('no active ingestion pricing rules');
   const engine = new Engine();
 
   for (const [rank, row] of active.entries()) {
@@ -150,9 +159,10 @@ const applied = (cents: bigint, event: AdjustmentEvent): bigint =>
  *  that promises never to throw cannot take that on trust: BigInt() throws on
  *  a fractional or NaN price, and a missing or null fact makes the engine
  *  either throw or, worse, evaluate the condition false and skip the rule
- *  with no trace in the result. */
-const vendorRowFacts = z.object({
-  category: z.string(),
+ *  with no trace in the result. Exported so the chunk processor's row schema
+ *  composes these three fields rather than growing a second set of bounds. */
+export const vendorRowFacts = z.object({
+  category: z.string().min(1),
   vendorPriceCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   stockQuantity: z.number().int().min(0),
 });
