@@ -32,7 +32,7 @@ No implementation code is written before its failing test exists.
 - [ ] Commits follow Conventional Commits
 - [ ] Branch named `type/short-description`
 - [ ] ADR added/updated if the change affects architecture
-- [ ] `e2e-tester` and `impact-analyzer` agents run locally and passed (labels `e2e-verified`, `impact-verified`)
+- [ ] `e2e-tester`, `impact-analyzer` and `docs-scribe` agents run locally and passed (labels `e2e-verified`, `impact-verified`, `docs-verified`); `architecture-critic` too for design or scenario PRs (`architecture-verified`)
 
 ## Required checks
 

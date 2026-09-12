@@ -16,4 +16,4 @@
 - [ ] Lint and typecheck pass
 - [ ] English only (code, comments, copy)
 - [ ] PR title follows Conventional Commits
-- [ ] `e2e-tester` and `impact-analyzer` agents run locally on the final commit and passed (labels `e2e-verified`, `impact-verified`)
+- [ ] Local agents run on the final commit and passed: `e2e-tester`, `impact-analyzer`, `docs-scribe` (labels `e2e-verified`, `impact-verified`, `docs-verified`), plus `architecture-critic` for design or scenario PRs (`architecture-verified`)

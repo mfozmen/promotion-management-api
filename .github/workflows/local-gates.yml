@@ -38,6 +38,7 @@ jobs:
           exit 1
 
       - name: Require the applicable verification labels
+        # gh pr diff --name-only is served by the pull-requests permission; no checkout, no contents scope needed.
         run: |
           labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')
           files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only)
