@@ -12,6 +12,7 @@ import { sqlStateOf, useTestDatabase } from './db.js';
 const EXCLUSION_VIOLATION = '23P01';
 const CHECK_VIOLATION = '23514';
 const UNIQUE_VIOLATION = '23505';
+const DEADLOCK_DETECTED = '40P01';
 
 const JANUARY = new Date('2026-01-01T00:00:00Z');
 const FEBRUARY = new Date('2026-02-01T00:00:00Z');
@@ -297,7 +298,11 @@ describe('promotions under concurrent writers', () => {
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     const [loser] = results.filter((result) => result.status === 'rejected');
-    expect(await sqlStateOf(Promise.reject(loser!.reason))).toBe(EXCLUSION_VIOLATION);
+    // Two backends that insert their GiST index tuples at the same instant can wait on each
+    // other, and PostgreSQL kills one as a deadlock instead; both outcomes reject the loser.
+    expect([EXCLUSION_VIOLATION, DEADLOCK_DETECTED]).toContain(
+      await sqlStateOf(Promise.reject(loser!.reason)),
+    );
     expect(await db().select({ id: promotions.id }).from(promotions)).toHaveLength(1);
   });
 });

@@ -98,7 +98,9 @@ CREATE INDEX "products_category_id_idx" ON "products" USING btree ("category","i
 -- At most one active product-level promotion per product per instant, and the same per
 -- category. Drizzle has no builder for exclusion constraints, so they are written by hand;
 -- both GiST indexes also serve the point lookup
--- "target = $1 and tstzrange(starts_at, ends_at) @> now()".
+-- "target = $1 and tstzrange(starts_at, ends_at) @> now()". gist_int8_ops offers only
+-- =(bigint, bigint), so a product_id compared against an integer drops out of the index
+-- condition into a heap filter; keep the operand bigint.
 ALTER TABLE "promotions" ADD CONSTRAINT "promotions_no_overlapping_active_product" EXCLUDE USING gist ("product_id" WITH =, tstzrange("starts_at", "ends_at") WITH &&) WHERE ("status" = 'active' AND "product_id" IS NOT NULL);--> statement-breakpoint
 ALTER TABLE "promotions" ADD CONSTRAINT "promotions_no_overlapping_active_category" EXCLUDE USING gist ("category" WITH =, tstzrange("starts_at", "ends_at") WITH &&) WHERE ("status" = 'active' AND "category" IS NOT NULL);--> statement-breakpoint
 -- pricing_rules is the one table whose writer is a person at a psql prompt, so its audit
