@@ -32,6 +32,12 @@ rewritten.
 - Verification: caught by the `impact-analyzer` agent run before push, which traced the workflow event flow and the token permissions.
 - Resolution: moved the job to its own workflow, removed the mask, serialised runs per PR, and added the check to branch protection.
 
+### 2026-09-12 — `local-gates` labels only existed by hand (PR #21, 846f04f, 465aac9)
+
+- Challenge: the four verification labels (`e2e-verified`, `impact-verified`, `docs-verified`, `architecture-verified`) had only ever been created by hand in the repo's label set; `gh pr edit --remove-label` on a label that does not exist fails, so a fresh clone would break on the first `synchronize` strip. The fix step (`gh label create --force`) was first added to run unconditionally, over-creating the labels on every `labeled`/`unlabeled`/`reopened` event too.
+- Verification: caught by the `impact-analyzer` agent reasoning through the workflow's `on.pull_request.types` list against the create step's `if` condition.
+- Resolution: scoped the create step to `if: contains(fromJSON('["opened", "synchronize"]'), github.event.action)`, the only events that precede the strip step, so labels are created idempotently once per event that needs them instead of on every label change.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
