@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
-import { MAX_DETAILS } from '../shared/limits.js';
+import { MAX_DETAILS, MAX_MESSAGE } from '../shared/error-bounds.js';
 import {
   CLIENT_ERRORS,
   HttpError,
@@ -16,8 +16,7 @@ interface ErrorMapping {
 }
 
 /** A 4xx message crosses verbatim, so the bound belongs here rather than in
- *  every handler that writes one. Matches the bound on the log side. */
-const MAX_MESSAGE = 200;
+ *  every handler that writes one. */
 /** The two codes whose whole meaning is "come back later". Without a number a
  *  client retries as fast as it can, which amplifies the outage it met. */
 const RETRY_AFTER_SECONDS = '5';

@@ -1,7 +1,7 @@
 import type { RequestHandler } from 'express';
 import type { ZodError, ZodObject } from 'zod';
 import { HttpError } from '../shared/http-error.js';
-import { MAX_DETAILS } from '../shared/limits.js';
+import { MAX_DETAILS } from '../shared/error-bounds.js';
 import { logger } from '../shared/logger.js';
 
 export interface RequestSchemas {

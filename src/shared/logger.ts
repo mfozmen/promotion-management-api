@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { pino, type Logger } from 'pino';
+import { MAX_MESSAGE } from './error-bounds.js';
 import { pinoHttp, type HttpLogger } from 'pino-http';
 
 function rootCause(err: Error): Error {
@@ -27,7 +28,7 @@ function safeMessage(err: Error): string {
     return 'database query failed';
   }
 
-  return err.message.split(': "')[0]!.slice(0, 200);
+  return err.message.split(': "')[0]!.slice(0, MAX_MESSAGE);
 }
 
 /**
