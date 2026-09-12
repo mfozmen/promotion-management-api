@@ -63,9 +63,11 @@ Agent definitions are living documents: when an endpoint, job, cache or store la
 
 ## Stacked pull requests
 
+Stacked pull requests are a GitHub feature in public preview, driven by the official `gh stack` extension (`gh extension install github/gh-stack`; see the [documentation](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests)). Install it before using the commands below.
+
 Two pull requests that touch the same file are not independent, even when their content is: merging one forces conflict resolution in the other. Before opening a branch, compare its expected file list with the open pull requests. On any overlap, branch from that pull request's branch, open the new one against it (`gh pr create --base <branch>`) and register the stack (`gh stack link <lower PR> <new branch>`). GitHub retargets the upper pull requests automatically as the lower ones merge.
 
-Never merge `main` into a branch that is part of a stack; the merge commit breaks the cascading rebase. Use `gh stack sync`. To merge only the bottom pull request of a stack, use the asynchronous merge endpoint (`gh api -X PUT repos/OWNER/REPO/pulls/N/merge-async -f merge_method=squash`), because `gh stack merge` is atomic over the whole stack.
+Never merge `main` into a branch that is part of a stack; the merge commit breaks the cascading rebase. Use `gh stack sync`. To merge only the bottom pull request of a stack, use the [asynchronous merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request-asynchronously) (`gh api -X PUT repos/OWNER/REPO/pulls/N/merge-async -f merge_method=squash`), which merges every pull request up to and including that one; `gh stack merge` is atomic over the whole stack and the ordinary merge endpoints refuse a stacked pull request. This was used to merge #22 while #23 was still open.
 
 ## Review rules
 
