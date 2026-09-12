@@ -12,12 +12,36 @@ function rootCause(err: Error): Error {
   return err.cause instanceof Error ? err.cause : err;
 }
 
-/** Frames only: the first line of a stack repeats the message. */
+/** A stack frame, so a value carrying a newline and `at ` cannot pose as one. */
+const FRAME = /^\s+at .*:\d+:\d+\)?$/;
+
+/**
+ * Frames only. The message is dropped by counting its lines rather than by
+ * matching them, because it is the part an ORM builds out of the failing
+ * statement and the bound row.
+ */
 function stackFrames(err: Error): string {
   return String(err.stack)
     .split('\n')
-    .filter((line) => line.trimStart().startsWith('at '))
+    .slice(String(err.message).split('\n').length)
+    .filter((line) => FRAME.test(line))
     .join('\n');
+}
+
+/**
+ * An error that carries a statement composed its message out of it, so its own
+ * words are never safe. The driver error underneath names what failed, and most
+ * such messages name only the constraint — but some quote the offending value
+ * (`invalid input syntax for type uuid: "..."`), so everything from the first
+ * quoted value on is dropped, and the rest bounded.
+ */
+function safeMessage(err: Error): string {
+  const { query, params } = err as Error & { query?: unknown; params?: unknown };
+  if (query !== undefined || params !== undefined) {
+    return 'database query failed';
+  }
+
+  return err.message.split(': "')[0]!.slice(0, 200);
 }
 
 /**
@@ -28,8 +52,9 @@ function stackFrames(err: Error): string {
  * belongs in the database's log.
  *
  * The `err` key is avoided rather than reconfigured: pino-http wraps a custom
- * `err` serializer around pino's own, so it would run on an already-flattened
- * object here and on a real Error elsewhere. One key, one shape.
+ * `err` serializer around pino's own, so the same function would run on an
+ * already-flattened object here and on a real Error elsewhere. One key, one
+ * shape.
  */
 export function serializeError(err: unknown): Record<string, unknown> {
   if (!(err instanceof Error)) {
@@ -42,7 +67,7 @@ export function serializeError(err: unknown): Record<string, unknown> {
 
   return {
     type: root.name,
-    message: root.message,
+    message: safeMessage(root),
     stack: stackFrames(err),
     code: typeof code === 'string' ? code : undefined,
   };

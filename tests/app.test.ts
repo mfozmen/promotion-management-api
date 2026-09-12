@@ -100,7 +100,23 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
-      error: { code: 'VALIDATION_ERROR', message: 'Request body is not valid JSON' },
+      error: { code: 'VALIDATION_ERROR', message: 'Request body could not be read' },
+    });
+  });
+
+  it('answers a body that will not decompress as the client error it is', async () => {
+    // Before the mapping keyed off the status, only two body-parser types were
+    // named and everything else was masked as a 500 — so a client's own mistake
+    // alerted as a server fault.
+    const res = await request(createApp())
+      .post('/api/health')
+      .set('content-type', 'application/json')
+      .set('content-encoding', 'br')
+      .send('{}');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: { code: 'VALIDATION_ERROR', message: 'Request body could not be read' },
     });
   });
 });

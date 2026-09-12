@@ -111,7 +111,7 @@ describe('an error after the response has started', () => {
     // The half-written body is not patched up with an error envelope: the
     // connection is destroyed, so the client sees a truncated response and
     // cannot mistake it for a complete one.
-    await expect(request(app).get('/stream')).rejects.toThrow(/aborted/);
+    await expect(request(app).get('/stream')).rejects.toThrow(/socket hang up/);
 
     expect(captured.lines).toContainEqual(
       expect.objectContaining({ msg: 'unhandled error after the response started' }),
@@ -147,6 +147,7 @@ describe('log hygiene for driver errors', () => {
 
     const serialised = JSON.stringify(captured.lines.find((line) => line.level === 50));
     expect(serialised).not.toContain('discount_bp');
+    expect(serialised).not.toContain('3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80');
     expect(serialised).not.toContain('customer_email');
     expect(serialised).not.toContain('ayse@example.com');
     expect(serialised).not.toContain('Failed query');
@@ -164,6 +165,39 @@ describe('log hygiene for driver errors', () => {
         message: expect.stringContaining('promotions_no_overlap'),
         stack: expect.stringContaining('at '),
       },
+    });
+  });
+
+  it('does not let a bound value pose as a stack frame', async () => {
+    const captured = captureLogger();
+    const err = new DrizzleQueryError(
+      'insert into "products" ("name") values ($1)',
+      ['Kazak\n    at secret-bound-value'],
+      undefined,
+    );
+
+    await request(appThrowing(err, captured)).get('/boom');
+
+    expect(JSON.stringify(captured.lines.find((line) => line.level === 50))).not.toContain(
+      'secret-bound-value',
+    );
+  });
+
+  it('drops a driver message from the first quoted value on', async () => {
+    const captured = captureLogger();
+    const err = new DrizzleQueryError(
+      'select * from "products" where "id" = $1',
+      ['not-a-uuid'],
+      Object.assign(
+        new Error('invalid input syntax for type uuid: "not-a-uuid-but-a-customer-secret"'),
+        { code: '22P02' },
+      ),
+    );
+
+    await request(appThrowing(err, captured)).get('/boom');
+
+    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
+      error: { code: '22P02', message: 'invalid input syntax for type uuid' },
     });
   });
 

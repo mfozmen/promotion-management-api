@@ -98,6 +98,11 @@ rewritten.
 - Strategy: instead of asking for a general review, ran the advisory Claude review and the `architecture-critic` agent on the committed diff with `REVIEW.md` and the ADRs as the standard, and required each finding to name the rule it breaks or the design statement it contradicts. Findings were collected and fixed in one commit after the run finished, per the severity policy in `CONTRIBUTING.md`.
 - Human refinement: the owner adjudicated the two findings where the rulebook itself was wrong rather than the code — `redact` was deleted outright instead of being kept as "defence in depth" (a control that cannot fire is worse than none, because it reads as coverage), and REVIEW.md §8.4 was rewritten to separate the client-facing response from the log line, since the previous wording forbade the stack that issue #6 requires. Three further findings were accepted as written: the `res.headersSent` guard, `.strict()` being top-level only (recorded as a convention with a test), and the two module-level `AppError` singletons becoming plain data so one Error object is not shared across concurrent requests. SQLSTATE `23P01` was deliberately left unmapped in the middleware — ADR-0008 now records `AppError` as the seam and the promotion handler as the owner of that mapping, so the next reviewer does not re-open it.
 
+### 2026-09-12 — Second review round on the HTTP skeleton (PR #30, commit `e46f14b`)
+
+- Strategy: re-ran the advisory Claude review and the `architecture-critic` agent on the committed diff, but this time asked the agent to check the error-logging whitelist against the **installed** `drizzle-orm` 0.45 in `node_modules` rather than against the shape the previous round had assumed. The same run was asked to assert what a 500 log line MUST contain, not only what it must not, which is what exposed the pino-http serializer trap. Findings were fixed in one commit after the run finished, per the severity policy in `CONTRIBUTING.md`.
+- Human refinement: the owner required the log form itself to become a rule rather than a habit, so `REVIEW.md` 8.4 now states that an error reaches a log through `serializeError` under an `error` key and that handing a logger the error itself, under any key, is a finding. The owner also deferred `SIGTERM` draining deliberately and had it recorded as a stated gap in ADR-0008 instead of implemented in a skeleton, and had the comments across `src/` trimmed against the new REVIEW.md 12.3.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -166,6 +171,32 @@ rewritten.
 - Verification: caught only because the reviewer read the committed file rather than the change summary. No test could have caught it: `redact` was dead configuration, so removing it changes no observable behaviour.
 - Resolution: the option was deleted for real, and the lesson is a process one — a change is verified by re-reading the resulting file (or by a test that fails without it), never by the tool's own report that it succeeded.
 
+### 2026-09-12 — The whitelist written against an imagined error shape still leaked (PR #30, commit `e46f14b`)
+
+- Challenge: the previous round replaced `req.log.error({ err })` with a `{ type, message, stack, code }` whitelist and treated the leak as closed. It was not. `drizzle-orm` 0.45 builds `DrizzleQueryError`'s message as `` `Failed query: ${query}\nparams: ${params}` ``, and the first line of a stack repeats the message — so keeping `message` and `stack` kept the failing statement and the customer's row on the log line, which is exactly what the whitelist existed to remove. The whitelist had been written against a plausible-looking error shape, not against the library actually installed.
+- Verification: the `architecture-critic` agent read the installed `drizzle-orm` 0.45 source in `node_modules` and quoted the `super(...)` call that composes the message; the test then asserts on a real `DrizzleQueryError` that the captured line carries neither the SQL text nor the parameter values.
+- Resolution (before/after): before, `serializeError` returned the error's own `name`, `message`, full `stack` and `code`. After, `type`, `message` and `code` are taken from the error's `cause` — the driver error names the constraint and carries the SQLSTATE, but not the values — and `stack` is filtered down to its `at ...` frames, dropping the message line. ADR-0009 now names the library version the whitelist is written against.
+- Lesson: "log a whitelist" is only a safety claim relative to a concrete, versioned error shape. A list of field names chosen without reading the producer of those fields is a guess with the appearance of a control.
+
+### 2026-09-12 — A fabricated fixture certified the leak it was written to catch (PR #30, commit `e46f14b`)
+
+- Challenge: the test that proved "no `query`, no `params` on the log line" used a hand-built error object shaped the way the AI imagined a driver error looks. The real `DrizzleQueryError` puts the statement in the message and repeats it in the stack, which the fixture did not, so the test passed against the leaking implementation and would have kept passing for as long as the leak lived.
+- Verification: the `architecture-critic` compared the fixture with the constructor in the installed library and found no code path that produces that shape.
+- Resolution: `tests/error-handler.test.ts` now constructs the real `DrizzleQueryError` from the dependency, so a version upgrade that changes the shape fails the test instead of silently invalidating it. The reviewer's rule, adopted: a fixture modelling a shape no dependency produces is worse than no test, because it converts an open question into a green check.
+
+### 2026-09-12 — A test that passed for the wrong reason (PR #30, commit `e46f14b`)
+
+- Challenge: the test for nested strictness sent a payload that omitted a required field. It was green because the nested object failed validation for the missing field, so it would have stayed green with a non-strict nested schema — it asserted nothing about `z.strictObject` at all.
+- Verification: REVIEW.md 14.5's question — which test would fail if I inverted this condition — applied to the assertion: swapping `z.strictObject` for `z.object` left the suite green.
+- Resolution: the payload is now complete with exactly one misspelled field, so the only reason to reject it is strictness. The convention itself (strictness is top-level only) is recorded in ADR-0008 and in the `validate` JSDoc, since the test alone cannot state it.
+
+### 2026-09-12 — A safety measure silently destroyed the diagnosis it was meant to preserve (PR #30, commit `e46f14b`)
+
+- Challenge: `serializeError` had been installed as a custom `err` serializer in the pino-http `serializers` map. pino-http wraps a custom `err` serializer around pino's own, so the same function received an already-flattened plain object through `req.log` and a real `Error` through the root logger. The flattened object is not an `instanceof Error`, so every 500 logged through `req.log` — the only path that matters — came out as `{"type":"object"}`: no message, no stack, no SQLSTATE. The privacy fix had quietly removed the diagnosis the stack exists for.
+- Verification: caught only because the agent asserted what the log line MUST contain (an error type, and frames pointing at the throwing module) and not only what it must not contain. Every "no `query`, no `params`" assertion passed happily on an empty object.
+- Resolution: the `err` key is abandoned; errors are logged under an `error` key with `serializeError` called explicitly at the log site, one key and one shape everywhere including the workers. A thrown non-`Error` now logs its type and never its value. REVIEW.md 8.4 requires that form, so the next reviewer does not re-introduce a serializer.
+- Lesson: a negative assertion alone cannot tell "the secret is gone" from "everything is gone". Each redaction test needs a positive twin.
+
 ## Overall reflection
 
 ### 2026-09-12 — after the HTTP skeleton (issue #6)
@@ -177,3 +208,8 @@ rewritten.
 
 - Estimated ratio unchanged at roughly 85 % AI-generated to 15 % human-crafted text; the three corrections in this round were AI-found (the `architecture-critic` and the advisory review) but human-adjudicated, and the REVIEW.md §8.4 amendment was an owner call.
 - Blind spots added to the list: (5) the AI reasons about the field it put in the log record and not about what the object it logs carries by itself — the error-object leak is the clean example, and the same shape would recur with a job payload or a config object; (6) a stated precaution is taken as still true without re-reading the file, so a silently failed edit survives every later step that reasons about it; (7) an error path is designed for the case where it runs first, not for the case where the response has already started.
+
+### 2026-09-12 — after the second PR #30 review round (issue #6, commit `e46f14b`)
+
+- Estimated ratio: unchanged at roughly 85 % AI-generated to 15 % human-crafted text overall, but this round moves where the human share sits. All four defects were found by AI reviewers; what was human was the instruction to check the installed dependency instead of the assumed shape, the decision to promote the log form into `REVIEW.md` 8.4 rather than leave it a habit, and the call to defer `SIGTERM` as a recorded gap.
+- Blind spots added to the list: (8) a whitelist, a redaction or any other "only these fields" control is written against an imagined shape of the thing it filters, so it reads as a control while the real producer walks straight past it — the fix is to read the installed version, not the documentation; (9) fixtures are invented to match the implementation's assumptions, so the test certifies the bug; (10) redaction is tested only negatively, which cannot distinguish "the sensitive field is gone" from "the whole record is gone"; (11) a leak is treated as closed after the first fix, and the second-order paths (the message, the stack's first line, a framework's own stderr writer) are not traced — ADR-0008 now records the `res.headersSent` path, where Express prints the raw stack, as still open.

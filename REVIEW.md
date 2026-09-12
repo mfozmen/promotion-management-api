@@ -466,10 +466,14 @@ model not ready. The message is for a human; the code is for a client.
 connection string, no secret, in a response. A log line is read by the operator,
 not the caller, so the stack of an unexpected error belongs there — it is the
 only way to diagnose a 500 — but SQL text, bound parameters and secrets do not.
-A driver or ORM error carries the failing statement and the request body on its
-own fields and in its message, so an error reaches a log through
-`serializeError` under an `error` key (ADR-0009). Handing a logger the error
-itself, under `err` or any other key, is a finding.
+A driver or ORM error carries the failing statement and the bound row on its own
+fields — and composes its message out of them — so an error is reduced to a
+whitelist before it is logged: its type, a message it did not build from the
+statement, the SQLSTATE, and the frames of its stack. One shared implementation
+does this (`serializeError` in `src/shared/logger.ts`), every logging site calls
+it, and the result is logged under an `error` key. Handing a logger the error
+itself, under `err` or any other key, is a finding, and so is a second copy of
+the whitelist.
 
 8.5 Handlers log and rethrow; `catch {}` is a finding. A caught error that is
 neither logged nor rethrown is a silent failure.
