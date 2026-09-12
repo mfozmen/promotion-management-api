@@ -56,6 +56,11 @@ listener PID with `Get-NetTCPConnection -LocalPort <port>` and run
    - `GET /api/products?category=...&sort=effectivePrice` at `-c 50 -d 15`.
    - Mixed read load while a promotion is created and cancelled in a loop.
      Record requests/s, p50/p99 latency, non-2xx count, and errors/timeouts.
+   - **Any number compared against a pass criterion is the median of at least
+     three runs.** A single reading that straddles a threshold is noise: the
+     same build on the same box has produced p99 of 39 ms and 81 ms at `-c 50`
+     minutes apart. If the readings disagree across the criterion, report the
+     spread rather than picking one, and say how many runs it took.
 5. **Resource usage** during load. Sample the server process every 2 s:
    `powershell -NoProfile -c "(Get-Process -Id <pid>).WorkingSet64"` on
    Windows, `ps -o rss= -p <pid>` elsewhere. Report peak RSS in MB and whether

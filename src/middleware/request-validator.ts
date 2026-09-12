@@ -11,7 +11,7 @@ export interface RequestSchemas {
 
 const PARTS = ['body', 'query', 'params'] as const;
 
-const MAX_LOGGED_KEYS = 20;
+const MAX_SHOWN_KEYS = 20;
 const MAX_KEY_LENGTH = 64;
 
 /** `body.items[3].sku`: the part it was found in, then the way in. */
@@ -25,10 +25,11 @@ const formatPath = (part: string, path: PropertyKey[]): string =>
 /**
  * A rejection names where the problem is and which of the caller's own keys it
  * concerns, never a stored value and never a free-form value they sent
- * (REVIEW.md 8.3b). The distinction is that a key they typed is an identifier
+ * (the echo policy settled on PR #46; not yet in this repo's REVIEW.md). The
+ * distinction is that a key they typed is an identifier
  * they can act on — without it they cannot fix the request — while a value
  * handed back is just their own input returned to them. Keys are truncated
- * rather than omitted at 64 characters (8.3c) and the list is capped, because
+ * rather than omitted at 64 characters and the list is capped, because
  * how many they send is their choice and this runs unauthenticated.
  *
  * The path is ours only while no schema has client-controlled keys: a
@@ -47,7 +48,7 @@ function toDetails(error: ZodError, part: string): { path: string; message: stri
 
 const shownKeys = (keys: readonly string[]): string =>
   keys
-    .slice(0, MAX_LOGGED_KEYS)
+    .slice(0, MAX_SHOWN_KEYS)
     .map((key) => JSON.stringify(key.slice(0, MAX_KEY_LENGTH)))
     .join(', ');
 
@@ -81,7 +82,7 @@ export function validate(schemas: RequestSchemas): RequestHandler {
           (req.log ?? logger).warn(
             {
               part,
-              keys: keys.slice(0, MAX_LOGGED_KEYS).map((key) => key.slice(0, MAX_KEY_LENGTH)),
+              keys: keys.slice(0, MAX_SHOWN_KEYS).map((key) => key.slice(0, MAX_KEY_LENGTH)),
               count: keys.length,
             },
             'unrecognized fields rejected',

@@ -56,7 +56,7 @@ describe('validate: body', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
     // A key they typed is an identifier they can act on; a value they sent is
-    // not (REVIEW.md 8.3b).
+    // not (the echo policy on PR #46).
     expect(res.body.error.details).toContainEqual({
       path: 'body',
       message: 'Unrecognized keys (1): "basePrice"',
@@ -106,7 +106,7 @@ describe('validate: body', () => {
     const unknown = Object.fromEntries(
       Array.from({ length: 25 }, (_, i) => [`field${i}`.padEnd(200, 'x'), 1]),
     );
-    await request(appLogging('/products', captured, validate({ body: createProduct })))
+    const res = await request(appLogging('/products', captured, validate({ body: createProduct })))
       .post('/products')
       .send({ sku: 'SKU-1', basePriceCents: 1, ...unknown });
 
@@ -116,6 +116,10 @@ describe('validate: body', () => {
     };
     expect(line.keys).toHaveLength(20);
     expect(line.count).toBe(25);
+    // The same bounds apply to what the client is shown, not only the log.
+    const [detail] = res.body.error.details as { message: string }[];
+    expect(detail?.message.match(/"/g)).toHaveLength(40);
+    expect(detail?.message).toContain('Unrecognized keys (25):');
     expect(Math.max(...line.keys.map((key) => key.length))).toBe(64);
   });
 
