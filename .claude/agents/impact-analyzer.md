@@ -47,10 +47,13 @@ use `gh pr diff <n>`.
    - `promotions` — `promotions_no_overlapping_active_product` and
      `promotions_no_overlapping_active_category` (GiST, SQLSTATE `23P01` maps to
      `409`), `ends_at > starts_at`, and the draft/active target checks. The
-     discount itself is `calculator` plus `params`, bounded by that
-     calculator's zod schema rather than by a column.
+     discount itself is `discount_type` (`percentage` | `fixed`) plus `value`,
+     bounded by `value > 0` and, for a percentage, `value <= 10000`.
    - `pricing_rules` — seeded by migration `0001`; a reader of the ingestion
-     rules depends on `type = 'ingestion'`, `active` and `priority`.
+     rules depends on `type = 'ingestion'`, `active` and `priority`. The seeded
+     events are `adjustPercentBps` with a signed basis-point `value`, over the
+     facts `category`, `stockQuantity` and `vendorPriceCents`; the wrapper in
+     `src/modules/pricing/ingestion-rules.ts` throws on anything else.
    - `ingestion_jobs` — `file_sha256` unique (same file twice is a `409`) and
      `ingestion_jobs_one_running_per_vendor` partial unique index.
    - `ingestion_chunks` — `(job_id, chunk_index)` primary key, `next_offset`
