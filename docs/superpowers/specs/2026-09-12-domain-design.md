@@ -48,14 +48,13 @@ create table products (
 );
 create index products_category_id_idx on products (category, id);   -- keyset scans per category
 
-create type discount_type    as enum ('percentage', 'fixed');
 create type promotion_status as enum ('draft', 'active', 'cancelled');
 
 create table promotions (
   id             bigint generated always as identity primary key,
   name           text not null,
-  discount_type  discount_type not null,
-  value          bigint not null check (value > 0),              -- basis points or cents
+  calculator     text not null,                                  -- registry key, e.g. 'PercentageDiscount'
+  params         jsonb not null,                                 -- validated by that calculator's schema
   starts_at      timestamptz not null,
   ends_at        timestamptz not null,
   product_id     bigint references products (id),
@@ -64,7 +63,6 @@ create table promotions (
   created_at     timestamptz not null default now(),
   cancelled_at   timestamptz,
   check (ends_at > starts_at),
-  check (discount_type <> 'percentage' or value <= 10000),
   check (status <> 'active' or (product_id is null) <> (category is null)), -- active = exactly one target
   check (status <> 'draft' or (product_id is null and category is null)),  -- draft = no target
   -- cancelled keeps whatever shape it had (a cancelled draft has no target)
@@ -78,8 +76,11 @@ create table promotions (
 -- The two GiST exclusion indexes also serve point lookups
 -- (target = $1 and tstzrange(starts_at, ends_at) @> now()).
 
-create table pricing_rules (                    -- ingestion rules only (json-rules-engine)
+create type pricing_rule_type as enum ('ingestion', 'promotion');
+
+create table pricing_rules (                    -- json-rules-engine rules, both layers
   id          bigint generated always as identity primary key,
+  type        pricing_rule_type not null,
   name        text not null,
   conditions  jsonb not null,
   event       jsonb not null,
@@ -88,6 +89,7 @@ create table pricing_rules (                    -- ingestion rules only (json-ru
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+create index pricing_rules_active_idx on pricing_rules (type, priority desc) where active;
 
 create type ingestion_status as enum ('running', 'paused', 'completed', 'failed', 'aborted');
 
@@ -136,25 +138,120 @@ create table ingestion_chunks (
 ## 4. Promotion resolution and effective price
 
 - **Active** = `status = 'active' and starts_at <= now() < ends_at`.
-- **Applied promotion** for a product: its active product-level promotion if
-  one exists, else the active category-level promotion for its category, else
-  none. The exclusion constraints guarantee at most one candidate per level,
-  so resolution is deterministic and race-free.
+- **Applied promotion** for a product is decided by `json-rules-engine`, not by
+  hard-coded precedence (owner decision, 2026-09-12). The resolver collects
+  every active promotion that could apply to the product (its product-level
+  one and its category's), builds a fact object, and runs the promotion rules
+  loaded from `pricing_rules` where `type = 'promotion'`. The rule that fires
+  with the highest priority names the winning candidate; ties break on the
+  lower promotion id so the result is deterministic. The rules are data, so
+  the precedence policy changes without a deploy.
+- Facts given to the engine, per candidate: `level` (`product` or `category`),
+  `discountType`, `value`, `basePriceCents`, `stockQuantity`, `category`,
+  `startsAt`, `endsAt`.
+- **The calculation comes from the rule, not from the code.** A matching
+  rule's event carries the name of the calculator to run and everything that
+  calculator needs:
+
+  ```json
+  {
+    "type": "applyDiscount",
+    "params": {
+      "calculator": "PercentageDiscount",
+      "valueBasisPoints": 5000
+    }
+  }
+  ```
+
+  `params` is free-form in `json-rules-engine`, so the row decides both when it
+  fires and what runs. A discount that works differently is a new row naming a
+  different calculator, never a new branch in a resolver.
+
+- **A factory turns that name into an object.** Each calculator is a class
+  implementing one interface:
+
+  ```ts
+  interface DiscountCalculator {
+    calculate(baseCents: bigint, params: unknown): bigint;
+  }
+  ```
+
+  An abstract base holds what every calculator must not get wrong: parameters
+  are validated with the calculator's own zod schema before use, arithmetic is
+  `bigint`, the result is floored to the cent and clamped into
+  `[0, baseCents]`. A subclass supplies only the formula, so a new calculator
+  cannot reintroduce a rounding or clamping bug that was already fixed once.
+
+- `CalculatorFactory.create(name)` resolves the name against a registry that
+  maps a string to a constructor. Adding `TieredDiscount` or `BuyXGetY` is a
+  new class, one registry line and rule rows that name it; no existing function
+  changes. A name the registry does not know is a defect, not a crash: the
+  promotion resolver logs it and applies no discount, so the storefront falls
+  back to the base price, and ingestion treats it as a `rules` fault that stops
+  the job rather than silently mispricing 500 000 rows.
+- **The promotion row names its own calculator.** `promotions.calculator` is
+  the registry key and `promotions.params` is its configuration, validated by
+  that calculator's schema, so a new kind of discount needs no enum migration.
+  `discount_type` and `value` are gone: `PercentageDiscount` with
+  `{ "valueBasisPoints": 5000 }` says the same thing and does not constrain
+  what the next calculator needs.
+- **Selection needs both candidates in one fact object, so the discounts are
+  computed first.** The resolver runs each candidate's calculator to get its
+  discount, then runs the engine once over a single fact set that holds both:
+  `basePriceCents`, `category`, `stockQuantity`, and per candidate its
+  `level`, `calculator`, `discountCents` and `effectivePriceCents`. A rule can
+  therefore compare them, which `json-rules-engine` supports natively by
+  giving an operator a `{ fact: ... }` value rather than a literal. The
+  largest-discount default is one such comparison; product-level precedence is
+  a rule that ignores the discounts entirely.
+- The winning event names the winner rather than recomputing it:
+  `{ type: 'selectCandidate', params: { level: 'product' | 'category' } }`.
+  The resolver applies the discount it already computed for that level, so the
+  calculator runs once per candidate and never twice for the same one.
+- `applyPromotions(baseCents, calculator, params)` is the whole call site:
+  resolve from the registry, validate against the calculator's schema, run.
+  Both layers share the registry, so the percentage and fixed arithmetic has
+  exactly one implementation (REVIEW.md rule 1.3): ingestion runs every
+  matched rule in priority order to build a base price, promotion computes one
+  discount per candidate and applies the selected one.
+- Seeded calculators at launch: `PercentageDiscount` (`valueBasisPoints`) and
+  `FixedDiscount` (`valueCents`). They exist because the case names percentage
+  and fixed-amount discounts, not because the design needs exactly two.
+- **The seeded default is the largest discount, in the customer's favour**
+  (owner decision). The case requires "at most one active promotion" and says
+  conflicts must be "handled logically" without saying which wins, so this is
+  ours to choose. Whichever candidate produces the lower effective price wins;
+  a "50 % off Accessories" sale therefore also covers an accessory that
+  carries its own 5 % promotion, which is what a shopper expects a sale to
+  mean. Ties break on the lower promotion id.
+- The commercial exception has a home without a code change: a product whose
+  price must not fall further, because of a margin floor, a supplier agreement
+  or a minimum advertised price, gets a higher-priority rule naming it, and
+  that rule wins over the largest-discount rule. This is why the policy is a
+  row: the default serves the customer, the exception serves the contract, and
+  neither is a branch in a resolver.
+- Exactly one rule applies per product. Rules are evaluated in priority order
+  and the highest-priority match wins, which is what keeps the case's "at most
+  one active promotion" true at the applied level. Letting several stack would
+  be a change to that one selection step, not to the strategies.
+- If no rule fires, no promotion is applied and the base price stands. A rule
+  that names a candidate which is not in the fact set is a defect, logged and
+  ignored rather than thrown, so a bad rule cannot take the storefront down.
 - The rule the case calls "at most one active promotion per product" is
   implemented as **at most one applied promotion**. A product-level and a
-  category-level promotion may both exist; the product-level one wins even
-  when the category discount is larger. Consequence, stated to admins: a
-  "50 % off Accessories" sale skips accessories that carry their own
-  promotion.
+  category-level promotion may both exist; under the seeded default the one
+  that prices lower is applied, so nothing is skipped and nothing stacks. The
+  storefront response names the promotion that was applied, so an admin can
+  always tell which of the two won and why.
 - Same-level overlap (two active product promotions on one product, or two on
-  one category, overlapping in time) is rejected with `409` by the constraint
-  (SQLSTATE 23P01). The handler then selects the overlapping promotion to
-  report `{ conflictingPromotionId }`. No silent override: cancel first.
-- Effective price, one pure function `applyPromotion(baseCents, promotion)` in
-  `src/modules/pricing/effective-price.ts`, used by the event handler, the
-  reconciler and tests:
-  - percentage: `base - floor(base * value / 10000)`
-  - fixed: `max(base - value, 0)`
+  one category, overlapping in time) is still rejected with `409` by the
+  exclusion constraints (SQLSTATE 23P01), and the handler selects the
+  overlapping promotion to report `{ conflictingPromotionId }`. The engine
+  would pick a winner either way, so this is no longer about correctness: it
+  keeps an admin from quietly shadowing a colleague's campaign, and it keeps
+  the candidate set small enough that resolution stays a two-row decision.
+  Relaxing it later is a constraint drop plus a priority rule, with no change
+  to the resolver.
 - Validation on create: `endsAt > startsAt`, `endsAt > now()` (a promotion
   that is already over is a `400`); `startsAt` in the past is allowed and
   means "now".
@@ -196,8 +293,8 @@ create table ingestion_chunks (
 Resolution query (used by the event handler and reconciler, batched by id):
 
 ```sql
-select p.*, pp.id as pp_id, pp.name as pp_name, pp.discount_type as pp_type, pp.value as pp_value,
-             cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_type, cp.value as cp_value
+select p.*, pp.id as pp_id, pp.name as pp_name, pp.calculator as pp_calculator, pp.params as pp_params,
+             cp.id as cp_id, cp.name as cp_name, cp.calculator as cp_calculator, cp.params as cp_params
 from products p
 left join promotions pp on pp.product_id = p.id and pp.status = 'active'
                        and tstzrange(pp.starts_at, pp.ends_at) @> now()
