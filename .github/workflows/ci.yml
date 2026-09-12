@@ -14,8 +14,7 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     services:
-      # The queue integration tests run against a real Redis, never a mock
-      # (REVIEW.md 7.3). Locally: docker run -d --rm -p 6399:6379 redis:7-alpine
+      # The queue integration tests need a real Redis on 6399, as they do locally.
       redis:
         image: redis:7-alpine
         ports:

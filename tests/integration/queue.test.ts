@@ -13,8 +13,7 @@ import {
   type Queues,
 } from '../../src/shared/queue.js';
 
-// Real Redis, never a mock (REVIEW.md 7.3). Start it with:
-//   docker run -d --rm -p 6399:6379 redis:7-alpine
+// These tests need a real Redis: docker run -d --rm -p 6399:6379 redis:7-alpine
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
 
 const READ_MODEL_DB = 0;
@@ -118,7 +117,6 @@ describe('queue contracts', () => {
 
     expect(await queues.events.getDelayedCount()).toBe(expected === 'delayed' ? 1 : 0);
     expect(await queues.events.getWaitingCount()).toBe(expected === 'waiting' ? 1 : 0);
-    // The queue defaults survive the per-job options a boundary passes.
     expect(job.opts.attempts).toBe(3);
     expect(job.opts.backoff).toEqual({ type: 'exponential', delay: 1000 });
   });
