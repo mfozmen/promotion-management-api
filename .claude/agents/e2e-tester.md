@@ -22,32 +22,59 @@ routes under `src/`.
 
 1. `npm ci` only if `node_modules` is missing.
 2. Start dependencies if a `docker-compose.yml` exists: `docker compose up -d --wait`.
-3. Pick a port and prove it is free before using it
-   (`Get-NetTCPConnection -LocalPort <port> -State Listen` on Windows,
-   `ss -ltn` elsewhere). If something already listens, pick another port and
-   check again; after ten occupied ports, FAIL rather than keep hunting. If the
-   check itself cannot run, FAIL: an unverified port is how the last stale
-   server went unnoticed. Then start the API in the background:
-   `PORT=<port> npm run dev > e2e-server.log 2>&1 &`.
-4. **Prove you are talking to the server you started.** Find the process that
-   actually listens on the port and check it is a descendant of the one you
-   launched, or that its command line points at this worktree. A stale server
-   from an earlier run answers `/health` exactly like yours and will make every
-   assertion below meaningless. If the listener is not yours, kill it, then
-   restart on a verified-free port.
-5. Wait until `curl -sf localhost:<port>/health` returns 200 (max 30 s). If it
+3. **Build, then run the built server.** Never `npm run dev`: that is `tsx watch`,
+   which spawns a child for the server and respawns it, so killing the PID you
+   launched leaves the child holding the port. Eighteen orphans on one machine
+   came from exactly that. Use the production path instead:
+
+   ```
+   npm run build && PORT=<port> npm start > e2e-server.log 2>&1 &
+   ```
+
+   `npm start` is `node dist/server.js`: one process, one PID, `kill` ends it,
+   and the numbers come from the build the case study ships. If a run must
+   exercise TypeScript directly, `tsx src/server.ts` without `watch` has the
+   same single-process shape.
+
+4. **Prove the port is free before binding it**, with a command that runs in
+   your own shell, which is Bash:
+
+   ```
+   netstat -ano | grep -E ":<port> .*LISTENING"   # Windows; empty means free, last column is the PID
+   ss -ltnp "sport = :<port>"                     # Linux and macOS
+   ```
+
+   If something listens, pick another port and check again; give up after ten
+   and FAIL. If the check itself cannot run, FAIL: an unverified port is how a
+   stale server went unnoticed once.
+
+5. **If a listener appears on your port anyway, move; never kill it.** This
+   machine runs many worktrees in parallel and the process you did not start
+   may be another run mid-measurement or a server the owner is using. You
+   cannot tell an orphan from a live server, and "not mine" is true of both.
+   Pick another port and re-verify. Reaping orphans is a human decision, not
+   yours; report what you saw and let a person decide.
+6. **Prove you are talking to the server you started.** Take the PID from the
+   listener check and confirm it is the process you launched or its child:
+
+   ```
+   powershell -NoProfile -c "Get-CimInstance Win32_Process -Filter 'ProcessId=<pid>' | Select-Object ParentProcessId, CommandLine"
+   ```
+
+   A stale server answers `/health` exactly like yours and makes every number
+   after it false evidence.
+
+7. Wait until `curl -sf localhost:<port>/health` returns 200 (max 30 s). If it
    never does, print the last 40 lines of `e2e-server.log` and FAIL.
 
-Always tear down at the end, and verify it: kill the process tree, then confirm
-nothing listens on the port any more. A leaked `tsx watch` survives the agent
-that started it, holds the port, and silently serves the next run's probes.
-Leave docker services up unless you started them. Delete `e2e-server.log` after
+Always tear down at the end, and verify it: kill the process, then confirm
+nothing listens on the port any more with the same command from step 4. Leave
+docker services up unless you started them. Delete `e2e-server.log` after
 quoting what matters.
 
-Windows notes: `jq` may be missing, use a `node -e` one-liner for JSON
-assertions. `kill` on the npm PID does not stop the tsx/node child; find the
-listener PID with `Get-NetTCPConnection -LocalPort <port>` and run
-`taskkill //PID <pid> //F //T`.
+Windows notes: `jq` may be missing, so use a `node -e` one-liner for JSON
+assertions. If a process refuses to die, `taskkill //PID <pid> //F //T` kills
+the tree.
 
 ## What to test, in this order
 
@@ -78,9 +105,46 @@ listener PID with `Get-NetTCPConnection -LocalPort <port>` and run
    fixture file the caller names, kill it midway with SIGTERM, run it again,
    and verify the final row count and no duplicates. Report peak RSS.
 
+7. **Deadlocks** (REVIEW.md 3.7). Provoke two concurrent writers that touch
+   the same rows in opposite orders: a category recompute against a
+   product-level assign on a product in that category, and two ingestion
+   chunks upserting overlapping SKU sets. Observe that no request exceeds its
+   timeout and that the PostgreSQL log carries no `40P01 deadlock_detected`.
+   The compose file needs `command: postgres -c log_min_messages=warning` for
+   the log to carry it at all; `-c log_lock_waits=on -c deadlock_timeout=200ms`
+   also reports the waits that precede one.
+8. **N+1 queries** (REVIEW.md 6.4). Call the product list at `pageSize=10` and
+   again at `pageSize=100`, plus the promotion list and the storefront read
+   that resolves the applied promotion. Count statements per request from
+   `log_statement=all` (or `log_min_duration_statement=0`). The count must not
+   scale with the page size: a list of 100 that issues 101 statements is a
+   FAIL whatever its p99 says.
+9. **Cache stampede** on both caches the design has, the Redis read model
+   (ADR-0006) and the 60 s pricing rule set (ADR-0005). Expire the hot key or
+   sit on the TTL boundary, then run `autocannon -c 100` against it. Observe
+   one rebuild rather than a hundred: PostgreSQL statement count during the
+   window near one, and one `select` from `pricing_rules` per worker per
+   window. The in-flight promise cache is the intended mechanism and this is
+   the test that proves it holds under concurrency.
+10. **Memory leaks**, as a pass condition rather than an observation. Run
+    60 seconds of load on the storefront read, then 60 seconds idle, three
+    times. Heap used must return within 10 % of the pre-load baseline each
+    cycle; a monotonic climb across the three is a FAIL. Do the same for a
+    worker after N ingestion chunks. Name the usual suspects when it fails:
+    BullMQ workers and event listeners not closed on teardown, a rule-set
+    loader promise never released, an unbounded `Map` used as a cache.
+
+Split-brain is deliberately not here. This stack has one PostgreSQL, one
+Redis, no replicas and no leader election, so there is no partition in which
+two nodes both accept writes. Its nearest relative is divergence between the
+write model and the read model, which the reconciler and the drift metric
+already cover under the read-path checks.
+
 ## Pass criteria (fail the run if any is violated)
 
 - Zero non-2xx responses under read load, zero timeouts.
+- No deadlock in the PostgreSQL log, no statement count that scales with page
+  size, one rebuild per cache expiry, and heap returning to its baseline.
 - p99 latency for `GET /products/:id` under 100 ms locally.
 - Peak RSS under 256 MB for the API, under 128 MB for an ingestion run.
 - Every invariant in section 2 holds after every race scenario in section 3.
