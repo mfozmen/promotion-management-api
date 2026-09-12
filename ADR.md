@@ -102,6 +102,16 @@ Promotions target either one product or a whole category, have a validity window
 
 ### Decision
 
+> **Superseded in part, pending #35.** The owner reversed the calculator/registry design on #29
+> (2026-09-12): promotion and pricing are separate modules, and a promotion keeps the case's own
+> vocabulary as typed columns. `promotions` therefore carries `discount_type` (`percentage` |
+> `fixed`) and `value`, bounded by `check (value > 0)` and `check (discount_type <> 'percentage'
+or value <= 10000)`, as migration `0000` creates it and as
+> `src/modules/promotion/promotion.ts` reads it. Everything below about `calculator`, `params`,
+> the `DiscountCalculator` registry and the factory describes a design that no longer exists in
+> the repository; the conflict rule this ADR is really about — the database as sole arbiter, via
+> the two GiST exclusion constraints — is unaffected. #35 owns this text and rewrites it.
+
 Promotions are rows, not rules: `calculator` naming a registry key, `params` holding that calculator's configuration, `starts_at`, `ends_at`, exactly one of `product_id` or `category` once active, and a `status` of `draft`, `active` or `cancelled` (a draft has no target; a cancelled row keeps the shape it had). There is no `discount_type` enum, so a new kind of discount needs no migration. Two PostgreSQL exclusion constraints (`btree_gist`, `tstzrange(starts_at, ends_at) &&`) guarantee at most one active product-level promotion per product and at most one active category-level promotion per category at any instant. Overlap at the same level fails with `409` and reports the conflicting promotion; there is no silent override.
 
 Which candidate applies is decided by `json-rules-engine` rules stored in `pricing_rules` (`type = 'promotion'`) and cached for 60 seconds, not by hard-coded precedence (owner decision, 2026-09-12). The resolver computes each candidate's discount first, then hands the engine a single fact object holding both candidates, so a rule can compare them; the highest-priority rule that fires names the winning level, ties breaking on the lower promotion id; the seeded default rule gives the customer the lower of the two prices, so changing that policy to product-level precedence, or to anything else, is a row edit rather than a deploy. The calculation travels with the rule. `json-rules-engine` treats a rule's `event.params` as free-form, so a matching rule names the calculator to run and carries its configuration: `{ type: 'applyDiscount', params: { calculator: 'PercentageDiscount', valueBasisPoints: 5000 } }`. A factory resolves that name against a registry of classes implementing one `DiscountCalculator` interface, with an abstract base that validates the parameters against the calculator's own schema and enforces `bigint` arithmetic, flooring and clamping into `[0, baseCents]`, so a new calculator cannot reintroduce a rounding bug that was already fixed. Adding a tiered or buy-one-get-one discount is a new class, one registry line and rule rows naming it; no existing function changes. An unknown calculator name is logged and applies no discount on the storefront path, and is a `rules` fault that stops the job on the ingestion path, never a crash and never a silently wrong price. Both layers share the registry, so the arithmetic has one implementation.

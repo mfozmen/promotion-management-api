@@ -1,17 +1,23 @@
+import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { adminUrl, urlFor } from './env.js';
 import { sweepStaleClones } from './global-setup.js';
 
 const HOUR_MS = 3_600_000;
-// Fixtures of our own: a real `pma_test_` clone would be fair game for a sibling worktree's
-// sweep between creating it and holding it open, which is a flake rather than a finding.
-const PATTERN = '^pma_sweepfixture_([0-9]+)_';
+// Fixtures of our own, under a prefix unique to this run: a real `pma_test_` clone would be
+// fair game for a sibling worktree's sweep between creating it and holding it open, and a
+// fixed fixture prefix would only move that collision rather than remove it.
+// Eight hex digits, not a whole uuid: PostgreSQL truncates a database name at 63 bytes, and
+// the name still has to carry the fixture's timestamp and label after this prefix.
+const RUN = randomUUID().replaceAll('-', '').slice(0, 8);
+const PREFIX = `pma_sweepfix_${RUN}_`;
+const PATTERN = `^${PREFIX}([0-9]+)_`;
 const admin = new Client({ connectionString: adminUrl });
 const created: string[] = [];
 
 async function clone(ageMs: number, label: string): Promise<string> {
-  const name = `pma_sweepfixture_${Date.now() - ageMs}_${label}`;
+  const name = `${PREFIX}${Date.now() - ageMs}_${label}`;
   await admin.query(`create database "${name}"`);
   created.push(name);
   return name;
@@ -65,11 +71,12 @@ describe('stale clone sweep', () => {
   });
 
   it('never considers a database that is not a clone of this harness', async () => {
-    await admin.query('create database "pma_sweepfixture_template_not_a_clone"');
-    created.push('pma_sweepfixture_template_not_a_clone');
+    const notAClone = `${PREFIX}template_not_a_clone`;
+    await admin.query(`create database "${notAClone}"`);
+    created.push(notAClone);
 
     await sweepStaleClones(admin, { pattern: PATTERN });
 
-    expect(await exists('pma_sweepfixture_template_not_a_clone')).toBe(true);
+    expect(await exists(notAClone)).toBe(true);
   });
 });

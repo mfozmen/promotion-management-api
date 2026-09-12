@@ -142,6 +142,14 @@ create table ingestion_chunks (
 
 ## 4. Promotion resolution and effective price
 
+> **Superseded in part, pending #35.** The owner reversed the calculator/registry design on #29
+> (2026-09-12). Section 3 above is current: a promotion carries `discount_type` and `value`. This
+> section's `DiscountCalculator` interface, `CalculatorFactory`, registry and every reference to
+> `promotions.calculator` / `promotions.params` — including the resolver query below — describe
+> code that does not exist and will not be written; read them as `discount_type` and `value`
+> until #35 rewrites the section. The precedence decision (which candidate wins, decided by a
+> `pricing_rules` row) is unaffected.
+
 - **Active** = `status = 'active' and starts_at <= now() < ends_at`.
 - **Applied promotion** for a product is decided by `json-rules-engine`, not by
   hard-coded precedence (owner decision, 2026-09-12). The resolver collects
