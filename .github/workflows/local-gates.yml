@@ -73,7 +73,9 @@ jobs:
           # Two groups, named once and used below, so the prose in CLAUDE.md and CONTRIBUTING.md
           # has something to match and the two conditions cannot drift apart.
           #
-          # behaviour: changes how the running application or its build behaves.
+          # behaviour: changes how the running application or its build behaves. The suffix
+          # alternatives earn their keep beyond linters: drizzle.config.ts is how the schema is
+          # generated, so do not tidy them down to a fixed list of file names.
           behaviour='^(src/|tests/|scripts/|\.claude/agents/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|Dockerfile|docker-compose.*\.ya?ml$)'
           # judgement: changes how the work itself is judged. An agent definition is in both
           # groups: the agent must be exercised, and every branch in flight is judged by it.
