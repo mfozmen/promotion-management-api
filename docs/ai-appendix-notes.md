@@ -102,7 +102,8 @@ rewritten.
     written before its table invented a `DEFAULT_PRICING_RULES` constant to
     stand in for rows, which then had to be removed, re-tested and
     re-documented once the table existed.
-  - 8b (comments, commits `8fe3efe`, `a2aeef3`): the old comment rule (12.3)
+  - 8b (comments, commits `8fe3efe`, `a2aeef3`): the old comment rule
+    ("Comments earn their line", numbered 12.3 on `main` and retired here)
     never fired — it triggered only when comments outweighed code, sat in a
     suggestion-severity section, and the review prompt never asked anyone to
     measure — while four files in flight sat between 34% and 67% comment
