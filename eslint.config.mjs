@@ -8,9 +8,9 @@ export default tseslint.config(
   },
   js.configs.recommended,
   {
-    // Plain .mjs under scripts/ runs on Node in CI, outside the TypeScript
-    // project, so the Node globals it uses have to be declared here.
-    files: ['scripts/**/*.mjs'],
+    // Plain .mjs runs on Node outside the TypeScript project (the gate script
+    // in CI, its test under vitest), so its Node globals are declared here.
+    files: ['scripts/**/*.mjs', 'tests/**/*.mjs'],
     languageOptions: {
       globals: {
         AbortSignal: 'readonly',
@@ -19,6 +19,7 @@ export default tseslint.config(
         fetch: 'readonly',
         process: 'readonly',
         setTimeout: 'readonly',
+        URLSearchParams: 'readonly',
       },
     },
   },
