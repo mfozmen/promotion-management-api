@@ -146,11 +146,11 @@ create table ingestion_chunks (
 
 ## 4. Promotion resolution and effective price
 
-- **Active** is the `active_promotions` view (`status = 'active' and
-`tstzrange(starts_at, ends_at) @> now()`), decided by
-the **database clock**. The application never forms its own opinion: a
-resolver that needs the predicate in TypeScript takes the instant the query
-returned and passes it in, so one `now` decides a boundary a millisecond wide
+- **Active** is the `active_promotions` view
+  (`status = 'active' and tstzrange(starts_at, ends_at) @> now()`), decided by
+  the **database clock**. The application never forms its own opinion: a
+  resolver that needs the predicate in TypeScript takes the instant the query
+  returned and passes it in, so one `now` decides a boundary a millisecond wide
   (REVIEW.md 1.7). Two clocks for one predicate is how a read model publishes a
   discount for a promotion SQL considers expired.
 - **Applied promotion** for a product is decided by `json-rules-engine`, not by
