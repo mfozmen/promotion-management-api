@@ -95,7 +95,7 @@ Every PR receives an advisory Claude AI review. When all required checks pass, n
 
 Definition of done for a PR hand-off:
 
-1. `ci`, `pr-title`, `claude-review`, `SonarCloud Code Analysis` and `local-gates` are green on the final commit.
+1. `ci`, `pr-title`, `claude-review` and `local-gates` are green on the final commit.
 2. Every review thread is answered and resolved.
 3. `e2e-verified`, `impact-verified`, `docs-verified` are present, plus `architecture-verified` for design or scenario PRs.
 4. `needs-human-check` is added and the owner is mentioned.
