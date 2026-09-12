@@ -29,6 +29,7 @@ No implementation code is written before its failing test exists.
 - [ ] Tests written first and passing (`npm test`)
 - [ ] Coverage is 100 % (`npm run test:cov`; the pre-commit hook enforces the threshold, so a commit below 100 % is rejected)
 - [ ] Lint passes (`npm run lint`)
+- [ ] No unresolved SonarCloud issue (an ignore needs the owner's approval and a reasoned entry in `sonar-project.properties`)
 - [ ] Commits follow Conventional Commits
 - [ ] Branch named `type/short-description`
 - [ ] ADR added/updated if the change affects architecture
@@ -38,11 +39,13 @@ No implementation code is written before its failing test exists.
 
 All of these are required on `main`:
 
-- `ci` — lint, typecheck, tests with 100 % coverage thresholds, SonarCloud scan
+- `ci` — lint, typecheck, tests with 100 % coverage thresholds, SonarCloud scan, and a step that fails the build on any unresolved SonarCloud issue on the pull request
 - `pr-title` — Conventional Commit PR title
 - `claude-review` — advisory AI review
 - `SonarCloud Code Analysis` — quality gate
 - `local-gates` — passes only when the PR carries the labels of every applicable local agent: `e2e-verified`, `impact-verified` and `docs-verified` always, plus `architecture-verified` when the PR touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules (`src/modules/vendor/`, `src/modules/promotion/`, `src/modules/pricing/`) or `src/workers/`, or carries the `scenario` label. Every new push strips all four, so the agents must be re-run and the labels re-applied
+
+A SonarCloud finding blocks the merge. The `ci` job fails while any issue raised on the pull request is unresolved, whatever its severity, so the fix is to fix it. Silencing one is the exception: it needs the repository owner's explicit approval and an entry in `sonar.issue.ignore.multicriteria` in `sonar-project.properties` whose comment names the rule, the scope and why the rule does not apply there. Never widen an existing scope to cover a new finding; add an approved entry instead.
 
 `local-gates` lists the pull request files and edits labels with the workflow's `GITHUB_TOKEN`; both are served by the `pull-requests` and `issues` scopes, and the job performs no checkout, so it grants no `contents` scope. A `403` on that step means the pull request comes from a fork, where the token is read-only regardless of the `permissions` block. Fork pull requests cannot pass this gate (nor the Claude review); open the branch in this repository instead.
 

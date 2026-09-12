@@ -574,6 +574,16 @@ endpoint, job, cache or store.
 
 13.5 An architectural change without a matching `ADR.md` update is a finding.
 
+13.6 A SonarCloud finding is fixed, not ignored. An entry in
+`sonar.issue.ignore.multicriteria` needs the repository owner's approval and a
+comment naming the rule, the scope and why the rule cannot apply there.
+Widening an existing scope so that a new finding falls inside it is a finding.
+
+Evidence: the one approved ignore is `plsql:S1192` on
+`src/shared/db/migrations/*.sql`. The repeated literals there are a schema
+qualifier and an enum value in DDL that drizzle-kit generates: SQL has no
+constant to declare, and the file is not hand-edited (PR #56, `6a0a9c1`).
+
 ---
 
 ## 14. Reviewer's quick pass
