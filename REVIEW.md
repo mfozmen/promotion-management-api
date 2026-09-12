@@ -25,6 +25,14 @@ after the crash, the empty list, the 500 001st row, the promotion that expired
 one millisecond ago. A finding that names a concrete trigger and its effect is
 worth ten findings that say "consider".
 
+**Be brief.** A finding is at most three sentences: what breaks, what triggers
+it, what to do. Cite the rule number and the file and line instead of restating
+the rule. No preamble, no summary of the diff, no praise for what is correct, no
+repetition of a finding already on a resolved thread. The top-level summary is
+one short paragraph plus the grouped findings; if a review reads like an essay
+it is costing more attention than it returns. The same applies to replies on a
+thread: say what changed and in which commit, and stop.
+
 ---
 
 ## 1. Money and time are exact
