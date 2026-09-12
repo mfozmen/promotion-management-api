@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { eventSchemas, parseEvent, queueOfEvent, type EventName } from '../../src/shared/events.js';
+import {
+  eventSchemas,
+  parseEvent,
+  queueOfEvent,
+  type EventName,
+} from '../../../src/shared/events.js';
 
 describe('event catalogue', () => {
   it('routes ingestion.chunk to the ingestion queue and every other event to events', () => {

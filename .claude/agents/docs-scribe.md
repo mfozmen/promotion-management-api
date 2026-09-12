@@ -47,6 +47,16 @@ caught and how it was corrected. If not given, reconstruct from
      share, and blind spots noticed.
      Append, date-stamp, and never rewrite history in that file.
 
+   **Do not edit that file from a feature branch.** It is written in one
+   long-lived pull request which merges last, and every other branch leaves it
+   untouched. Six pull requests in a row conflicted on it in one day, always the
+   same way: two sides appending separate dated entries that never disagreed,
+   costing a round each time and twice losing an entry. So write the entry you
+   would have added into your report instead, in the form it should take, and
+   the coordinator puts it in the appendix branch. This applies to that one file
+   only; every other document is still edited in the pull request that changes
+   it.
+
 ## Rules
 
 - English only. Concise, specific, no marketing language.

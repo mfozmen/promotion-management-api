@@ -12,7 +12,7 @@ import {
   removePromotionBoundaries,
   schedulePromotionBoundary,
   type Queues,
-} from '../../src/shared/queue.js';
+} from '../../../src/shared/queue.js';
 
 // These tests need a real Redis: docker run -d --rm -p 6399:6379 redis:7-alpine
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
