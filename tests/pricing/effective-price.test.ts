@@ -26,12 +26,10 @@ describe('applyPromotion', () => {
   });
 
   it('floors the discount so the customer pays at most one cent more', () => {
-    // 33.33 % of 1000 is 333.3; the discount floors to 333.
     expect(applyPromotion(1000, promotion({ value: 3333 }))).toBe(667);
   });
 
   it('floors a discount of exactly half a cent', () => {
-    // 50 % of 999 is 499.5; the discount floors to 499.
     expect(applyPromotion(999, promotion({ value: 5000 }))).toBe(500);
   });
 
@@ -57,24 +55,19 @@ describe('applyPromotion', () => {
   });
 
   it('floors exactly at the largest price the money representation allows', () => {
-    // Number.MAX_SAFE_INTEGER cents is the ceiling of the bigint `mode: 'number'`
-    // columns: the largest price the representation allows. This particular
-    // value happens to floor correctly in doubles too; the case below is the
-    // one that discriminates.
+    // The ceiling of the `mode: 'number'` price columns. This one floors
+    // correctly in doubles too; the case below is the discriminating one.
     expect(applyPromotion(Number.MAX_SAFE_INTEGER, promotion({ value: 5000 }))).toBe(
       4_503_599_627_370_496,
     );
   });
 
   it('floors a large price where double arithmetic rounds the discount up', () => {
-    // In doubles floor(4171863899102 * 7049 / 10000) is 2940746862477; the
-    // exact floor is 2940746862476, one cent of the customer's money.
+    // In doubles this discount floors to 2940746862477, one cent too much.
     expect(applyPromotion(4_171_863_899_102, promotion({ value: 7049 }))).toBe(1_231_117_036_626);
   });
 
   it('never returns more than the base price', () => {
-    // The `value > 0` check constraint is the real gate, but this function is
-    // the last one before a price reaches the storefront (REVIEW.md 1.5).
     expect(applyPromotion(10_000, promotion({ value: -2500 }))).toBe(10_000);
     expect(applyPromotion(10_000, promotion({ discountType: 'fixed', value: -500 }))).toBe(10_000);
   });

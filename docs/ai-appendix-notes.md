@@ -94,6 +94,20 @@ rewritten.
 - Strategy: Claude Opus 5 (1M context) via Claude Code, test-first. The prompt gave the already-recorded decisions (ADR-0004 and `docs/superpowers/specs/2026-09-12-domain-design.md` section 4) and REVIEW.md rules 1.1 to 1.7 as the contract, and scoped the work to a pure module: no endpoint, job, cache or store. `tests/pricing/effective-price.test.ts` was written and run red first, then `src/modules/pricing/effective-price.ts` (`applyPromotion`, `isActive`, `resolveApplied`) was written to make it green.
 - Human refinement: kept the module pure and free of `new Date()` so the clock is injected by the caller, and held the scope to the formula plus window and precedence resolution instead of pulling the read path forward. No new architectural decision was introduced, so ADR.md and the spec were deliberately left untouched.
 
+### 2026-09-12 — Comment trim after a mid-branch rule change (commit `1baf4e6`)
+
+- Strategy: `origin/main` was merged into the branch and brought REVIEW.md 12.3
+  ("comments earn their line"), a rule added after this branch opened. The
+  AI-written module carried 50 comment lines in 95; the owner directed a trim
+  rather than an exception for work already in flight.
+- Human refinement: 58 lines with 13 of comment, keeping only what the code
+  cannot say (units of `value`, the half-open window, why `id` and `name` are
+  absent, `applyPromotion`'s unchecked-window contract, why the percentage step
+  is `bigint`, what the clamp is for); arithmetic narration was dropped from the
+  tests too.
+- Verification: no behaviour change — the same 25 tests pass at 100 % statement,
+  branch, function and line coverage.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
