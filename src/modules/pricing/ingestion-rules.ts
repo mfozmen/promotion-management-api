@@ -7,9 +7,9 @@
  * 60 s caching policy the design asks for is `createRuleSetLoader`, which takes
  * the loader and the clock from its caller.
  *
- * Money is integer minor units and percentages are basis points throughout
- * (REVIEW.md §1.1). Every step is computed in `BigInt` and floored, so no
- * intermediate product loses a cent.
+ * Money is integer minor units and percentages are basis points throughout.
+ * Every step is computed in `BigInt` and floored, so no intermediate product
+ * loses a cent.
  */
 import { Engine, type RuleProperties, type TopLevelCondition } from 'json-rules-engine';
 import { z } from 'zod';
@@ -42,18 +42,16 @@ export type PricingOutcome =
   | { ok: true; basePriceCents: number; pricingRulesVersion: number }
   /**
    * `fault: 'row'` is this row's problem — count it, log it and carry on with
-   * the batch (REVIEW.md §4.6); `rejectedBy` then names the rule that produced
-   * an impossible price, or is `null` when the vendor price itself was
-   * unusable. `fault: 'rules'` is the rule set's problem and every following
-   * row will fail the same way, so the caller stops the job instead of
-   * rejecting 500 000 rows one at a time.
+   * the batch; `rejectedBy` then names the rule that produced an impossible
+   * price, or is `null` when the vendor price itself was unusable.
+   * `fault: 'rules'` is the rule set's problem and every following row will
+   * fail the same way, so the caller stops the job instead of rejecting
+   * 500 000 rows one at a time.
    */
   | { ok: false; fault: 'row' | 'rules'; rejectedBy: string | null; reason: string };
 
-/**
- * The seed rule set (shared with the migration seed): a category markup, a
- * bulk-stock discount and the vendor commission. Data, not code.
- */
+/** Data, not code: the migration seed consumes this same constant, so the
+ *  seeded rules cannot drift from the ones the wrapper was tested against. */
 export const DEFAULT_PRICING_RULES: readonly Omit<PricingRuleRow, 'id' | 'updatedAt'>[] = [
   {
     name: 'electronics-markup',
@@ -82,10 +80,10 @@ const BPS = 10_000n;
 const MAX_CENTS = BigInt(Number.MAX_SAFE_INTEGER);
 
 /** Exported so a future rules-write endpoint validates against this schema
- *  rather than growing a second copy of it (REVIEW.md §1.3). A percentage
- *  adjustment stops at -10 000 basis points, which already makes the price
- *  zero: anything beyond that can only ever produce a negative price, so it is
- *  rejected at the boundary rather than row by row (REVIEW.md §1.5). */
+ *  rather than growing a second copy of it. A percentage adjustment stops at
+ *  -10 000 basis points, which already makes the price zero: anything beyond
+ *  that can only ever produce a negative price, so it is rejected here rather
+ *  than row by row. */
 export const adjustmentEvent = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('adjustPercentBps'),
@@ -108,9 +106,8 @@ const PROBE_ROW: VendorRowFacts = { category: 'probe', vendorPriceCents: 0, stoc
  * compile-time probe. The engine evaluates one condition priority set at a time
  * and stops at the first that decides the rule, so a typo'd operator sitting
  * behind a condition the probe row does not match would never be reached. With
- * the priorities gone every leaf is evaluated and every fault surfaces.
- * It strips the key at any depth, which is safe because the copy is used only
- * for the probe; the engine itself runs the untouched conditions.
+ * the priorities gone every leaf is evaluated and every fault surfaces. Only
+ * the probe sees this copy; the engine runs the untouched conditions.
  */
 const withoutPriorities = (node: unknown): unknown => {
   if (Array.isArray(node)) return node.map(withoutPriorities);
@@ -122,10 +119,8 @@ const withoutPriorities = (node: unknown): unknown => {
   );
 };
 
-/**
- * Compiles `pricing_rules` rows into an engine. Inactive rows are ignored; a
- * malformed row is a descriptive error, never a silently skipped rule.
- */
+/** Inactive rows are ignored; a malformed row is a descriptive error, never a
+ *  silently skipped rule. */
 export async function compileRules(rows: readonly PricingRuleRow[]): Promise<CompiledRuleSet> {
   // Sorted so the evaluation order is total: `pricing_rules.priority` defaults
   // to 0, and two rules sharing a priority would otherwise be evaluated in
@@ -175,18 +170,15 @@ const applied = (cents: bigint, event: AdjustmentEvent): bigint =>
       // guard below before it is ever used as an operand again.
       (cents * (BPS + BigInt(event.params.value))) / BPS;
 
-/**
- * Prices one vendor row. A rule that drives the price out of range rejects the
- * row and names the rule; rejection is a returned result and never a thrown
- * exception, so a single bad row cannot abort a batch (REVIEW.md §4.6).
- */
+/** A bad row is a returned rejection, never a thrown exception, so one row
+ *  cannot abort the batch around it. */
 export async function priceRow(
   rules: CompiledRuleSet,
   row: VendorRowFacts,
 ): Promise<PricingOutcome> {
   // The row schema in the chunk processor validates this too, but a wrapper
   // that promises never to throw cannot take that on trust: BigInt() throws a
-  // RangeError on a fractional, NaN or infinite value (REVIEW.md §4.6).
+  // RangeError on a fractional, NaN or infinite value.
   if (!Number.isSafeInteger(row.vendorPriceCents) || row.vendorPriceCents < 0) {
     return {
       ok: false,
@@ -234,11 +226,9 @@ export async function priceRow(
   };
 }
 
-/**
- * Caches the compiled rule set for `ttlMs` (design §7 step 3: 60 s). The clock
- * is injected so the policy is testable without sleeping, and the in-flight
- * promise is cached so a batch starting cold issues one query, not one per row.
- */
+/** The clock is injected so the 60 s policy (design §7 step 3) is testable
+ *  without sleeping, and the in-flight promise is cached so a batch starting
+ *  cold issues one query, not one per row. */
 export function createRuleSetLoader(options: {
   load: () => Promise<readonly PricingRuleRow[]>;
   now: () => number;

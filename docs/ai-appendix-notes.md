@@ -619,6 +619,12 @@ rewritten.
 - Verification: `grep zod package.json` and `git log -S zod -- package.json` on `origin/main`: the dependency arrived with #27 and is imported on #30. The premise of the deferral had been false since before the branch's third review round.
 - Resolution: the validator and its 296-line test file are replaced by the owner's schema; every check that merely re-typed a value went, the three that catch a quiet late failure stayed. The lesson recorded for the appendix: a documented reason to defer must be re-verified on every merge from main, because the AI carries the sentence forward verbatim and the tree does not.
 
+### 2026-09-12 — Review rule 12.3 landed mid-PR; comments brought into line (commit `be07b03`, issue #9)
+
+- Challenge: `src/modules/pricing/ingestion-rules.ts` was written before REVIEW.md 12.3 ("comments earn their line") existed on `main`. Measured against the new rule the module carried six comments quoting a REVIEW.md section back at the reader and three doc blocks narrating what `compileRules`, `priceRow` and `createRuleSetLoader` already say in their names — prose the rule calls a finding, and a standing invitation for the citation to rot when the rules are renumbered (as 12.3/12.4 just were).
+- Verification: the trim was comments only, proven rather than asserted — both revisions of the file transpile to byte-identical JavaScript with `removeComments`, and `lint`, `typecheck` and `test:cov` (100 % on all four metrics) plus a black-box `tsx` check of the design example (89 240) and `DEFAULT_PRICING_RULES` (93 702) were re-run unchanged.
+- Resolution: citations dropped and the three narrating blocks cut down to what the code cannot say — the units and the flooring direction, the ordering invariant, the probe's reason, the row/rules fault split, and the loader's injected clock and cached in-flight promise. No rule was weakened: what the citations pointed at is recorded in ADR-0005, which is where a decision belongs under 12.3.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
