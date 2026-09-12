@@ -31,6 +31,14 @@ rewritten.
   instead of restating them.
 - Human refinement: the first draft of rule 3 was corrected after the
   `impact-analyzer` run (see the entry below, commit `2f271fa`).
+- Follow-up (commit `44a06a5`): the owner asked for staff-level depth —
+  explicit coverage of race conditions, loop performance at 500 000-row
+  scale, and the edge-case tests a senior reviewer would demand — so the
+  10-rule draft was expanded into a 14-section rulebook (money and time,
+  database invariants, concurrency and ordering, serverless ingestion, the
+  read path, loop and query performance, tests and edge cases, API
+  boundaries, failure handling, observability, migrations, scope hygiene,
+  repository hygiene, and a six-question reviewer quick pass).
 
 ## Judgement, challenges and verification
 
