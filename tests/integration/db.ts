@@ -7,8 +7,11 @@ import { adminUrl, templateDatabase, urlFor } from './env.js';
 async function onAdmin(statement: string): Promise<void> {
   const admin = new Client({ connectionString: adminUrl });
   await admin.connect();
-  await admin.query(statement);
-  await admin.end();
+  try {
+    await admin.query(statement);
+  } finally {
+    await admin.end();
+  }
 }
 
 // Cloning the migrated template per file is what keeps files isolated under parallel runs.

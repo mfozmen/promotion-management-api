@@ -45,7 +45,7 @@ create table products (
   ingest_source_offset   bigint,                 -- byte offset of that row inside its file
   created_at             timestamptz not null default now(),
   updated_at             timestamptz not null default now(),
-  -- both written by the same upsert, so the last-writer guard can order them as a row value
+  -- both written by the same upsert; the guard still needs its `is null` branch for manual rows
   check ((ingest_job_id is null) = (ingest_source_offset is null))
 );
 create index products_category_id_idx on products (category, id);   -- keyset scans per category
@@ -149,7 +149,7 @@ create table ingestion_chunks (
   lower promotion id so the result is deterministic. The rules are data, so
   the precedence policy changes without a deploy.
 - Facts given to the engine, per candidate: `level` (`product` or `category`),
-  `discountType`, `value`, `basePriceCents`, `stockQuantity`, `category`,
+  `calculator`, `params`, `basePriceCents`, `stockQuantity`, `category`,
   `startsAt`, `endsAt`.
 - **The calculation comes from the rule, not from the code.** A matching
   rule's event carries the name of the calculator to run and everything that
@@ -544,7 +544,7 @@ served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 | GET    | `/api/products`                                | Redis    | `category?`, `sort=effectivePrice`, `order=asc\|desc`, `page`, `pageSize` (≤ 100); `{ items, page, pageSize, total }` |
 | GET    | `/api/products/:id`                            | Redis    | hottest endpoint; `404` if the hash is missing                                                                        |
 | POST   | `/api/products`                                | PG+event | `sku, name, category, basePriceCents, stockQuantity`; `409` on duplicate SKU                                          |
-| POST   | `/api/promotions`                              | PG+event | `name, discountType, value, startsAt, endsAt, productId? \| category?`; no target = `draft`; `409` on overlap         |
+| POST   | `/api/promotions`                              | PG+event | `name, calculator, params, startsAt, endsAt, productId? \| category?`; no target = `draft`; `409` on overlap          |
 | POST   | `/api/promotions/:id/assign`                   | PG+event | `productId \| category`; draft → active; `409` on overlap, non-draft, or an `endsAt` already passed                   |
 | POST   | `/api/promotions/:id/cancel`                   | PG+event | idempotent                                                                                                            |
 | GET    | `/api/promotions`, `/api/promotions/:id`       | PG       | `status?`, `category?`, `productId?`                                                                                  |

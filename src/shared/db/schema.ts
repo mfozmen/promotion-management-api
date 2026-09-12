@@ -39,8 +39,9 @@ export const products = pgTable(
     stockQuantity: integer('stock_quantity').notNull(),
     // Null for manual creates; ingestion stamps the rules version it priced the row with.
     pricingRulesVersion: integer('pricing_rules_version'),
-    // Written together by the ingestion upsert. The check below is what lets the last-writer
-    // guard compare them as a row value without a null branch (REVIEW.md 2.6).
+    // Written together by the ingestion upsert. The check below removes the one-column-null
+    // branch, not every branch: a manually created product has both null, so the last-writer
+    // guard still needs `products.ingest_job_id is null or (...) > (...)` (REVIEW.md 2.6).
     ingestJobId: bigint('ingest_job_id', { mode: 'number' }),
     ingestSourceOffset: bigint('ingest_source_offset', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

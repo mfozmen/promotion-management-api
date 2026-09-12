@@ -10,12 +10,13 @@ export default async function setup(): Promise<void> {
   await admin.query(`create database ${templateDatabase}`);
   await admin.end();
 
-  // Migrations get no statement timeout: an index build on a large table would abort halfway
-  // and leave __drizzle_migrations unwritten, so the retry would replay the same statement.
+  // Migrations get no timeouts: an index build aborted halfway leaves __drizzle_migrations
+  // unwritten, so the retry replays the same statement for ever.
   const pool = new Pool({
     connectionString: urlFor(templateDatabase),
     max: 1,
     statement_timeout: 0,
+    idle_in_transaction_session_timeout: 0,
   });
   await migrate(drizzle(pool), { migrationsFolder: 'src/shared/db/migrations' });
   await pool.end();

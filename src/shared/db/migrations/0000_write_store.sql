@@ -101,5 +101,14 @@ CREATE INDEX "products_category_id_idx" ON "products" USING btree ("category","i
 -- "target = $1 and tstzrange(starts_at, ends_at) @> now()".
 ALTER TABLE "promotions" ADD CONSTRAINT "promotions_no_overlapping_active_product" EXCLUDE USING gist ("product_id" WITH =, tstzrange("starts_at", "ends_at") WITH &&) WHERE ("status" = 'active' AND "product_id" IS NOT NULL);--> statement-breakpoint
 ALTER TABLE "promotions" ADD CONSTRAINT "promotions_no_overlapping_active_category" EXCLUDE USING gist ("category" WITH =, tstzrange("starts_at", "ends_at") WITH &&) WHERE ("status" = 'active' AND "category" IS NOT NULL);--> statement-breakpoint
+-- pricing_rules is the one table whose writer is a person at a psql prompt, so its audit
+-- timestamp cannot wait for an application to set it (ADR-0004).
+CREATE FUNCTION pricing_rules_touch_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;--> statement-breakpoint
+CREATE TRIGGER pricing_rules_set_updated_at BEFORE UPDATE ON "pricing_rules" FOR EACH ROW EXECUTE FUNCTION pricing_rules_touch_updated_at();--> statement-breakpoint
 -- The reconciler sweeps from a watermark, so the single row has to exist before it first runs.
 INSERT INTO "reconciler_state" ("id") VALUES (true) ON CONFLICT DO NOTHING;

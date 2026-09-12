@@ -47,7 +47,17 @@ describe('seeded pricing rules', () => {
     await expect(duplicate).rejects.toThrow();
   });
 
-  it('carries no promotion-typed rules yet, because promotions are rows', async () => {
+  it('stamps updated_at on an edit, because the writer is a person at a psql prompt', async () => {
+    const [edited] = await db()
+      .update(pricingRules)
+      .set({ priority: 40 })
+      .where(eq(pricingRules.name, 'vendor commission'))
+      .returning({ createdAt: pricingRules.createdAt, updatedAt: pricingRules.updatedAt });
+
+    expect(edited!.updatedAt.getTime()).toBeGreaterThan(edited!.createdAt.getTime());
+  });
+
+  it('carries no promotion-typed rules yet, because the resolver rules are #36', async () => {
     const rows = await db().select().from(pricingRules).where(eq(pricingRules.type, 'promotion'));
 
     expect(rows).toEqual([]);
