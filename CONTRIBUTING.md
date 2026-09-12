@@ -27,7 +27,7 @@ No implementation code is written before its failing test exists.
 ## PR checklist
 
 - [ ] Tests written first and passing (`npm test`)
-- [ ] Coverage is 100 % (`npm run test:cov`; the pre-commit hook enforces the threshold, so a commit below 100 % is rejected)
+- [ ] Coverage is 100 % (`npm run test:cov`, both layers, needs `TEST_DATABASE_URL`; the required `ci` check enforces the threshold. The pre-commit hook runs `npm test`, the unit layer only, so committing needs no database)
 - [ ] Lint passes (`npm run lint`)
 - [ ] No open SonarCloud finding on the PR, read from SonarCloud's PR comment (an ignore needs the owner's approval and a reasoned entry in `sonar-project.properties`)
 - [ ] Commits follow Conventional Commits

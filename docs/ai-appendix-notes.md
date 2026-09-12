@@ -201,6 +201,27 @@ rewritten.
   describes is therefore history, not the shipped state — see "A CI gate built,
   reviewed twice, then deleted" under Judgement.
 
+### 2026-09-12 — Rule-engine rewrite merged into the write store (PR #50, merge `3e6722d`)
+
+- Strategy: `origin/docs/promotion-rule-engine` had been rewritten under this
+  branch. The calculator/factory/registry/params design is gone: a promotion is
+  a row with a `discount_type` enum and a `value`, and the rule engine picks the
+  winning promotion without naming a calculator. The merge was resolved file by
+  file against whichever side is the shipped truth, not wholesale per branch —
+  base for ADR-0004's decision text (the later decision), `.github/workflows/ci.yml`
+  and `CLAUDE.md`; this branch for the design spec's schema block, which matches
+  the `promotion_discount_type` enum actually created by
+  `0000_write_store.sql`; both sides kept in `docs/ai-appendix-notes.md`, because
+  entries here are appended and never rewritten.
+- Human refinement: the per-file rule was the owner's. The pre-push agent round
+  then found that "resolve to base" had been applied too widely in two of those
+  files, and that two documents described a state no ref carries; all four were
+  corrected in the working tree before the push (the two Judgement entries
+  below). Resulting state: `ci.yml` carries the `postgres:16-alpine` service and
+  `TEST_DATABASE_URL` again, `CLAUDE.md` and `CONTRIBUTING.md` describe the hook
+  `.husky/pre-commit` actually runs, the design spec states promotion precedence
+  once, and ADR-0004 claims only the half this branch proves.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -312,7 +333,80 @@ rewritten.
   net negative until a human asked what the tool already did. The script was
   well-tested, well-reviewed and unnecessary; the value came from deleting it.
 
+### 2026-09-12 — "Resolve to the base" dropped a CI service and a hook fact (PR #50, merge `3e6722d`)
+
+- Challenge: two files were taken from the base wholesale rather than merged.
+  (1) `.github/workflows/ci.yml` lost the `postgres:16-alpine` service block and
+  the `TEST_DATABASE_URL` environment on the coverage step — the base predates
+  the integration layer, so the merged file ran `npm run test:cov` with no
+  database. The required `ci` check would have failed on the first push, on a
+  branch whose entire subject is a PostgreSQL write store. (2) `CLAUDE.md`'s
+  coverage sentence reverted to "the pre-commit hook runs typecheck and
+  coverage", which stopped being true when the suite was split into two Vitest
+  projects (ADR-0002); `CONTRIBUTING.md`'s PR checklist carried the same stale
+  claim independently.
+- Verification: `git show 3e6722d:.github/workflows/ci.yml` greps clean for
+  `postgres` and `services`, against a working tree that has both; `.husky/pre-commit`
+  reads `npx lint-staged`, `npm run typecheck`, `npm test` — the unit project
+  only, with no coverage step and no database.
+- Resolution: the service block and `TEST_DATABASE_URL` restored with a comment
+  naming ADR-0002 as the reason the database is real; both documents rewritten to
+  say what the hook runs (lint-staged, typecheck, the unit layer, no database
+  needed to commit) and where the 100 % gate lives now (the required `ci` check,
+  both layers). The general lesson: a conflict resolved "to the base" is a claim
+  that the base is newer about that whole file, and it is false for any file the
+  branch itself extended.
+
+### 2026-09-12 — Promotion precedence stated three ways, and an ADR claiming a file this branch has not got (PR #50, merge `3e6722d`)
+
+- Challenge: the largest Scenario B defect of this merge. The design spec
+  `docs/superpowers/specs/2026-09-12-domain-design.md` carried, on this branch's
+  side of the merge (`70a298d`), a "Superseded in part, pending #35" banner over a
+  section the rewritten base had already replaced, and stated the promotion precedence policy three incompatible ways in
+  one document — largest discount, lower price, and product-level. ADR-0004's
+  decision text (taken from the base, correctly) says the seeded default is
+  product-level precedence and lists "precedence by larger discount" as a
+  rejected alternative, so the spec contradicted the accepted decision and itself.
+  Separately, ADR-0004's consequence section asserted that
+  `src/modules/promotion/promotion.ts` "declares `DiscountType`" and that
+  `applyPromotion` "branches on the two literal types" — present tense, on a
+  branch whose tree has no `src/modules/` at all.
+- Verification: read for contradiction, then checked against refs rather than
+  against the prose. `git ls-tree -r HEAD` shows `src/` holds only `app.ts`,
+  `server.ts` and `shared/`; `git log --all -- 'src/modules/promotion/*'` finds the
+  file on exactly one branch, `feat/pricing-core` (PR #29, open, based on the
+  rule-engine branch), and nowhere on `main` or here. So the claim was neither
+  true nor pure invention: it described a sibling PR as if it were merged.
+- Resolution, before and after. Spec, before: "that rule wins over the
+  largest-discount rule" and "under the seeded default the one that prices lower
+  is applied"; after: "that rule wins over the seeded product-level default" and
+  "the product-level one is applied and nothing stacks, as stated once above" —
+  one statement, matching ADR-0004. The banner was dropped in the merge resolution
+  itself (`3e6722d`), the two precedence sentences in the working tree. ADR-0004,
+  before: "The retired shape is unconstructible in both halves.
+  `src/modules/promotion/promotion.ts` declares …"; after: "The retired shape is
+  unstorable as of this branch", naming the enum and the two `CHECK` constraints
+  in `0000_write_store.sql` as what is proven here, and naming PR #29 as the open,
+  unmerged home of the TypeScript half. The rescope was itself corrected in this
+  round: the first version said the file did not exist yet, which a `git log --all`
+  disproved — an ADR that under-claims is as wrong as one that over-claims, and
+  the fix is to name the ref, not to hedge.
+
 ## Overall reflection
 
-- Estimated ratio: pending.
+- Estimated ratio: pending (final figure is the owner's).
+- Running estimate, 2026-09-12 (PR #50): close to all first-draft text and code
+  in the repository is AI-generated; the human share is concentrated in the
+  decisions (the CQRS core, the reversal of the calculator design, the severity
+  policy, the two-project test split) and in rejecting AI output that reads
+  well and is false. Two entries above are net-negative AI work — a CI gate
+  built, reviewed twice and deleted, and an e2e definition that reproduced the
+  bug it cured — so the useful measure is not share of lines but how much
+  review each line needed.
+- Blind spot noticed, 2026-09-12: AI statements about the environment pass
+  review because they are plausible. A workflow's `services` block, a git
+  hook's contents, and whether a source file exists were all asserted
+  confidently and were all wrong in the same merge (PR #50); each took one
+  command — `git show`, `cat .husky/pre-commit`, `git log --all` — to settle.
+  Prose review cannot catch this class; only running something can.
 - Key takeaway: pending.

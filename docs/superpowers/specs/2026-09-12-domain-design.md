@@ -200,9 +200,9 @@ create table ingestion_chunks (
 - The commercial exception has a home without a code change: a product whose
   price must not fall further, because of a margin floor, a supplier agreement
   or a minimum advertised price, gets a higher-priority rule naming it, and
-  that rule wins over the largest-discount rule. This is why the policy is a
-  row: the default serves the customer, the exception serves the contract, and
-  neither is a branch in a resolver.
+  that rule wins over the seeded product-level default. This is why the policy
+  is a row: the default serves the customer, the exception serves the contract,
+  and neither is a branch in a resolver.
 - Exactly one rule applies per product. Rules are evaluated in priority order
   and the highest-priority match wins, which is what keeps the case's "at most
   one active promotion" true at the applied level. Letting several stack would
@@ -212,8 +212,8 @@ create table ingestion_chunks (
   ignored rather than thrown, so a bad rule cannot take the storefront down.
 - The rule the case calls "at most one active promotion per product" is
   implemented as **at most one applied promotion**. A product-level and a
-  category-level promotion may both exist; under the seeded default the one
-  that prices lower is applied, so nothing is skipped and nothing stacks. The
+  category-level promotion may both exist; under the seeded default the
+  product-level one is applied and nothing stacks, as stated once above. The
   storefront response names the promotion that was applied, so an admin can
   always tell which of the two won and why.
 - Same-level overlap (two active product promotions on one product, or two on
