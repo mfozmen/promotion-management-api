@@ -39,6 +39,11 @@ BullMQ uses Redis logical database 1; database 0 is reserved for the read
 model, so queue maintenance and read-model rebuilds cannot destroy each other
 (ADR-0007).
 
+`npm run dev` opens the queue connections at startup, so it needs a Redis at
+`REDIS_URL` (default `redis://127.0.0.1:6379`). Queue operations are bounded at
+2 s, so an unreachable Redis fails the request instead of hanging it, and
+`SIGTERM` closes the HTTP server first and the queues last (ADR-0003).
+
 ## Project structure
 
 ```

@@ -101,6 +101,12 @@ rewritten.
 - Verification: the `architecture-critic` run on the trimmed branch caught three things the count alone could not. Shortening `schedulePromotionBoundary`'s comment to "so one clock decides, in tests too" had turned an invariant into a testing convenience and invited the next caller to pass `new Date()`; it now names PostgreSQL's clock, as ADR-0006 requires. `promotionBoundaryJobId` now says what ADR-0007 says and the old comment did not: scheduling is write-once per id and the returned `Job` describes the request, not what is stored. `removePromotionBoundaries` kept half a clause on why it is barred inside a transaction, because it is the sibling path most likely to lose the guard to a future cleanup. The one rationale left with no record anywhere — why payloads are validated at the producer rather than in the handler — moved to ADR-0003, which is where 8b.4 puts it. The critic's verdict on the branch was REVISE, on pre-existing design grounds unrelated to the comments (delayed jobs outliving an additive schema change, no connection timeout or queue-unavailable test, no `closeQueues` for `SIGTERM`), so `architecture-verified` was not re-applied after the push.
 - Human refinement: the owner set the threshold and the tie-break (link the spec section, never restate it), which is what turned a second round of the same subjective argument into a countable check. The test files measured at 0 % and 1 % and were left alone; their two comments are a runnable Redis setup command and a `@ts-expect-error` directive. No behaviour, signature, schema, job option or dependency changed; `lint` and `typecheck` are clean and `test:cov` passes 40 tests at 100 % statements, branches, functions and lines.
 
+### 2026-09-12 — Queue operations bounded and closed on SIGTERM (PR #37, commit `497b4f1`)
+
+- Strategy: the three findings the `architecture-critic` left open on the branch were handed over as the whole brief — REVIEW.md 3.11 (nothing closed the queues), REVIEW.md 7.4 "the queue unavailable", and delayed jobs outliving an additive schema change — with the instruction to close each or record it, not to file it. Measurement came before the fix: the ioredis settings that look like bounds were tried first, and `maxRetriesPerRequest`, `enableOfflineQueue: false` and `commandTimeout` were all observed still hanging past 6 s, while a capped `retryStrategy` bounds the call only by giving up reconnection permanently, which is worse for a long-lived producer. So the bound is explicit: 2 s around `enqueue` and boundary removal, with a matching `connectTimeout`, asserted by two tests landing at about 2 003 ms.
+- Human refinement: `closeQueues` plus a SIGTERM path in `src/server.ts` that closes the HTTP server first and the queues last, because closing rejects an in-flight operation instead of draining it, so the producers have to stop first. Per-queue `error` listeners, because an `error` event with no listener is an uncaught exception, so a Redis blip took the process down; callers now learn from the bound instead. The schema-drift question stayed a question rather than acquiring a mechanism: it is an ADR-0003 trade-off plus issue #47, with what happens today written down.
+- Verification: 43 tests, 100 % on statements, branches, functions and lines. The `architecture-critic` re-run on the branch returned REVISE, so `architecture-verified` was deliberately not applied after the push; the remaining findings sit with the owner rather than being closed in this commit.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -150,6 +156,24 @@ rewritten.
 - Challenge: the four verification labels (`e2e-verified`, `impact-verified`, `docs-verified`, `architecture-verified`) had only ever been created by hand in the repo's label set; `gh pr edit --remove-label` on a label that does not exist fails, so a fresh clone would break on the first `synchronize` strip. The fix step (`gh label create --force`) was first added to run unconditionally, over-creating the labels on every `labeled`/`unlabeled`/`reopened` event too.
 - Verification: caught by the `impact-analyzer` agent reasoning through the workflow's `on.pull_request.types` list against the create step's `if` condition.
 - Resolution: scoped the create step to `if: contains(fromJSON('["opened", "synchronize"]'), github.event.action)`, the only events that precede the strip step, so labels are created idempotently once per event that needs them instead of on every label change.
+
+### 2026-09-12 — A comment claimed a guarantee the library does not give (PR #37, commit `497b4f1`)
+
+- Challenge: the comment on `closeQueues` said pending operations finish before the queue closes. BullMQ does not do that: closing tears down the connection under an in-flight `add`, which is then rejected. The claim was plausible for a "close" function and had not been checked against the library.
+- Verification: writing the shutdown test properly proved the opposite — the in-flight `add` rejected rather than resolving. The same failure mode as the withdrawn correlation-id comment in commit `3a3ec5f`: an asserted library behaviour that nothing had verified.
+- Resolution: the comment now states what closing actually does — in-flight work is rejected with its connection, and what it buys is the socket that would otherwise hold the event loop open — and `src/server.ts` orders shutdown around that fact, HTTP server first so the producers stop, queues last.
+
+### 2026-09-12 — A timeout error overstated what it could know (PR #37, commit `497b4f1`)
+
+- Challenge: the 2 s bound reported that the operation "did not reach Redis". The bound is a `Promise.race` against a timer and cancels nothing, so the command may still land after the timer fires. The message asserted an outcome the code cannot observe, and an operator reading it would have concluded that nothing was enqueued and that a manual replay was safe.
+- Verification: read against the implementation — the losing promise is still running and is only caught to keep an unhandled rejection from killing the process, which is precisely the case the message denied.
+- Resolution: the error now says the operation "did not confirm ... it may still land", and ADR-0003 records the same: the bound buys a fast failure, not a known outcome, and the reconciler converges either way.
+
+### 2026-09-12 — ADR-0003 contradicted itself about who validates event payloads (PR #37, commit `497b4f1`)
+
+- Challenge: ADR-0003 said payloads are validated by the producer rather than by the consumer, while the delayed-job trade-off written into the same ADR relied on a consumer-side parse to dead-letter a job whose payload predates a schema change. Both could not hold. `parseEvent` has exactly one call site, inside `enqueue`, so the dead-letter the trade-off promised could not happen: a stale delayed job would reach the handler with the new field simply undefined.
+- Verification: every call site of `parseEvent` was grepped instead of the ADR sentence being taken at face value.
+- Resolution: ADR-0003 now says both sides parse against the same schemas, that only the producer half exists today, and that the consumer half is the contract the event-handler PR has to honour, tracked with issue #47; the trade-off states the real present-day outcome rather than the intended one.
 
 ## Overall reflection
 
