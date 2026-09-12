@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyPromotion, isActive } from '../../src/modules/promotion/effective-price.js';
-import type { ActivePromotion, Promotion } from '../../src/modules/promotion/promotion.js';
+import type { ActivePromotion } from '../../src/modules/promotion/active-promotion.js';
+import type { Promotion } from '../../src/modules/promotion/promotion.js';
 
 const NOW = new Date('2026-09-12T12:00:00.000Z');
 const MS = 1;

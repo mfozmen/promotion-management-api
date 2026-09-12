@@ -11,6 +11,3 @@ export interface Promotion {
   /** Exclusive: the window is `[startsAt, endsAt)`. */
   endsAt: Date;
 }
-
-/** What `isActive` narrows to. */
-export type ActivePromotion = Promotion & { status: 'active' };
