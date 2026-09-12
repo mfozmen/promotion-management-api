@@ -100,7 +100,7 @@ The rule "at most one active promotion per product" is implemented as **at most 
 ### Consequences
 
 - Concurrency is solved in the database: two admins assigning to the same product at once get one `201` and one `409`, with no application-side locking.
-- A category flash sale skips products that carry their own active promotion, because product level wins. The applied promotion is returned in every storefront response, and the precedence rule is a named test in the design spec's testing section.
+- Under the seeded default the customer gets the lower of the two prices, so a category flash sale covers products that carry their own promotion rather than skipping them. The applied promotion is returned in every storefront response, so an admin can see which candidate won. A product that must not be discounted further is expressed as a higher-priority rule, not as code.
 - Categories are free text matched exactly; a category promotion whose category matches no product is accepted (products may arrive later through ingestion) and the response reports `productCount: 0` so a typo is visible immediately.
 - A separate `assign` step exists because the case lists create, cancel and assign as distinct operations; keeping the target on the promotion row (one target per promotion) makes assign a single constrained `UPDATE` rather than a join table.
 - Cancelled promotions stay in the table for audit; the partial `WHERE` on the constraints ignores them, so cancel-then-create works.
