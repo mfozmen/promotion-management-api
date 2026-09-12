@@ -467,6 +467,34 @@ describe('priceRow', () => {
     expect(second).toMatchObject({ ok: false, fault: 'rules', reason: 'fact blew up' });
   });
 
+  it('reports the rules fault to rows already queued when the run fails', async () => {
+    const rules = await compileRules([
+      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
+    ]);
+    let failing = true;
+    rules.engine.addFact('flaky', () => {
+      if (!failing) return Promise.resolve(1);
+      failing = false;
+      return Promise.reject(new Error('fact blew up'));
+    });
+    rules.engine.addRule({
+      name: 'flaky',
+      priority: 1000,
+      conditions: { all: [{ fact: 'flaky', operator: 'equal', value: 1 }] },
+      event: cents(0),
+    });
+
+    // Queued before the first run's failure is observed, so a check made only
+    // when the call arrives would let these through onto the spent engine.
+    const outcomes = await Promise.all([
+      priceRow(rules, vendorRow()),
+      priceRow(rules, vendorRow()),
+      priceRow(rules, vendorRow()),
+    ]);
+
+    expect(outcomes.every((outcome) => !outcome.ok && outcome.fault === 'rules')).toBe(true);
+  });
+
   it('turns an engine failure into a rejection rather than letting it escape', async () => {
     const exploding = {
       pricingRulesVersion: 1,
