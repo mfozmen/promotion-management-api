@@ -306,6 +306,26 @@ describe('loadConfig', () => {
       );
     });
 
+    it.each([
+      ["Kubernetes' Service form", 'tcp://10.96.1.5:5432'],
+      ['a host and port', '10.96.1.5:5432'],
+      ['a non-numeric value', 'postgres'],
+    ])('ignores %s, which is not this compose file speaking', (_label, value) => {
+      const config = loadConfig({ ...validEnv, POSTGRES_PORT: value });
+
+      expect(config.databaseUrl).toBe(validEnv.DATABASE_URL);
+    });
+
+    it('catches the mismatch on an IPv6 loopback URL', () => {
+      expect(() =>
+        loadConfig({
+          ...validEnv,
+          DATABASE_URL: 'postgres://promo:promo@[::1]:5432/promotion',
+          POSTGRES_PORT: '55432',
+        }),
+      ).toThrow('the stack publishes 55432 but DATABASE_URL dials 5432 on [::1]');
+    });
+
     it('ignores the published port when the URL names a container host', () => {
       const config = loadConfig({
         DATABASE_URL: 'postgres://promo:promo@postgres:5432/promotion',

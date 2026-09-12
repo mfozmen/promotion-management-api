@@ -92,7 +92,9 @@ const assertPortMatchesUrl = (
   defaultPort: string,
 ): void => {
   const published = env[portKey]?.trim();
-  if (!published || !isLoopback(url.hostname)) {
+  // A bare port only: Kubernetes injects `POSTGRES_PORT` for a Service named
+  // `postgres` as `tcp://10.96.1.5:5432`, and that is not a mismatch.
+  if (!published || !/^\d{1,5}$/.test(published) || !isLoopback(url.hostname)) {
     return;
   }
   const dialled = url.port || defaultPort;
