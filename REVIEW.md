@@ -472,6 +472,18 @@ _Failure_
   defined response, and the test asserts it.
 - A poisoned job reaching the dead-letter set after its retries.
 
+7.4b **A control is proved only in the configuration production runs.** A test
+that exercises a safety control sets the level, the environment variable and
+the framework default explicitly instead of inheriting whatever the harness
+uses. If the control depends on a log level, build the logger at that level in
+the test; if it depends on `NODE_ENV`, set it.
+
+Evidence: twice in one pull request a control passed review while never firing
+in production. Express prints a raw stack on every environment except `test`,
+which is the one the suite runs in, and a compensating `debug` log line sat
+under a root logger running at `info` while the capture logger in the test ran
+at `trace`.
+
 7.5 **Determinism.** Fixed clocks (injected `now` or fake timers), fixed
 fixtures, no random data, no `sleep` to wait for a worker. Poll a condition with
 a timeout. A flaky test is a finding, not a retry.
@@ -507,6 +519,13 @@ echoes a path.
 Evidence: this API applied the rule in two places out of three, withholding the
 path from a 404 and replacing body-parser's messages, then let zod quote a
 rejected key back and pinned it with a test.
+
+8.3c One exception, bounded: a 4xx may name an identifier the caller supplied,
+because a client that cannot see which of its own rows was rejected cannot fix
+the request. It may not carry a stored value: not the conflicting row's fields,
+not a neighbouring record, not anything the caller did not already have. Cap
+the echoed identifier at 64 characters and truncate rather than omit, so a
+long value cannot turn an error body into a mirror.
 
 8.4 No internal detail escapes: no stack trace, no SQL text, no connection
 string, no secret, in a response or a log line.
