@@ -28,6 +28,7 @@ jobs:
     # comment containing @claude from a collaborator-and-above.
     if: >
       ( github.event_name == 'pull_request' &&
+        github.event.pull_request.draft == false &&
         github.event.pull_request.head.repo.full_name == github.repository ) ||
       ( github.event_name == 'issue_comment' &&
         github.event.issue.pull_request != null &&

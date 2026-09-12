@@ -32,14 +32,23 @@ No implementation code is written before its failing test exists.
 - [ ] Commits follow Conventional Commits
 - [ ] Branch named `type/short-description`
 - [ ] ADR added/updated if the change affects architecture
+- [ ] `e2e-tester` and `impact-analyzer` agents run locally and passed (labels `e2e-verified`, `impact-verified`)
 
 ## Required checks
 
-CI (build, lint, tests) and the SonarCloud quality gate must both pass before merge.
+All of these are required on `main`:
+
+- `ci` — lint, typecheck, tests with 100 % coverage thresholds, SonarCloud scan
+- `pr-title` — Conventional Commit PR title
+- `claude-review` — advisory AI review
+- `SonarCloud Code Analysis` — quality gate
+- `local-gates` — passes only when the PR carries both `e2e-verified` and `impact-verified` labels; every new push strips them, so the two agents must be re-run and the labels re-applied
+
+Pre-push local gates: run the `e2e-tester` and `impact-analyzer` agents (`.claude/agents/`) against the branch before pushing. Push only when both report PASS, then apply the labels.
 
 ## Review process
 
-Every PR receives an advisory Claude AI review. Merge additionally requires at least one human approval. `main` is protected: no direct pushes.
+Every PR receives an advisory Claude AI review. The PR is then labelled `needs-human-check` and the repository owner is mentioned; merge happens only after the owner says so. `main` is protected: no direct pushes.
 
 ## Merge strategy
 

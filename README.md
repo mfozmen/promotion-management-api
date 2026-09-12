@@ -32,7 +32,7 @@ npm run lint
 ```
 src/    application source code
 tests/  automated tests (unit, integration)
-docs/   architecture and process documentation
+docs/   design specs (docs/superpowers/specs)
 ```
 
 ## API

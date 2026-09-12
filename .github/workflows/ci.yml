@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
   push:
     branches:
       - main
@@ -52,3 +53,31 @@ jobs:
         uses: amannn/action-semantic-pull-request@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The e2e-tester and impact-analyzer agents run locally before every push
+  # (see CONTRIBUTING.md). Their verdicts are recorded as PR labels, and this
+  # required check refuses to pass until both labels are present. A new push
+  # strips the labels so stale verdicts never cover new commits.
+  local-gates:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Strip verification labels on new commits
+        if: github.event.action == 'synchronize'
+        run: |
+          gh pr edit "$PR" --repo "$GITHUB_REPOSITORY"             --remove-label e2e-verified --remove-label impact-verified || true
+          echo "New commits pushed; e2e-verified and impact-verified must be re-applied." >&2
+          exit 1
+      - name: Require e2e-verified and impact-verified labels
+        run: |
+          labels=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json labels --jq '.labels[].name')
+          missing=0
+          for l in e2e-verified impact-verified; do
+            if ! grep -qx "$l" <<<"$labels"; then echo "::error::missing label $l"; missing=1; fi
+          done
+          exit $missing
