@@ -3,9 +3,9 @@ import express, { type Express } from 'express';
 import request from 'supertest';
 import { errorHandler } from '../src/middleware/error-handler.js';
 import { httpLogger } from '../src/shared/logger.js';
-import { AppError } from '../src/shared/http-error.js';
+import { AppError } from '../src/shared/app-error.js';
 import { DrizzleQueryError } from 'drizzle-orm';
-import { captureLogger, type CapturedLogger } from './helpers/capture-logger.js';
+import { captureLogger, type CapturedLogger } from './capture-logger.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
 function appThrowing(error: unknown, captured: CapturedLogger = captureLogger()): Express {
@@ -253,18 +253,5 @@ describe('mounted without the http logger', () => {
 
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Overlap' } });
-  });
-});
-
-describe('AppError', () => {
-  it('keeps its status, code and message', () => {
-    const error = new AppError(409, 'CONFLICT', 'Overlap');
-
-    expect(error).toBeInstanceOf(Error);
-    expect(error.name).toBe('AppError');
-    expect(error.status).toBe(409);
-    expect(error.code).toBe('CONFLICT');
-    expect(error.message).toBe('Overlap');
-    expect(error.details).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
 import type { ZodError, ZodObject } from 'zod';
-import { AppError } from '../shared/http-error.js';
+import { AppError } from '../shared/app-error.js';
 
 export interface RequestSchemas {
   body?: ZodObject;

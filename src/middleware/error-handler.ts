@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
-import { AppError } from '../shared/http-error.js';
+import { AppError } from '../shared/app-error.js';
 import { logger, serializeError } from '../shared/logger.js';
 
 interface ErrorMapping {

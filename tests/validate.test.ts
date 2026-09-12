@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { validate } from '../src/middleware/validate.js';
 import { errorHandler } from '../src/middleware/error-handler.js';
 import { httpLogger } from '../src/shared/logger.js';
-import { captureLogger } from './helpers/capture-logger.js';
+import { captureLogger } from './capture-logger.js';
 
 /** A one-route app so the helper can be exercised through real HTTP. */
 function appWith(path: string, ...handlers: RequestHandler[]): Express {
