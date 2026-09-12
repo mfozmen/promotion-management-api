@@ -264,6 +264,51 @@ rewritten.
   `TEST_DATABASE_URL` again, `CLAUDE.md` and `CONTRIBUTING.md` describe the hook
   `.husky/pre-commit` actually runs, the design spec states promotion precedence
   once, and ADR-0004 claims only the half this branch proves.
+- Reconciled, 2026-09-13 (merge `d75e845`): "this branch for the design spec's
+  schema block" was stated a whole file too broadly. It holds for the two
+  identifiers the shipped migration proves (`promotion_discount_type`,
+  `pricing_rules_version bigint`) and for the constraints this branch added to
+  that block (the `(ingest_job_id is null) = (ingest_source_offset is null)`
+  pairing check, the unique `pricing_rules.name`). The rest of the block — the
+  `value > 0` and 10 000 basis-point checks and the integer-not-bigint rationale
+  — is the base's, and the later merge took it from there. The narrower claim is
+  the one that survives.
+
+### 2026-09-13 — Base merged into the write store a second time, resolved per file (PR #50, merge `d75e845`)
+
+- Strategy: the per-file rule of `3e6722d` applied again, but stated before the
+  merge instead of discovered inside it. Base wording wherever the base carries
+  the later decision — promotion resolution, precedence and the promotion schema
+  shape in `ADR.md`, `README.md` and the domain design spec. This branch only
+  where it can point at a shipped artefact. Both sides kept in date order in this
+  file, because entries here are appended and never rewritten.
+- Human refinement: the owner's rule is that the later decision wins unless the
+  branch ships the thing the text describes. Two places where that exception
+  fired, each checked against `src/shared/db/migrations/0000_write_store.sql`
+  rather than against the surrounding prose. (1) The base spec declared
+  `create type discount_type`; the migration creates `promotion_discount_type`
+  (line 7, mirrored by `promotionDiscountType` in `src/shared/db/schema.ts`).
+  (2) The base spec's `products` table carried
+  `ingestion_rules_version integer`; the migration creates
+  `pricing_rules_version bigint` — renamed in `fbe8a9f`, widened from `int4` in
+  `ed58b6f`, pinned to epoch milliseconds in `c504203`. A grep for the base
+  names across the SQL of every ref finds neither, so taking the base there
+  would have put two dead identifiers into the document section 3 is the source
+  of truth for.
+- The test-layer bullets kept this branch's `tests/unit` / `tests/integration`
+  layout for the same reason: the base predates the two Vitest projects
+  `vitest.workspace.ts` actually defines (`794aa3c`, ADR-0002).
+- Precedence was fact-checked rather than merged. The base states the seeded
+  default as the lower effective price, which is the owner's ruling on PR #35
+  (`beba163`); this branch's text still described the product-level default that
+  ruling retired, so the base wording was taken throughout ADR-0004 and the
+  spec. The PR #50 judgement entry whose resolution argued the retired policy
+  was given a "Superseded, same day" bullet instead of an edit — the entry
+  records what was believed at the time, and the correction is dated beside it.
+- `495d2dd` added `docs/e2e-cases/5.md`: five cases derived from issue #5's
+  acceptance criteria, two admin-facing (overlapping active promotions rejected
+  with SQLSTATE 23P01, the draft/active target `CHECK`) and three probes over
+  the migration, the clone-per-file harness and the `pricing_rules` seed.
 
 ## Judgement, challenges and verification
 

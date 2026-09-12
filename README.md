@@ -63,7 +63,7 @@ them to a running database with `DATABASE_URL=... npx drizzle-kit migrate` (driz
 ```
 src/    application source code (src/shared/db holds the Drizzle schema, client and SQL migrations)
 tests/  automated tests (unit, integration)
-docs/   design specs (docs/superpowers/specs)
+docs/   design specs (docs/superpowers/specs), end-to-end case files (docs/e2e-cases)
 ```
 
 ## Database schema
