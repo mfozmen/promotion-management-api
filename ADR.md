@@ -91,7 +91,7 @@ Promotions target either one product or a whole category, have a validity window
 
 ### Decision
 
-Promotions are rows, not rules: `discount_type`, `value`, `starts_at`, `ends_at`, exactly one of `product_id` or `category`, and a `status` of `active` or `cancelled`. Two PostgreSQL exclusion constraints (`btree_gist`, `tstzrange(starts_at, ends_at) &&`) guarantee at most one active product-level promotion per product and at most one active category-level promotion per category at any instant. Overlap at the same level fails with `409` and reports the conflicting promotion; there is no silent override.
+Promotions are rows, not rules: `discount_type`, `value`, `starts_at`, `ends_at`, exactly one of `product_id` or `category` once active, and a `status` of `draft`, `active` or `cancelled` (a draft has no target; a cancelled row keeps the shape it had). Two PostgreSQL exclusion constraints (`btree_gist`, `tstzrange(starts_at, ends_at) &&`) guarantee at most one active product-level promotion per product and at most one active category-level promotion per category at any instant. Overlap at the same level fails with `409` and reports the conflicting promotion; there is no silent override.
 
 The rule "at most one active promotion per product" is implemented as **at most one applied promotion**: the product-level promotion if active, else the category-level one, else none. Effective price is one pure function: percentage `base - floor(base * bps / 10000)`, fixed `max(base - value, 0)`. Three mutations exist: create (with a target → `active`, or without → `draft`), assign (`draft` → `active`, target set in the same `UPDATE`, constraints checked there) and cancel. A draft is never applied. Read endpoints for promotions serve the admin path from PostgreSQL. Boundaries are scheduled with delayed BullMQ jobs at `starts_at` and `ends_at`.
 
@@ -215,7 +215,7 @@ Automatic: BullMQ retries with exponential backoff and a kept failed set as the 
 
 Manual, under `/api/admin` and Bull Board: queue statistics, pause and resume per queue, drain, dead-letter retry and discard, per-import pause, resume and abort, and scoped or full read-model rebuild using `SCAN` and `UNLINK` on the read-model database only.
 
-Alarms are threshold checks evaluated by the reconciler and written as `level: "alarm"` log lines (queue depth, dead-letter count, drift, oldest job age). Delivery to a pager or chat is a production integration on top of the logs, not application code.
+Alarms: the API and workers expose Prometheus metrics (`prom-client`); a `monitoring` compose profile runs Prometheus and Grafana with a provisioned dashboard and alert rules for queue depth, dead-letter jobs, read-model drift, API p95 latency, 5xx rate, worker memory, stuck ingestion chunks and health. Alerts are visible in Grafana Alerting; notification channels are Grafana configuration.
 
 ### Consequences
 
@@ -227,10 +227,9 @@ Alarms are threshold checks evaluated by the reconciler and written as `level: "
 
 - A five-minute reconciler period is the worst-case repair time for a lost event. Shorter periods cost PostgreSQL reads; the sampled check keeps each run cheap.
 - A drain deletes waiting work; it requires an explicit confirmation parameter.
-- Alarm delivery is left to infrastructure; the case study gets the signal without a notification stack to maintain.
+- Alerting lives in Grafana rules rather than application code, so thresholds can be tuned without a deploy but are not unit-tested; the metrics that feed them are.
 
 ### Rejected alternatives
 
-- In-app alarm delivery (webhook, Slack, email): more code than signal for a case study.
 - Full rebuild on any drift: unnecessary load; scoped rebuilds are sufficient.
 - `FLUSHDB` for rebuilds: would erase the queue when it shares the instance.

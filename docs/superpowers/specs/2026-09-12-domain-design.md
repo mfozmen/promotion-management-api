@@ -63,8 +63,9 @@ create table promotions (
   cancelled_at   timestamptz,
   check (ends_at > starts_at),
   check (discount_type <> 'percentage' or value <= 10000),
-  check (status = 'draft' or (product_id is null) <> (category is null)), -- exactly one target once assigned
-  check (status <> 'draft' or (product_id is null and category is null)),
+  check (status <> 'active' or (product_id is null) <> (category is null)), -- active = exactly one target
+  check (status <> 'draft' or (product_id is null and category is null)),  -- draft = no target
+  -- cancelled keeps whatever shape it had (a cancelled draft has no target)
   -- At most one active product-level promotion per product per instant.
   exclude using gist (product_id with =, tstzrange(starts_at, ends_at) with &&)
     where (status = 'active' and product_id is not null),
@@ -371,9 +372,17 @@ Manual (all under `/api/admin`, plus Bull Board at `/admin/queues`):
 | `POST /api/vendor/imports/:id/pause` / `resume` / `abort` | control one file; resume re-enqueues its pending chunks             |
 | `POST /api/admin/read-model/rebuild?category=`            | scoped or full rebuild via `SCAN`+`UNLINK`                          |
 
-Alarms: `reconcile.run` also evaluates thresholds (queue depth, DLQ count,
-drift, oldest job age) and logs a `level: "alarm"` line. Shipping that log to
-Prometheus/PagerDuty is a production concern documented in ADR-0007, not code.
+Alarms (monitoring stack, compose profile `monitoring`): the API and every
+worker expose `GET /metrics` with `prom-client` (default Node metrics plus
+`queue_waiting`, `queue_failed`, `queue_oldest_job_age_seconds`,
+`readmodel_drift_products`, `http_request_duration_seconds`,
+`ingestion_rows_processed_total`, `ingestion_chunks_stuck`). Prometheus
+scrapes them; Grafana ships with a provisioned dashboard and alert rules:
+queue depth > 10 000, any failed (DLQ) job, drift > 1 %, API p95 > 500 ms,
+5xx rate > 1 %, worker RSS > 90 % of its limit, stuck ingestion chunk,
+health down. Alerts fire and resolve in Grafana's Alerting view; that is the
+alarm simulation for the case. Notification channels are Grafana
+configuration, not application code.
 
 ## 10. API
 
@@ -412,12 +421,15 @@ src/
 tests/
   unit/          effective-price, csv-lines, ingestion-rules, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
-docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "tools": pgadmin, redis-commander
+docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander
 Dockerfile           one image, command per service
 ```
 
 ## 12. Testing
 
+- Edge cases that must have a named test: cancel an unassigned draft (no
+  target, allowed by the CHECKs), assign a non-draft (`409`), assign with
+  both or neither target (`400`).
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
 - Integration: real PostgreSQL and Redis from `docker compose`, database
@@ -440,7 +452,7 @@ Dockerfile           one image, command per service
 
 ## 13. Out of scope
 
-Authentication, alarm delivery (webhook/Slack), multi-currency, promotion
+Authentication, multi-currency, promotion
 stacking, product update and deletion (decision K4: the vendor feed is the
 only channel that changes product data after creation), a categories table (text column is enough),
 pre-signed direct-to-blob uploads (documented as the production path), atomic
