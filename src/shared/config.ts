@@ -1,149 +1,40 @@
-// `loadConfig` takes the environment as a parameter so tests inject a fixture
-// instead of mutating `process.env`. Validation is hand-written rather than zod:
-// the story that adds zod for request bodies may fold this schema into it.
+import { z } from 'zod';
 
-export interface IngestionConfig {
-  /** A target, not exact: the boundary moves forward to the next 0x0A. */
-  readonly chunkBytes: number;
-  /** Rows per upsert transaction. */
-  readonly batchSize: number;
-  /** Time budget for one chunk invocation before it checkpoints and hands off. */
-  readonly budgetMs: number;
-  /** Chunk claim lease; must outlive the time budget so a healthy run keeps its claim. */
-  readonly leaseMs: number;
-  readonly maxFailures: number;
-  /** Waiting jobs above which new imports are rejected with 429 (backpressure). */
-  readonly maxWaiting: number;
-}
-
-export interface Config {
-  readonly port: number;
-  readonly databaseUrl: string;
-  readonly uploadDir: string;
-  /** The two `*Url` fields below are derived from this one. */
-  readonly redisUrl: string;
-  readonly redisReadModelDb: number;
-  /** Never equal to `redisReadModelDb`; the queue must not share it. */
-  readonly redisQueueDb: number;
-  readonly redisReadModelUrl: string;
-  readonly redisQueueUrl: string;
-  readonly ingestion: IngestionConfig;
-}
-
-type Env = Record<string, string | undefined>;
-
-const invalid = (key: string, detail: string, value: string): never => {
-  throw new Error(`Invalid environment variable ${key}: ${detail}, got "${value}"`);
-};
-
-const requireString = (env: Env, key: string): string => {
-  const value = env[key]?.trim();
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${key}`);
-  }
-  return value;
-};
-
-/** A connection string typo should fail at startup, not at the first connect, so
- *  the scheme and host are checked too: `new URL` alone accepts `redis://` and
- *  `garbage:`, which parse but cannot be connected to. No message echoes the
- *  value, because a connection string carries a password and this reaches a
- *  startup log. */
-const parseUrl = (
-  key: string,
-  value: string,
-  protocols: readonly string[],
-  requireDatabaseName = false,
-): URL => {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error(`Invalid environment variable ${key}: expected a URL`);
-  }
-  if (!protocols.includes(url.protocol)) {
-    throw new Error(
-      `Invalid environment variable ${key}: expected a ${protocols.join(' or ')} URL`,
-    );
-  }
-  if (url.hostname === '') {
-    throw new Error(`Invalid environment variable ${key}: the URL has no host`);
-  }
-  // node-postgres falls back to PGDATABASE, then the user name, then the OS
-  // user, so an omitted database name connects to something rather than failing,
-  // and the mistake surfaces much later as missing tables. Redis needs no such
-  // check: `redisUrlForDb` overwrites the path with the validated index, so a
-  // path here cannot decide anything.
-  if (requireDatabaseName && url.pathname.length <= 1) {
-    throw new Error(`Invalid environment variable ${key}: the URL has no database name`);
-  }
-  return url;
-};
-
-const readInt = (env: Env, key: string, fallback: number, min: number, max: number): number => {
-  const raw = env[key];
-  if (raw === undefined) {
-    return fallback;
-  }
-  if (!/^-?\d+$/.test(raw.trim())) {
-    return invalid(key, 'expected an integer', raw);
-  }
-  const value = Number(raw);
-  if (value < min || value > max) {
-    return invalid(key, `expected an integer between ${min} and ${max}`, raw);
-  }
-  return value;
-};
-
-const MAX_SAFE_INT = Number.MAX_SAFE_INTEGER;
-
-const redisUrlForDb = (baseUrl: URL, db: number): string => {
-  const url = new URL(baseUrl.href);
-  url.pathname = `/${db}`;
-  return url.href;
-};
-
-export const loadConfig = (env: Env = process.env): Config => {
-  const databaseUrl = requireString(env, 'DATABASE_URL');
-  const redisUrl = requireString(env, 'REDIS_URL');
-  // The raw strings are what the drivers receive; these are the checks on them.
-  parseUrl('DATABASE_URL', databaseUrl, ['postgres:', 'postgresql:'], true);
-  const redisBase = parseUrl('REDIS_URL', redisUrl, ['redis:', 'rediss:']);
-
-  const redisReadModelDb = readInt(env, 'REDIS_READ_MODEL_DB', 0, 0, 15);
-  const redisQueueDb = readInt(env, 'REDIS_QUEUE_DB', 1, 0, 15);
-  if (redisReadModelDb === redisQueueDb) {
-    throw new Error(
-      `Invalid environment variable REDIS_READ_MODEL_DB: the read model and the queue must use different Redis logical databases, got "${redisReadModelDb}" for both`,
-    );
-  }
-
-  const budgetMs = readInt(env, 'INGESTION_BUDGET_MS', 60_000, 1, MAX_SAFE_INT);
-  const leaseMs = readInt(env, 'INGESTION_LEASE_MS', 90_000, 1, MAX_SAFE_INT);
-  if (leaseMs < budgetMs) {
-    throw new Error(
-      `Invalid environment variable INGESTION_LEASE_MS: must be at least INGESTION_BUDGET_MS (${budgetMs}), got "${leaseMs}"`,
-    );
-  }
-
-  return Object.freeze({
-    port: readInt(env, 'PORT', 3000, 1, 65_535),
-    databaseUrl,
-    uploadDir: env.UPLOAD_DIR?.trim() || './uploads',
-    redisUrl,
-    redisReadModelDb,
-    redisQueueDb,
-    redisReadModelUrl: redisUrlForDb(redisBase, redisReadModelDb),
-    redisQueueUrl: redisUrlForDb(redisBase, redisQueueDb),
-    ingestion: Object.freeze({
-      chunkBytes: readInt(env, 'INGESTION_CHUNK_BYTES', 4 * 1024 * 1024, 1, MAX_SAFE_INT),
-      // Capped well below PostgreSQL's 65 535 bind parameters, which a
-      // multi-row upsert of wide rows blows long before the batch is large.
-      batchSize: readInt(env, 'INGESTION_BATCH_SIZE', 1000, 1, 5000),
-      budgetMs,
-      leaseMs,
-      maxFailures: readInt(env, 'INGESTION_MAX_FAILURES', 3, 1, MAX_SAFE_INT),
-      maxWaiting: readInt(env, 'INGESTION_MAX_WAITING', 100, 1, MAX_SAFE_INT),
-    }),
+// Only the failures that would otherwise surface late and quietly are checked
+// beyond typing: a DATABASE_URL without a database name (node-postgres silently
+// connects to a fallback), the read model and the queue on the same Redis
+// logical database (a read-model rebuild would UNLINK queued jobs), and a lease
+// below the budget (a healthy chunk loses its claim). Everything else fails on
+// its own at first use. The two Redis URLs are derived where a connection is
+// opened, not here.
+const env = z
+  .object({
+    PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+    DATABASE_URL: z.url().refine((u) => new URL(u).pathname.length > 1, 'needs a database name'),
+    REDIS_URL: z.url(),
+    REDIS_READ_MODEL_DB: z.coerce.number().int().min(0).max(15).default(0),
+    REDIS_QUEUE_DB: z.coerce.number().int().min(0).max(15).default(1),
+    UPLOAD_DIR: z.string().default('./uploads'),
+    INGESTION_CHUNK_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(4 * 1024 * 1024),
+    INGESTION_BATCH_SIZE: z.coerce.number().int().min(1).max(5000).default(1000),
+    INGESTION_BUDGET_MS: z.coerce.number().int().positive().default(60_000),
+    INGESTION_LEASE_MS: z.coerce.number().int().positive().default(90_000),
+    INGESTION_MAX_FAILURES: z.coerce.number().int().positive().default(3),
+    INGESTION_MAX_WAITING: z.coerce.number().int().positive().default(100),
+  })
+  .refine((e) => e.REDIS_READ_MODEL_DB !== e.REDIS_QUEUE_DB, {
+    message: 'read model and queue must use different Redis databases',
+    path: ['REDIS_QUEUE_DB'],
+  })
+  .refine((e) => e.INGESTION_LEASE_MS >= e.INGESTION_BUDGET_MS, {
+    message: 'INGESTION_LEASE_MS must be at least INGESTION_BUDGET_MS',
+    path: ['INGESTION_LEASE_MS'],
   });
-};
+
+export type Config = z.infer<typeof env>;
+
+export const loadConfig = (source: NodeJS.ProcessEnv = process.env): Config => env.parse(source);
