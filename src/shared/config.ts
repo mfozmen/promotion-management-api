@@ -34,6 +34,4 @@ const env = z
     path: ['INGESTION_LEASE_MS'],
   });
 
-export type Config = z.infer<typeof env>;
-
-export const loadConfig = (source: NodeJS.ProcessEnv = process.env): Config => env.parse(source);
+export const loadConfig = (source: NodeJS.ProcessEnv = process.env) => env.parse(source);
