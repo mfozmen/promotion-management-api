@@ -44,7 +44,9 @@ create table products (
   ingest_job_id          bigint,                 -- ingestion job that last wrote this product (identity, monotonic)
   ingest_source_offset   bigint,                 -- byte offset of that row inside its file
   created_at             timestamptz not null default now(),
-  updated_at             timestamptz not null default now()
+  updated_at             timestamptz not null default now(),
+  -- both written by the same upsert, so the last-writer guard can order them as a row value
+  check ((ingest_job_id is null) = (ingest_source_offset is null))
 );
 create index products_category_id_idx on products (category, id);   -- keyset scans per category
 
@@ -81,7 +83,7 @@ create type pricing_rule_type as enum ('ingestion', 'promotion');
 create table pricing_rules (                    -- json-rules-engine rules, both layers; seeded by migration 0001
   id          bigint generated always as identity primary key,
   type        pricing_rule_type not null,
-  name        text not null,
+  name        text not null unique,             -- lets the seed re-apply without doubling a rule
   conditions  jsonb not null,
   event       jsonb not null,
   priority    integer not null default 0,
@@ -564,7 +566,7 @@ src/
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
-  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
+  shared/        config.ts, db/ (schema.ts, client.ts, migrations/), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
 tests/
   unit/          effective-price, csv-lines, ingestion-rules, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
@@ -587,9 +589,11 @@ Dockerfile           one image, command per service
   its period (watermark sweep re-emits the missed boundary).
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
-- Integration: real PostgreSQL and Redis from `docker compose`, database
-  `promotion_test`, migrations in Vitest `globalSetup`, tables truncated per
-  file. Handlers are invoked directly (no worker process) so coverage is
+- Integration: real PostgreSQL and Redis, never a mock, reached through
+  `TEST_DATABASE_URL`. Vitest `globalSetup` migrates one template database
+  (`pma_test_template`); each test file clones it into a database of its own,
+  so files stay isolated under parallel runs instead of truncating shared
+  tables. Handlers are invoked directly (no worker process) so coverage is
   measured.
 - Concurrency: parallel promotion creates on one target assert exactly one
   `201` and the rest `409`; parallel `processChunk` calls on one chunk assert

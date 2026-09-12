@@ -2,6 +2,7 @@
 -- the database rather than in a TypeScript constant so they change without a deploy; higher
 -- priority runs first, so the markup lands before the bulk discount and the commission.
 -- Promotions are rows in "promotions", not rules, so no 'promotion' rule is seeded here.
+-- ON CONFLICT keeps a hand-applied re-run from doubling a markup (REVIEW.md 11.1).
 INSERT INTO "pricing_rules" ("name", "type", "conditions", "event", "priority")
 VALUES
   (
@@ -24,4 +25,5 @@ VALUES
     '{"all":[{"fact":"vendor","operator":"equal","value":"acme"}]}',
     '{"type":"adjustPrice","params":{"operation":"markup","basisPoints":500}}',
     10
-  );
+  )
+ON CONFLICT ("name") DO NOTHING;

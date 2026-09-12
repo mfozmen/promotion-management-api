@@ -46,7 +46,8 @@ CREATE TABLE "pricing_rules" (
 	"priority" integer DEFAULT 0 NOT NULL,
 	"active" boolean DEFAULT true NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "pricing_rules_name_unique" UNIQUE("name")
 );
 --> statement-breakpoint
 CREATE TABLE "products" (
@@ -63,7 +64,8 @@ CREATE TABLE "products" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "products_sku_unique" UNIQUE("sku"),
 	CONSTRAINT "products_base_price_cents_check" CHECK ("products"."base_price_cents" >= 0),
-	CONSTRAINT "products_stock_quantity_check" CHECK ("products"."stock_quantity" >= 0)
+	CONSTRAINT "products_stock_quantity_check" CHECK ("products"."stock_quantity" >= 0),
+	CONSTRAINT "products_ingest_provenance_check" CHECK (("products"."ingest_job_id" is null) = ("products"."ingest_source_offset" is null))
 );
 --> statement-breakpoint
 CREATE TABLE "promotions" (

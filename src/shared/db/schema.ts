@@ -40,7 +40,8 @@ export const products = pgTable(
     stockQuantity: integer('stock_quantity').notNull(),
     // Null for manual creates; ingestion stamps the rules version it priced the row with.
     pricingRulesVersion: integer('pricing_rules_version'),
-    // Written together by the ingestion upsert, so they are null together (REVIEW.md 2.6).
+    // Written together by the ingestion upsert. The check below is what lets the last-writer
+    // guard compare them as a row value without a null branch (REVIEW.md 2.6).
     ingestJobId: bigint('ingest_job_id', { mode: 'number' }),
     ingestSourceOffset: bigint('ingest_source_offset', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -50,6 +51,10 @@ export const products = pgTable(
     index('products_category_id_idx').on(table.category, table.id), // keyset scans per category
     check('products_base_price_cents_check', sql`${table.basePriceCents} >= 0`),
     check('products_stock_quantity_check', sql`${table.stockQuantity} >= 0`),
+    check(
+      'products_ingest_provenance_check',
+      sql`(${table.ingestJobId} is null) = (${table.ingestSourceOffset} is null)`,
+    ),
   ],
 );
 
@@ -88,7 +93,7 @@ export const promotions = pgTable(
 
 export const pricingRules = pgTable('pricing_rules', {
   id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
-  name: text('name').notNull(),
+  name: text('name').notNull().unique(), // lets the seed re-apply without duplicating a rule
   type: pricingRuleType('type').notNull(),
   conditions: jsonb('conditions').notNull(),
   event: jsonb('event').notNull(),

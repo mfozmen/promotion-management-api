@@ -36,6 +36,17 @@ describe('seeded pricing rules', () => {
     });
   });
 
+  it('cannot hold the same rule twice, so a re-applied seed never doubles a markup', async () => {
+    const duplicate = db().insert(pricingRules).values({
+      name: 'electronics category markup',
+      type: 'ingestion',
+      conditions: {},
+      event: {},
+    });
+
+    await expect(duplicate).rejects.toThrow();
+  });
+
   it('carries no promotion-typed rules yet, because promotions are rows', async () => {
     const rows = await db().select().from(pricingRules).where(eq(pricingRules.type, 'promotion'));
 

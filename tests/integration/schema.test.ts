@@ -276,7 +276,39 @@ describe('promotions check constraints', () => {
 
     await db()
       .insert(promotions)
+      .values({ ...base, value: 10000 });
+    await db()
+      .insert(promotions)
       .values({ ...base, discountType: 'fixed', value: 10001 });
+    expect(await db().select({ id: promotions.id }).from(promotions)).toHaveLength(2);
+  });
+});
+
+describe('promotions under concurrent writers', () => {
+  it('lets exactly one of two simultaneous overlapping inserts win', async () => {
+    const productId = await insertProduct();
+    const promotion = {
+      name: 'Race',
+      discountType: 'percentage' as const,
+      value: 1000,
+      startsAt: JANUARY,
+      endsAt: MARCH,
+      productId,
+      status: 'active' as const,
+    };
+
+    const results = await Promise.allSettled([
+      db()
+        .insert(promotions)
+        .values({ ...promotion, name: 'Writer A' }),
+      db()
+        .insert(promotions)
+        .values({ ...promotion, name: 'Writer B' }),
+    ]);
+
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    const [loser] = results.filter((result) => result.status === 'rejected');
+    expect(await sqlStateOf(Promise.reject(loser!.reason))).toBe(EXCLUSION_VIOLATION);
     expect(await db().select({ id: promotions.id }).from(promotions)).toHaveLength(1);
   });
 });
@@ -287,6 +319,15 @@ describe('products', () => {
     expect(await sqlStateOf(insertProduct({ stockQuantity: -1 }))).toBe(CHECK_VIOLATION);
 
     expect(await insertProduct({ basePriceCents: 0, stockQuantity: 0 })).toBeGreaterThan(0);
+  });
+
+  it('keeps the ingestion provenance columns null together, so the upsert guard can order them', async () => {
+    expect(await sqlStateOf(insertProduct({ ingestJobId: 7 }))).toBe(CHECK_VIOLATION);
+    expect(await sqlStateOf(insertProduct({ ingestSourceOffset: 4096 }))).toBe(CHECK_VIOLATION);
+
+    const manual = await insertProduct();
+    const ingested = await insertProduct({ ingestJobId: 7, ingestSourceOffset: 4096 });
+    expect(ingested).toBeGreaterThan(manual);
   });
 
   it('keeps sku unique and carries the ingestion provenance columns', async () => {

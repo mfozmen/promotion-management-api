@@ -36,13 +36,15 @@ The integration tests run against a real PostgreSQL, never a mock. Point them at
 throwaway server is one command away:
 
 ```bash
-docker run -d --rm --name pma-db-test -p 55432:5432   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promotion postgres:16-alpine
+docker run -d --rm --name pma-db-test -p 55432:5432 \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promotion postgres:16-alpine
 ```
 
 `globalSetup` applies `src/shared/db/migrations/*.sql` to a template database once; each test
 file then clones that template, so files stay isolated and can run in parallel. Regenerate the
 migrations with `npx drizzle-kit generate` after changing `src/shared/db/schema.ts`, and apply
-them to a running database with `npx drizzle-kit migrate`.
+them to a running database with `DATABASE_URL=... npx drizzle-kit migrate` (drizzle-kit reads
+`DATABASE_URL`, not `TEST_DATABASE_URL`, and defaults to port 5432).
 
 ## Project structure
 
@@ -51,6 +53,10 @@ src/    application source code (src/shared/db holds the Drizzle schema, client 
 tests/  automated tests (unit, integration)
 docs/   design specs (docs/superpowers/specs)
 ```
+
+## Database schema
+
+The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the enums, the six tables and the two GiST exclusion constraints that enforce one active promotion per product and per category; `0001_seed_pricing_rules.sql` seeds the three ingestion pricing rules. [`src/shared/db/schema.ts`](./src/shared/db/schema.ts) is the Drizzle mirror used by queries — it cannot express the exclusion constraints, so those live in the migration only (ADR-0003).
 
 ## API
 

@@ -88,6 +88,12 @@ rewritten.
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
 - Human refinement: none needed — `impact-analyzer` confirmed no doc or config referenced the removed sections and every named script (`dev`, `test`, `test:cov`, `lint`) still exists in `package.json`.
 
+### 2026-09-12 — Write store: schema, migrations, integration harness (branch `feat/write-store`, commit `c6a98ea`)
+
+- Strategy: gave the approved design spec (section 3) as the single source of truth and asked for the Drizzle schema, generated `drizzle-kit` migrations and an integration harness that exercises the constraints against a real PostgreSQL rather than asserting on the TypeScript model. The constraint tests name the invariant (unique SKU, non-negative money and stock, the promotion window and percentage ceiling, both GiST exclusions, one running job per vendor) instead of restating the DDL.
+- Human refinement: kept the decision that the invariants live in the database, not in service code, so the tests assert the SQLSTATE PostgreSQL raises rather than an application error type. Rejected mocking PostgreSQL and rejected truncating shared tables between files, in favour of migrating one template database and cloning it per test file, which keeps the suite parallel-safe; CI gained a `postgres:16-alpine` service for the same reason (ADR-0002).
+- Deviation from the approved spec, recorded rather than left silent: the schema added a `pricing_rule_type` enum and a `pricing_rules.type` column that spec section 3 did not have. It was kept — it marks the seeded rows as ingestion rules and leaves room for a second kind without a second table — and spec section 3 plus ADR-0003 were amended so the documents and the DDL do not drift apart.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)

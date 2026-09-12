@@ -1,6 +1,6 @@
 {
-  "id": "2ba38dfa-180a-482a-af66-5f0cc2d50a0c",
-  "prevId": "885fbdd0-c0d2-42b3-90e3-7b4ab4515db6",
+  "id": "49eb1540-4790-4776-a6e3-63fe93239ba9",
+  "prevId": "d3ab0fb1-0f8b-48a5-af68-62aaf791f439",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -320,7 +320,13 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "pricing_rules_name_unique": {
+          "name": "pricing_rules_name_unique",
+          "columns": ["name"],
+          "nullsNotDistinct": false
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -450,6 +456,10 @@
         "products_stock_quantity_check": {
           "name": "products_stock_quantity_check",
           "value": "\"products\".\"stock_quantity\" >= 0"
+        },
+        "products_ingest_provenance_check": {
+          "name": "products_ingest_provenance_check",
+          "value": "(\"products\".\"ingest_job_id\" is null) = (\"products\".\"ingest_source_offset\" is null)"
         }
       },
       "isRLSEnabled": false
