@@ -38,9 +38,9 @@ npm run lint
 ```
 src/             app.ts (the Express app and the /api router), server.ts (the process entry point)
 src/middleware/  error handler (the one JSON error envelope), request validator (zod at the boundary)
-src/shared/      cross-cutting modules: logger.ts, http-error.ts
+src/shared/      cross-cutting modules: logger.ts, http-error.ts, error-bounds.ts (bounds with more than one enforcement point)
 tests/unit/      unit tests; tests/ itself holds helpers both kinds import (capture-logger.ts)
-docs/            design specs (docs/superpowers/specs)
+docs/            design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
 
 `tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
