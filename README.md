@@ -43,7 +43,7 @@ Stop the stack with `docker compose down`, or `docker compose down -v` to drop t
 
 `.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` holds that validation — it fails with the name of the offending variable — but nothing calls it yet, so `npm run dev` currently starts without checking anything. The first module that opens a connection wires it in. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432 and 6379 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL` or `REDIS_URL` to match. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
 
-The compose file holds the two stores only. Issue #19 adds the application containers (api, event-handler, ingestion-worker, reconciler), the migration step and the `monitoring` and `tools` profiles on top of it, so that a single `docker compose up` brings the whole stack up.
+The compose file holds the two stores only. Issue #19 adds the application containers (api, event-handler, ingestion-worker, reconciler), the migration step and the `monitoring` and `tools` profiles on top of it, so that a single `docker compose up` brings the whole stack up. Its `api` service must publish the fixed host port 3000 and answer `/api/health`: that is what `.claude/agents/e2e-tester.md` brings up and measures against, and the port is fixed so two runs cannot measure the same machine at once (commit `f588058` records the contract in `docker-compose.yml`). Nothing publishes 3000 until then.
 
 ## Project structure
 
@@ -59,7 +59,7 @@ docs/   design specs (docs/superpowers/specs)
 | ------ | --------- | ----------------------------------------- |
 | GET    | `/health` | Liveness probe, returns `{"status":"ok"}` |
 
-Further endpoints are documented as they land.
+Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`); the scaffold health route still sits at `/health` and moves with the `api` service in issue #19.
 
 ## Development workflow
 
