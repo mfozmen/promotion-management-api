@@ -539,9 +539,17 @@ change.
 12.2 A deliberate shortcut carries a comment naming its ceiling and the upgrade
 path, so the reviewer can tell a decision from an oversight.
 
-12.3 A PR delivers one story. Scope creep is a finding; open another issue.
+12.3 Comments earn their line. Write one where the code cannot speak: a
+non-obvious invariant, a unit that is not in the name, a reason the obvious
+approach was rejected, a shortcut's ceiling. Do not restate what the next line
+says, do not narrate a function already named after what it does, do not quote
+a REVIEW.md rule back at the reader, and do not document a parameter whose type
+already documents it. A module whose comments outweigh its code is a finding:
+trim the prose, or move it to the ADR if it is a decision rather than a note.
 
-12.4 Dependencies: prefer the standard library, then something already
+12.4 A PR delivers one story. Scope creep is a finding; open another issue.
+
+12.5 Dependencies: prefer the standard library, then something already
 installed. A new dependency for a few lines of code is a finding.
 
 ---
