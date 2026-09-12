@@ -21,17 +21,22 @@ const MAX_MESSAGE = 200;
 /** The two codes whose whole meaning is "come back later". Without a number a
  *  client retries as fast as it can, which amplifies the outage it met. */
 const RETRY_AFTER_SECONDS = '5';
-const RETRIABLE: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
-  'BACKPRESSURE',
-  'READ_MODEL_NOT_READY',
-]);
+// An array rather than a `ReadonlySet`: freezing a Set does not stop `.add`,
+// so the readonly type would be the only guard, and it is erased at build time.
+const RETRIABLE: readonly ErrorCode[] = Object.freeze(['BACKPRESSURE', 'READ_MODEL_NOT_READY']);
 
-const SERVER_FAULT = { status: 500, code: 'INTERNAL', message: 'Internal server error' } as const;
+// Frozen: its message is the body of every 500.
+const SERVER_FAULT = Object.freeze({
+  status: 500,
+  code: 'INTERNAL',
+  message: 'Internal server error',
+} as const);
 
 /** Public wording for a 5xx. A code without an entry says nothing to a client. */
 const SERVER_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = Object.freeze({
   READ_MODEL_NOT_READY: 'The read model is not ready yet; retry shortly',
 });
+/* Strings are immutable, so freezing the object is the whole control here. */
 
 /**
  * Express 5 throws a `RangeError` for a status outside [100, 999], so an
@@ -104,7 +109,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     const body: { error: Omit<ErrorMapping, 'status'> } = {
       error: { code: known.code, message: known.message.slice(0, MAX_MESSAGE) },
     };
-    if (RETRIABLE.has(known.code)) {
+    if (RETRIABLE.includes(known.code)) {
       res.set('Retry-After', RETRY_AFTER_SECONDS);
     }
     if (known.details !== undefined) {

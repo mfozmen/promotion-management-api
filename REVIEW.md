@@ -481,7 +481,10 @@ Evidence: twice in one pull request a control passed review while never firing
 in production. Express prints a raw stack on every environment except `test`,
 which is the one the suite runs in, and a compensating `debug` log line sat
 under a root logger running at `info` while the capture logger in the test ran
-at `trace`.
+at `trace`. A third time, a test asserted the assignment a shallow
+`Object.freeze` does stop and never the one it does not: the rows inside the
+frozen table stayed writable, and a row's fields are what the response is built
+from. Assert the reachable breach, not the one the control obviously covers.
 
 7.5 **Determinism.** Fixed clocks (injected `now` or fake timers), fixed
 fixtures, no random data, no `sleep` to wait for a worker. Poll a condition with

@@ -34,4 +34,13 @@ describe('the error tables', () => {
       (CLIENT_ERRORS as Record<number, unknown>)[413] = { code: 'INTERNAL', message: 'leaked' };
     }).toThrow(TypeError);
   });
+
+  // A shallow freeze holds the key-to-row binding and leaves the row writable,
+  // and the row's fields are what the envelope spreads into the response.
+  it('cannot have a row rewritten either', () => {
+    expect(() => {
+      (CLIENT_ERRORS[413] as { message: string }).message = 'connect pg://user:secret@db';
+    }).toThrow(TypeError);
+    expect(CLIENT_ERRORS[413]?.message).toBe('Request body is too large');
+  });
 });

@@ -57,14 +57,19 @@ export class HttpError extends Error {
 }
 
 /** Messages are ours, not body-parser's: body-parser's quote the input back.
- *  Frozen, like `STATUS`: one `.set` in a route module, or in any consumer of
- *  the built JavaScript, would change the error body of every concurrent
- *  request. The readonly type says it; the freeze enforces it. */
+ *  Frozen through the rows, because a shallow freeze holds the key-to-row
+ *  binding and leaves the row writable — and the row's fields are what the
+ *  envelope spreads into the response, so one assignment in any consumer of
+ *  the built JavaScript would change the error body of every concurrent
+ *  request. The readonly type is erased at build time; this is the control. */
 export const CLIENT_ERRORS: Readonly<Record<number, { code: ErrorCode; message: string }>> =
   Object.freeze({
-    400: { code: 'VALIDATION_ERROR', message: 'Request body could not be read' },
-    413: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' },
-    415: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Request body encoding is not supported' },
+    400: Object.freeze({ code: 'VALIDATION_ERROR', message: 'Request body could not be read' }),
+    413: Object.freeze({ code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' }),
+    415: Object.freeze({
+      code: 'UNSUPPORTED_MEDIA_TYPE',
+      message: 'Request body encoding is not supported',
+    }),
   } as const);
 
 export const OTHER_CLIENT_ERROR = Object.freeze({
