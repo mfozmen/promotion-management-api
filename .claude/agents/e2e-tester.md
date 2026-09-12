@@ -56,12 +56,13 @@ assertions.
 
 ## What to test, in this order
 
-0. **The cases in `docs/e2e-cases/`**, first and in issue order. Each file holds
-   one story's cases, derived from its acceptance criteria rather than from the
-   code. Run every case whose precondition the current tree satisfies and report
-   one line per case id: PASS, FAIL, or SKIP naming the precondition that was
-   missing. This is the floor of a run, not its ceiling; everything below is
-   what you add on top.
+0. **The cases in `docs/e2e-cases/`**, first. Each file is one user journey
+   from the case study — the vendor sending the weekly file, staff running a
+   promotion, the shopper browsing, staff running a flash sale — holding that
+   journey's user stories with their cases. Run every case whose precondition
+   the current tree satisfies, story by story, and report one line per case id:
+   PASS, FAIL, or SKIP naming the precondition that was missing. This is the
+   floor of a run, not its ceiling; everything below is what you add on top.
 
 1. **The journeys, end to end, before anything that tests a part in isolation.**
    Endpoints can each be correct while the path through them is broken, and that
