@@ -88,7 +88,16 @@ rewritten.
 - Strategy: six review findings this session were classes of mistake rather
   than one-off fixes, so each became a `REVIEW.md` rule in the same PR
   instead of a silent code fix, per the new 13b policy this PR also adds.
-- Human refinement: none needed — each rule states its own failure.
+- Human refinement: substantial, and in the blocking direction. The owner's
+  review (commit `3b5af3b`) reversed the 8c naming direction the model had
+  proposed and dropped the 8b comment-ratio threshold entirely: a percentage
+  gate passes every file that hits the number while still deleting
+  load-bearing contracts, so 8b now judges what a comment says rather than how
+  many lines it occupies. The owner also ruled that a mistake made
+  unstateable in the type beats a rule asking nobody to make it (8c.5, commit
+  `26a8de8`), which is the opposite of the model's instinct to add a rule per
+  finding. Each rule below states its own failure; the shape of the rules is
+  the owner's.
   - 2b (business data lives in the database, commit `15116a6`): a story
     written before its table invented a `DEFAULT_PRICING_RULES` constant to
     stand in for rows, which then had to be removed, re-tested and

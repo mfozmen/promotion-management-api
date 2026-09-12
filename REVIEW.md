@@ -138,10 +138,9 @@ has to be removed, re-tested and re-documented. Doing it in the wrong order
 means doing it twice.
 
 2b.5 What may be a constant in code: the instruction set, not the policy.
-Class names in a factory registry, zod schemas, enum members the database
-column already constrains, and physical limits such as PostgreSQL's bind
-parameter ceiling. If an operator would ever want to change it without a
-deploy, it is a row.
+Zod schemas, enum members the database column already constrains, and physical
+limits such as PostgreSQL's bind parameter ceiling. If an operator would ever
+want to change it without a deploy, it is a row.
 
 ---
 
