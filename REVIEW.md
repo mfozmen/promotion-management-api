@@ -598,6 +598,19 @@ and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not.
 
+8b.6 Configuration files carry no narrative. A compose file, a workflow, a
+`.env.example` or a properties file is read by someone who knows the tool, and
+what each entry does is what the entry says. `docker-compose.yml` has no
+comments at all; `.env.example` has at most one short line per variable; a
+workflow step gets a comment only when the step is not what it looks like. What
+never goes there: which issue adds the next service, how the design splits its
+stores, what another file's contract is, or why an option is set when the option
+name already says it.
+
+Evidence: a 121-line compose file carried 45 comment lines — the next issue's
+service plan, ADR-0003's Redis split and the e2e port contract, each already
+written where it belongs — and reached hand-off twice with them (PR #34).
+
 ---
 
 ## 8c. Names match
@@ -732,6 +745,20 @@ its own pull request, not in an issue to be dealt with later.
 
 12.4 Dependencies: prefer the standard library, then something already
 installed. A new dependency for a few lines of code is a finding.
+
+12.5 Startup validation covers only what would otherwise fail late and
+quietly. A wrong port, a malformed URL or a missing variable already fails at
+first use with the driver's own message; re-checking it buys nothing. What
+earns a check is the mistake that connects to _something_: a `DATABASE_URL`
+without a database name (the driver falls back to a default), the read model and
+the queue on one Redis logical database (a rebuild would erase the queue), a
+lease shorter than the budget it protects. One `z.object(...).parse(process.env)`
+with a refine per such invariant is the whole module; a hand-written validator
+with a test per branch is a finding.
+
+Evidence: a 149-line hand-written config validator with a 296-line test file
+guarded twelve variables of which three could fail quietly; the zod version is
+37 lines (PR #34).
 
 ---
 
