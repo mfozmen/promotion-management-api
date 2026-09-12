@@ -56,7 +56,6 @@ describe('migration', () => {
     expect(extensions.rows).toHaveLength(1);
     expect(enums.rows.map((row) => row.typname)).toEqual([
       'chunk_status',
-      'discount_type',
       'ingestion_status',
       'pricing_rule_type',
       'promotion_status',
@@ -76,8 +75,8 @@ describe('promotions exclusion constraints', () => {
     const productId = await insertProduct();
     const promotion = {
       name: 'January sale',
-      discountType: 'percentage' as const,
-      value: 1000,
+      calculator: 'PercentageDiscount',
+      params: { valueBasisPoints: 1000 },
       startsAt: JANUARY,
       endsAt: MARCH,
       productId,
@@ -98,8 +97,8 @@ describe('promotions exclusion constraints', () => {
   it('rejects two overlapping active promotions on one category', async () => {
     const promotion = {
       name: 'Stationery week',
-      discountType: 'fixed' as const,
-      value: 500,
+      calculator: 'FixedDiscount',
+      params: { valueCents: 500 },
       startsAt: JANUARY,
       endsAt: MARCH,
       category: 'stationery',
@@ -121,8 +120,8 @@ describe('promotions exclusion constraints', () => {
     const productId = await insertProduct();
     const promotion = {
       name: 'First',
-      discountType: 'fixed' as const,
-      value: 100,
+      calculator: 'FixedDiscount',
+      params: { valueCents: 100 },
       startsAt: JANUARY,
       endsAt: FEBRUARY,
       productId,
@@ -141,8 +140,8 @@ describe('promotions exclusion constraints', () => {
     const productId = await insertProduct();
     const promotion = {
       name: 'Cancelled sale',
-      discountType: 'percentage' as const,
-      value: 2500,
+      calculator: 'PercentageDiscount',
+      params: { valueBasisPoints: 2500 },
       startsAt: JANUARY,
       endsAt: MARCH,
       productId,
@@ -161,8 +160,8 @@ describe('promotions exclusion constraints', () => {
   it('ignores drafts, so two untargeted drafts can share a window', async () => {
     const draft = {
       name: 'Draft one',
-      discountType: 'fixed' as const,
-      value: 100,
+      calculator: 'FixedDiscount',
+      params: { valueCents: 100 },
       startsAt: JANUARY,
       endsAt: MARCH,
       status: 'draft' as const,
@@ -182,8 +181,8 @@ describe('promotions check constraints', () => {
     const productId = await insertProduct();
     const draft = {
       name: 'Unassigned draft',
-      discountType: 'percentage' as const,
-      value: 1000,
+      calculator: 'PercentageDiscount',
+      params: { valueBasisPoints: 1000 },
       startsAt: JANUARY,
       endsAt: MARCH,
       status: 'draft' as const,
@@ -211,8 +210,8 @@ describe('promotions check constraints', () => {
     const productId = await insertProduct();
     const active = {
       name: 'Active',
-      discountType: 'percentage' as const,
-      value: 1000,
+      calculator: 'PercentageDiscount',
+      params: { valueBasisPoints: 1000 },
       startsAt: JANUARY,
       endsAt: MARCH,
       status: 'active' as const,
@@ -231,8 +230,8 @@ describe('promotions check constraints', () => {
   it('requires ends_at to be strictly after starts_at', async () => {
     const zeroLength = {
       name: 'Zero length',
-      discountType: 'fixed' as const,
-      value: 100,
+      calculator: 'FixedDiscount',
+      params: { valueCents: 100 },
       startsAt: MARCH,
       endsAt: MARCH,
       status: 'draft' as const,
@@ -248,39 +247,29 @@ describe('promotions check constraints', () => {
     ).toBe(CHECK_VIOLATION);
   });
 
-  it('rejects a discount of zero or less and a percentage above 100 %', async () => {
+  it('leaves the calculator name and its params to the registry, not to a column', async () => {
     const base = {
-      name: 'Bad value',
-      discountType: 'percentage' as const,
-      value: 0,
+      name: 'Unknown calculator',
+      calculator: 'NoSuchDiscount',
+      params: { valueBasisPoints: 999_999 },
       startsAt: JANUARY,
       endsAt: MARCH,
       status: 'draft' as const,
     };
 
-    expect(await sqlStateOf(db().insert(promotions).values(base))).toBe(CHECK_VIOLATION);
-    expect(
-      await sqlStateOf(
-        db()
-          .insert(promotions)
-          .values({ ...base, value: -1 }),
-      ),
-    ).toBe(CHECK_VIOLATION);
-    expect(
-      await sqlStateOf(
-        db()
-          .insert(promotions)
-          .values({ ...base, value: 10001 }),
-      ),
-    ).toBe(CHECK_VIOLATION);
+    await db().insert(promotions).values(base);
+    await db()
+      .insert(promotions)
+      .values({ ...base, name: 'Empty params', calculator: 'PercentageDiscount', params: {} });
 
-    await db()
-      .insert(promotions)
-      .values({ ...base, value: 10000 });
-    await db()
-      .insert(promotions)
-      .values({ ...base, discountType: 'fixed', value: 10001 });
-    expect(await db().select({ id: promotions.id }).from(promotions)).toHaveLength(2);
+    const rows = await db()
+      .select({ calculator: promotions.calculator, params: promotions.params })
+      .from(promotions);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({
+      calculator: 'NoSuchDiscount',
+      params: { valueBasisPoints: 999_999 },
+    });
   });
 });
 
@@ -289,8 +278,8 @@ describe('promotions under concurrent writers', () => {
     const productId = await insertProduct();
     const promotion = {
       name: 'Race',
-      discountType: 'percentage' as const,
-      value: 1000,
+      calculator: 'PercentageDiscount',
+      params: { valueBasisPoints: 1000 },
       startsAt: JANUARY,
       endsAt: MARCH,
       productId,

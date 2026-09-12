@@ -46,8 +46,9 @@ use `gh pr diff <n>`.
      row wins (they are written together, so they are null together).
    - `promotions` — `promotions_no_overlapping_active_product` and
      `promotions_no_overlapping_active_category` (GiST, SQLSTATE `23P01` maps to
-     `409`), `ends_at > starts_at`, the percentage ceiling of 10 000 basis
-     points, `value > 0`, and the draft/active target checks.
+     `409`), `ends_at > starts_at`, and the draft/active target checks. The
+     discount itself is `calculator` plus `params`, bounded by that
+     calculator's zod schema rather than by a column.
    - `pricing_rules` — seeded by migration `0001`; a reader of the ingestion
      rules depends on `type = 'ingestion'`, `active` and `priority`.
    - `ingestion_jobs` — `file_sha256` unique (same file twice is a `409`) and

@@ -1,5 +1,5 @@
 {
-  "id": "d3ab0fb1-0f8b-48a5-af68-62aaf791f439",
+  "id": "316d2bae-7167-49c3-a4d0-11e9c9881bac",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -263,16 +263,16 @@
             "cycle": false
           }
         },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "type": {
           "name": "type",
           "type": "pricing_rule_type",
           "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -317,7 +317,30 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "pricing_rules_active_idx": {
+          "name": "pricing_rules_active_idx",
+          "columns": [
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "priority",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"pricing_rules\".\"active\"",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
@@ -491,16 +514,15 @@
           "primaryKey": false,
           "notNull": true
         },
-        "discount_type": {
-          "name": "discount_type",
-          "type": "discount_type",
-          "typeSchema": "public",
+        "calculator": {
+          "name": "calculator",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "value": {
-          "name": "value",
-          "type": "bigint",
+        "params": {
+          "name": "params",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
@@ -569,14 +591,6 @@
           "name": "promotions_window_check",
           "value": "\"promotions\".\"ends_at\" > \"promotions\".\"starts_at\""
         },
-        "promotions_percentage_value_check": {
-          "name": "promotions_percentage_value_check",
-          "value": "\"promotions\".\"discount_type\" <> 'percentage' or \"promotions\".\"value\" <= 10000"
-        },
-        "promotions_value_check": {
-          "name": "promotions_value_check",
-          "value": "\"promotions\".\"value\" > 0"
-        },
         "promotions_active_target_check": {
           "name": "promotions_active_target_check",
           "value": "\"promotions\".\"status\" <> 'active' or (\"promotions\".\"product_id\" is null) <> (\"promotions\".\"category\" is null)"
@@ -626,11 +640,6 @@
       "name": "chunk_status",
       "schema": "public",
       "values": ["pending", "running", "done", "failed"]
-    },
-    "public.discount_type": {
-      "name": "discount_type",
-      "schema": "public",
-      "values": ["percentage", "fixed"]
     },
     "public.ingestion_status": {
       "name": "ingestion_status",

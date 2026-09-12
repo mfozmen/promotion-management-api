@@ -17,7 +17,6 @@ import {
 // Drizzle cannot express `exclude using gist`; the two promotion constraints and the
 // btree_gist extension live in migration 0000 only. Keep both sides in step (REVIEW.md 11.4).
 
-export const discountType = pgEnum('discount_type', ['percentage', 'fixed']);
 export const promotionStatus = pgEnum('promotion_status', ['draft', 'active', 'cancelled']);
 export const pricingRuleType = pgEnum('pricing_rule_type', ['ingestion', 'promotion']);
 export const ingestionStatus = pgEnum('ingestion_status', [
@@ -63,8 +62,10 @@ export const promotions = pgTable(
   {
     id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
     name: text('name').notNull(),
-    discountType: discountType('discount_type').notNull(),
-    value: bigint('value', { mode: 'number' }).notNull(), // basis points or cents
+    // The registry key of the class that prices this promotion, and that class's own
+    // configuration; its zod schema is what bounds the values, not a column check (spec 4).
+    calculator: text('calculator').notNull(),
+    params: jsonb('params').notNull(),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
     productId: bigint('product_id', { mode: 'number' }).references(() => products.id),
@@ -76,11 +77,6 @@ export const promotions = pgTable(
   (table) => [
     check('promotions_window_check', sql`${table.endsAt} > ${table.startsAt}`),
     check(
-      'promotions_percentage_value_check',
-      sql`${table.discountType} <> 'percentage' or ${table.value} <= 10000`,
-    ),
-    check('promotions_value_check', sql`${table.value} > 0`),
-    check(
       'promotions_active_target_check',
       sql`${table.status} <> 'active' or (${table.productId} is null) <> (${table.category} is null)`,
     ),
@@ -91,17 +87,26 @@ export const promotions = pgTable(
   ],
 );
 
-export const pricingRules = pgTable('pricing_rules', {
-  id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
-  name: text('name').notNull().unique(), // lets the seed re-apply without duplicating a rule
-  type: pricingRuleType('type').notNull(),
-  conditions: jsonb('conditions').notNull(),
-  event: jsonb('event').notNull(),
-  priority: integer('priority').notNull().default(0),
-  active: boolean('active').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const pricingRules = pgTable(
+  'pricing_rules',
+  {
+    id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
+    type: pricingRuleType('type').notNull(),
+    name: text('name').notNull().unique(), // lets the seed re-apply without duplicating a rule
+    conditions: jsonb('conditions').notNull(),
+    event: jsonb('event').notNull(),
+    priority: integer('priority').notNull().default(0),
+    active: boolean('active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Serves the loader: one layer's rules, highest priority first.
+    index('pricing_rules_active_idx')
+      .on(table.type, table.priority.desc())
+      .where(sql`${table.active}`),
+  ],
+);
 
 export const ingestionJobs = pgTable(
   'ingestion_jobs',

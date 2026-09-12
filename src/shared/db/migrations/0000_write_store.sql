@@ -1,6 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS "btree_gist";--> statement-breakpoint
 CREATE TYPE "public"."chunk_status" AS ENUM('pending', 'running', 'done', 'failed');--> statement-breakpoint
-CREATE TYPE "public"."discount_type" AS ENUM('percentage', 'fixed');--> statement-breakpoint
 CREATE TYPE "public"."ingestion_status" AS ENUM('running', 'paused', 'completed', 'failed', 'aborted');--> statement-breakpoint
 CREATE TYPE "public"."pricing_rule_type" AS ENUM('ingestion', 'promotion');--> statement-breakpoint
 CREATE TYPE "public"."promotion_status" AS ENUM('draft', 'active', 'cancelled');--> statement-breakpoint
@@ -39,8 +38,8 @@ CREATE TABLE "ingestion_jobs" (
 --> statement-breakpoint
 CREATE TABLE "pricing_rules" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "pricing_rules_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
-	"name" text NOT NULL,
 	"type" "pricing_rule_type" NOT NULL,
+	"name" text NOT NULL,
 	"conditions" jsonb NOT NULL,
 	"event" jsonb NOT NULL,
 	"priority" integer DEFAULT 0 NOT NULL,
@@ -71,8 +70,8 @@ CREATE TABLE "products" (
 CREATE TABLE "promotions" (
 	"id" bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "promotions_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1),
 	"name" text NOT NULL,
-	"discount_type" "discount_type" NOT NULL,
-	"value" bigint NOT NULL,
+	"calculator" text NOT NULL,
+	"params" jsonb NOT NULL,
 	"starts_at" timestamp with time zone NOT NULL,
 	"ends_at" timestamp with time zone NOT NULL,
 	"product_id" bigint,
@@ -81,8 +80,6 @@ CREATE TABLE "promotions" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"cancelled_at" timestamp with time zone,
 	CONSTRAINT "promotions_window_check" CHECK ("promotions"."ends_at" > "promotions"."starts_at"),
-	CONSTRAINT "promotions_percentage_value_check" CHECK ("promotions"."discount_type" <> 'percentage' or "promotions"."value" <= 10000),
-	CONSTRAINT "promotions_value_check" CHECK ("promotions"."value" > 0),
 	CONSTRAINT "promotions_active_target_check" CHECK ("promotions"."status" <> 'active' or ("promotions"."product_id" is null) <> ("promotions"."category" is null)),
 	CONSTRAINT "promotions_draft_target_check" CHECK ("promotions"."status" <> 'draft' or ("promotions"."product_id" is null and "promotions"."category" is null))
 );
@@ -96,6 +93,7 @@ CREATE TABLE "reconciler_state" (
 ALTER TABLE "ingestion_chunks" ADD CONSTRAINT "ingestion_chunks_job_id_ingestion_jobs_id_fk" FOREIGN KEY ("job_id") REFERENCES "public"."ingestion_jobs"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "promotions" ADD CONSTRAINT "promotions_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "ingestion_jobs_one_running_per_vendor" ON "ingestion_jobs" USING btree ("vendor") WHERE "ingestion_jobs"."status" in ('running', 'paused');--> statement-breakpoint
+CREATE INDEX "pricing_rules_active_idx" ON "pricing_rules" USING btree ("type","priority" DESC NULLS LAST) WHERE "pricing_rules"."active";--> statement-breakpoint
 CREATE INDEX "products_category_id_idx" ON "products" USING btree ("category","id");--> statement-breakpoint
 -- At most one active product-level promotion per product per instant, and the same per
 -- category. Drizzle has no builder for exclusion constraints, so they are written by hand;

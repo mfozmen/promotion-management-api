@@ -43,7 +43,7 @@ Use Vitest as the test runner, paired with Supertest for HTTP integration tests 
 - Supertest lets integration tests exercise the Express app in-process (no network binding required), keeping the hottest endpoints (e.g. single product detail) testable at both unit and HTTP-contract level.
 - Coverage reporting (`npm run test:cov`) feeds the SonarCloud quality gate.
 - TDD discipline slows down initial feature authoring in exchange for a regression-resistant codebase and living documentation of behavior via tests — this is treated as a net win for a codebase reviewed by AI and humans on every PR.
-- Database tests run against a real PostgreSQL, never a mock or an in-process substitute, because the invariants under test are `CHECK`, unique and GiST exclusion constraints that only PostgreSQL enforces. The cost is a `postgres:16-alpine` service in CI and a running server locally (`TEST_DATABASE_URL`); isolation comes from cloning a migrated template database per test file (commit `c6a98ea`).
+- Database tests run against a real PostgreSQL, never a mock or an in-process substitute, because the invariants under test are `CHECK`, unique and GiST exclusion constraints that only PostgreSQL enforces. The cost is a `postgres:16-alpine` service in CI and a running server locally (`TEST_DATABASE_URL`); isolation comes from cloning a migrated template database per test file (issue #5).
 
 ---
 
@@ -67,14 +67,14 @@ Money is stored as integer minor units, percentages as basis points, timestamps 
 - Every read-model write is a recompute from PostgreSQL, so handlers are idempotent and retry-safe; the event-handler runs with concurrency 1 to keep them ordered.
 - The read model is eventually consistent: a write is visible after the handler runs, typically well under a second for single products and a few seconds for a 50 000-product category.
 - Redis is a hard runtime dependency; an empty read model answers `503` until the cold-start rebuild completes.
-- Ingestion pricing rules are `pricing_rules` rows seeded by migration `0001`, not a TypeScript constant, so they change without a deploy; a `type` column (`ingestion`, `promotion`) keeps room for the second kind without a second table, and promotions stay rows in `promotions` (ADR-0004).
+- Ingestion pricing rules are `pricing_rules` rows seeded by migration `0001`, not a TypeScript constant, so they change without a deploy. The `type` column separates them from the promotion-layer rules the resolver loads (ADR-0004), and `pricing_rules_active_idx (type, priority desc) where active` serves both loaders.
 
 ### Trade-offs
 
 - Eventual consistency instead of read-your-writes on the storefront. Accepted because the storefront is a catalogue, not a checkout.
 - Two stores and a queue to operate instead of one database. Accepted because the case grades the structural answer to flash-sale load, and the safety net (ADR-0007) covers drift.
 - Emission after commit without a transactional outbox: a crash between commit and enqueue leaves stale entries until the reconciler repairs them within five minutes.
-- Drizzle cannot express `exclude using gist`, so the two promotion exclusion constraints and the `btree_gist` extension exist only as hand-written SQL in migration `0000` and are invisible to `src/shared/db/schema.ts`. Accepted because the database must own the conflict rule (ADR-0004); the cost is that a regenerated migration will not reproduce them, so schema and migrations are kept in step by hand and asserted by the integration tests (commit `c6a98ea`, REVIEW.md 11.4).
+- Drizzle cannot express `exclude using gist`, so the two promotion exclusion constraints and the `btree_gist` extension exist only as hand-written SQL in migration `0000` and are invisible to `src/shared/db/schema.ts`. Accepted because the database must own the conflict rule (ADR-0004); the cost is that a regenerated migration will not reproduce them, so schema and migrations are kept in step by hand and asserted by the integration tests (issue #5, REVIEW.md 11.4).
 - Connection budget: `createPool` fixes `max: 10` with a 10 s `statement_timeout` and a 10 s `idle_in_transaction_session_timeout`. Four process types against a default `max_connections` of 100 leaves room for about nine processes, so `--scale ingestion-worker=8` is the ceiling before the pool size has to come from the environment.
 - Migrations run on their own pool with both timeouts disabled, because a timed-out index build leaves `__drizzle_migrations` unwritten and every retry replays the same statement. `CREATE INDEX CONCURRENTLY` cannot run inside the transactional migrator at all, so a hot-table index (REVIEW.md 11.2) will need a migration applied outside it.
 - `products.updated_at` defaults to `now()` and has no trigger; the writer sets it, which keeps one clock (REVIEW.md 1.7) and leaves room for the `is distinct from` guard that stops a weekly upsert rewriting 500 000 unchanged rows (REVIEW.md 6.17).
