@@ -47,8 +47,11 @@ The suite is split into layers, so the one that needs nothing can run anywhere:
 | both, with coverage                | `npm run test:cov`         | real PostgreSQL | CI (the 100 % gate)         |
 
 The integration tests run against a real PostgreSQL, never a mock. Point them at one with
-`TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`); a
-throwaway server is one command away:
+`TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
+default is not the compose server: `docker-compose.yml` publishes 5432 with the `.env`
+credentials, so either reuse it with
+`TEST_DATABASE_URL=postgres://promo:promo@localhost:5432/promotion`, or keep the harness's
+template and clone databases out of the compose volume with a throwaway server:
 
 ```bash
 docker run -d --rm --name pma-db-test -p 55432:5432 \
