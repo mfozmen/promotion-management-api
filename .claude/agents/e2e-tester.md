@@ -22,13 +22,24 @@ routes under `src/`.
 
 1. `npm ci` only if `node_modules` is missing.
 2. Start dependencies if a `docker-compose.yml` exists: `docker compose up -d --wait`.
-3. Pick a free port (e.g. 3100 + random) and start the API in the background:
-   `PORT=<port> npm run dev > e2e-server.log 2>&1 &`. Record the PID.
-4. Wait until `curl -sf localhost:<port>/health` returns 200 (max 30 s). If it
+3. Pick a port and prove it is free before using it: fail the run if anything
+   already listens on it (`Get-NetTCPConnection -LocalPort <port> -State Listen`
+   on Windows, `ss -ltn` elsewhere) and pick another. Start the API in the
+   background: `PORT=<port> npm run dev > e2e-server.log 2>&1 &`.
+4. **Prove you are talking to the server you started.** Find the process that
+   actually listens on the port and check it is a descendant of the one you
+   launched, or that its command line points at this worktree. A stale server
+   from an earlier run answers `/health` exactly like yours and will make every
+   assertion below meaningless. If the listener is not yours, kill it, then
+   restart on a verified-free port.
+5. Wait until `curl -sf localhost:<port>/health` returns 200 (max 30 s). If it
    never does, print the last 40 lines of `e2e-server.log` and FAIL.
 
-Always tear down at the end (kill the server PID; leave docker services up
-unless you started them). Delete `e2e-server.log` after quoting what matters.
+Always tear down at the end, and verify it: kill the process tree, then confirm
+nothing listens on the port any more. A leaked `tsx watch` survives the agent
+that started it, holds the port, and silently serves the next run's probes.
+Leave docker services up unless you started them. Delete `e2e-server.log` after
+quoting what matters.
 
 Windows notes: `jq` may be missing, use a `node -e` one-liner for JSON
 assertions. `kill` on the npm PID does not stop the tsx/node child; find the
