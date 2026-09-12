@@ -637,9 +637,9 @@ it is.
 Evidence: `http-error.ts` exported a class called `AppError`. The fields were
 `status`, `code` and `details`, so the file was right and the class was renamed.
 
-8c.2 One declaration per file. Every `class`, `interface`, `abstract class` and
-`enum` lives in its own file named after it, together with the private helpers
-only it uses. A second exported declaration in the same file is a finding, and
+8c.2 One exported declaration per file — `class`, `interface`, `abstract class`,
+`enum`, `type` alias or function — in a file named after it, together with the
+private helpers only it uses. A second exported declaration in the same file is a finding, and
 "they are all about one concept" is not a defence: a concept is what a directory
 is for.
 
@@ -679,6 +679,11 @@ Evidence: ADR-0004 on #35 stated the promotion precedence rule three different
 ways in one section: "at most one active promotion per product", "at most one
 applied promotion", and "product level wins". No single name ran through the
 prose, so a rename had nothing to follow.
+
+8c.7 Directories are named for a role, never for a kind of syntax. Inside a
+module: `domain/` (types and pure rules, importing no store and no framework),
+`db/`, `http/`, `jobs/`; in `src/shared/db/schema/` one file per table. No
+`models/`, `types/`, `interfaces/`, `classes/`. The tree is in CONTRIBUTING.md.
 
 ---
 
