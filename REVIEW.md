@@ -702,6 +702,11 @@ ways in one section: "at most one active promotion per product", "at most one
 applied promotion", and "product level wins". No single name ran through the
 prose, so a rename had nothing to follow.
 
+8c.7 Directories are named for a role, never for a kind of syntax. Inside a
+module: `domain/` (types and pure rules, importing no store and no framework),
+`db/`, `http/`, `jobs/`; in `src/shared/db/schema/` one file per table. No
+`models/`, `types/`, `interfaces/`, `classes/`. The tree is in CONTRIBUTING.md.
+
 ---
 
 ## 9. Failure handling and operations
