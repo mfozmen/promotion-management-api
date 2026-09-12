@@ -49,8 +49,8 @@ const BASIS_POINTS_PER_UNIT = 10_000n;
  * `bigint` so no intermediate product loses a cent, and the effective price is
  * clamped into `[0, baseCents]`. A subclass supplies only its schema and its
  * discount, so a new calculator cannot reintroduce a rounding or clamping bug
- * that was already fixed once — and cannot raise a price either, whatever a
- * rule row asks of it.
+ * that was already fixed once — and cannot raise a price either, whatever the
+ * row asks of it.
  */
 abstract class ValidatedDiscount<P> implements DiscountCalculator {
   protected abstract readonly name: string;
@@ -117,9 +117,11 @@ class FixedDiscount extends ValidatedDiscount<z.infer<typeof fixedParams>> {
 }
 
 /**
- * The names a rule row may use, mapped to the classes that implement them.
- * Seeded with the two the case asks for; a tiered or buy-one-get-one discount
- * is a new class and one more line here.
+ * The names a row may use, mapped to the classes that implement them: a
+ * `promotions.calculator` on this path, and an ingestion rule's event on the
+ * other, since both layers share this registry. Seeded with the two the case
+ * asks for; a tiered or buy-one-get-one discount is a new class and one more
+ * line here.
  */
 const CALCULATORS: ReadonlyMap<string, new () => DiscountCalculator> = new Map<
   string,
@@ -131,8 +133,8 @@ const CALCULATORS: ReadonlyMap<string, new () => DiscountCalculator> = new Map<
 
 export const CalculatorFactory = {
   /**
-   * `undefined` for a name the registry does not know: a defect in the rule
-   * row, which the caller reports rather than crashing on.
+   * `undefined` for a name the registry does not know: a defect in the row
+   * that named it, which the caller reports rather than crashing on.
    */
   create(name: string): DiscountCalculator | undefined {
     const Calculator = CALCULATORS.get(name);

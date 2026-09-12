@@ -427,6 +427,43 @@ rewritten.
   hides a bad input rather than reporting it — which is the shape this pull
   request kept finding.
 
+### 2026-09-12 — Pricing core: the third reshape in one pull request (issue #8, PR #29, PR #35, commit `12eaf94`)
+
+- Supersedes the shape recorded above, not the facts: `applyPromotions(baseCents, event)`
+  and the `DiscountEvent` wrapper no longer exist. Everything the earlier entries
+  record about defects found along the way stays as written.
+- Challenge: the merge at `64177c9` brought section 4 of the design spec forward
+  again (PR #35). The calculator name is now a column, `promotions.calculator`,
+  with its configuration in `promotions.params`, and the rule event no longer
+  names a calculator — it names the winning level,
+  `{ type: 'selectCandidate', params: { level } }`. The reason is the seeded
+  largest-discount default: it has to compare two candidates' discounts, and a
+  rule cannot compare candidates it never sees together, so the resolver computes
+  each candidate's discount first and then runs the engine once over a fact set
+  holding both.
+- Resolution (commit `12eaf94`): `applyPromotions(baseCents, calculator, params)`
+  now takes exactly what the promotion row carries. The `DiscountEvent` wrapper is
+  deleted — its `type` was never read in this module, and the thing that reads a
+  type is the resolver (issue #36). `params` stops carrying the calculator name,
+  and the `event === null` "no rule fired" path went with the wrapper, since "no
+  promotion applies" is the resolver's answer rather than a call into this module
+  with nothing to apply.
+- Unchanged: the `DiscountCalculator` interface, the `ValidatedDiscount` abstract
+  base that owns schema validation, the bigint arithmetic, the floored discount
+  and the `[0, base]` bound, the two calculators, the factory, `isActive`, and
+  failures returned rather than thrown.
+- Verification of the fix: 28 tests in the suite, 27 of them in
+  `tests/pricing/effective-price.test.ts`, at 100 % statement, branch, function
+  and line coverage; `npm run lint` and `npm run typecheck` are clean and the
+  local agents were re-run.
+- Honest lesson, a process one rather than a coding one: this branch is stacked on
+  a design branch that is still moving, and each merge from that base can
+  invalidate a signature the branch has already implemented and tested. Three of
+  the four design mismatches in this pull request were found by the advisory
+  review after the fact rather than by the branch noticing its own base had
+  changed. The correction adopted is to diff section 4 against the module before
+  every push, in the same commit, instead of after a review says so.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
