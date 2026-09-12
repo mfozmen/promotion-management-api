@@ -383,6 +383,10 @@ rewritten.
 - Human refinement: the owner directed that the field-name fix be its own commit
   placed ahead of the merge, which is what turned a repeated defect into a
   procedure.
+- Superseded, same day: that procedure covers one merge only. The next base
+  merge, `00faf96`, reverted the same word a fourth time, because `main` has
+  never carried the correction and re-proposes it at every merge. See the last
+  entry in the Judgement section.
 - Open, routed to the owner, not decided here: whether 8c.2 ("one declaration
   per file") reaches Drizzle `pgTable` / `pgEnum` consts. `src/shared/db/schema.ts`
   exports five enums and six tables from one file, while 8c.2's own text
@@ -819,17 +823,21 @@ rewritten.
 - Verification: `git diff ffb09a0 HEAD -- docs/superpowers/specs/2026-09-12-domain-design.md`
   shows the field reverting inside the merge, and a grep for
   `ingestion_rules_version` across the migrations of every ref finds nothing.
-- Resolution: made in `d22aa5c`, one word on line 412, in its own commit placed
-  before the next base merge so the merge could not swallow it a third time.
-  This agent reported FAIL for the round in which the name was still reverted;
-  the entry below records the restoration and the ordering that holds it.
-  Scenario A is the affected half: the field is what a storefront read would
-  key on to tell which ingestion rule set priced a product.
+- Resolution: not made here. The spec is outside the three documents this agent
+  edits; one word on line 412 restores it, and this round reports FAIL until it
+  is restored. Scenario A is the affected half: the field is what a storefront
+  read would key on to tell which ingestion rule set priced a product.
 - The class, not the instance: the conflicted hunks of a merge get reviewed, the
   hunks resolved silently do not. Both earlier merge entries on this branch
   record defects in text the merge did not mark as conflicting, and this is the
   third. A correction is only safe once it is on the same side of the merge as
   the text it corrects.
+- Superseded, next round (2026-09-13, `d22aa5c`): the restoration was made — one
+  word on line 412, in its own commit placed before the base merge `28b8453` so
+  the merge saw a single value on that line. The FAIL above records the state of
+  `d2ad2eb`, not of every later head; the entry below carries the before/after
+  and the ordering rule, and the last entry in this section records the fourth
+  revert, in merge `00faf96`.
 
 ### 2026-09-13 — A merge swallowed the same review fix twice, and what stopped the third time (PR #50, `d22aa5c` → `28b8453`)
 
@@ -858,6 +866,10 @@ rewritten.
 - Scenario B is the affected half: `pricingRulesVersion` is what a storefront
   read returns to identify which ingestion rule set priced a product, so the name
   published in §5 is a contract with every read-model consumer.
+- Superseded, same day: the ordering rule held for exactly one merge. The fourth
+  base merge `00faf96` put `ingestionRulesVersion` back on line 412 again, so
+  "the document now agrees with itself" describes `28b8453`, not this branch's
+  head. The entry below has the cause.
 
 ### 2026-09-13 — What a warning had been hiding in this branch's comments (PR #50, `489bc27`)
 
@@ -941,6 +953,33 @@ rewritten.
 - Challenge: the owner asked what the 149-line hand-written validator was for, given that its stated reason for not using zod ("zod is not here yet, a dependency for twenty lines is a 12.5 finding") described a `package.json` two pull requests old. Two earlier entries in this file (the first `chore/compose-config` entry and the comment-density pass) and the module comment in `src/shared/config.ts` had repeated that reasoning without re-checking it.
 - Verification: `grep zod package.json` and `git log -S zod -- package.json` on `origin/main`: the dependency arrived with #27 and is imported on #30. The premise of the deferral had been false since before the branch's third review round.
 - Resolution: the validator and its 296-line test file are replaced by the owner's schema; every check that merely re-typed a value went, the three that catch a quiet late failure stayed. The lesson recorded for the appendix: a documented reason to defer must be re-verified on every merge from main, because the AI carries the sentence forward verbatim and the tree does not.
+
+### 2026-09-13 — The fourth merge undid it again, because the fix never reached the base (PR #50, merge `00faf96`)
+
+- Challenge: the ordering rule recorded two entries above — correct on the same
+  side of the merge as the text it corrects, then merge — held for `28b8453` and
+  failed on the next one. `00faf96` merged `origin/main` at `727aa1b` and took
+  the base's §5 table again: line 412 of the domain spec reads
+  `ingestionRulesVersion` at this head, the fourth time this branch has lost that
+  word. `git show 727aa1b:docs/superpowers/specs/2026-09-12-domain-design.md`
+  line 410 shows why — `main` has never carried the correction, so every merge
+  from it re-proposes the old name, and this time as a listed conflict resolved
+  to the base.
+- Verification: `git diff 996f908 00faf96 -- docs/superpowers/specs/2026-09-12-domain-design.md`
+  shows the revert in one hunk, and the same `grep -rn ingestion_rules_version`
+  over the migrations of every ref still finds nothing, so the column name is
+  not in dispute — only the document's copy of it.
+- What was wrong in the reasoning, not just in the file: ordering was recorded as
+  the control. It is a control for one merge. The durable fix is on the other
+  side — the correction has to land on `main`, because a branch-only fix to text
+  the base also owns is re-litigated at every merge. This entry's predecessor
+  overstated a one-merge remedy as a general one.
+- Resolution: not made here. The spec is outside the three documents this agent
+  edits, and `main` is outside this branch; one word on line 412 restores it on
+  this branch and one on `main` line 410 ends the cycle. This round reports FAIL
+  until the branch copy is restored, and routes the `main` half to the owner.
+- Scenario B is the affected half, unchanged: `pricingRulesVersion` is what a
+  storefront read returns to say which ingestion rule set priced a product.
 
 ## Overall reflection
 
