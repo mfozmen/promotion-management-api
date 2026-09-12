@@ -7,8 +7,8 @@ import { z } from 'zod';
  * at the queue boundary: a malformed job fails where it is produced rather than
  * deep inside a handler.
  *
- * Payloads are strict, so a correlation id travels in the BullMQ job options;
- * putting one in a payload means adding it to that event's schema here first.
+ * Payloads are strict, so nothing rides along uninvited: a correlation id has to
+ * be added to a schema here before it can cross the queue boundary.
  */
 
 const entityId = z.number().int().positive();

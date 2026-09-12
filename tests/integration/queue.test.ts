@@ -206,6 +206,23 @@ describe('queue contracts', () => {
     expect(await queues.events.getWaitingCount()).toBe(1);
   });
 
+  it('refuses to remove boundary jobs inside a PostgreSQL transaction', async () => {
+    const now = new Date('2026-09-12T00:00:00.000Z');
+    await schedulePromotionBoundary(
+      queues,
+      10,
+      'expire',
+      new Date('2026-09-13T00:00:00.000Z'),
+      now,
+    );
+
+    await expect(
+      withinTransaction(async () => removePromotionBoundaries(queues, 10)),
+    ).rejects.toThrow(/after the PostgreSQL commit/);
+
+    expect(await queues.events.getDelayedCount()).toBe(1);
+  });
+
   it('keeps both queues on the queue database and never writes to the read-model database', async () => {
     const readModel = new Redis(redisUrl, { db: READ_MODEL_DB });
     const queueDb = new Redis(redisUrl, { db: QUEUE_DB });

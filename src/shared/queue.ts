@@ -43,17 +43,21 @@ export function withinTransaction<T>(body: () => T): T {
   return transactionScope.run(true, body);
 }
 
+function assertOutsideTransaction(operation: string): void {
+  if (transactionScope.getStore() !== undefined) {
+    throw new Error(
+      `${operation} must happen after the PostgreSQL commit, never inside the transaction`,
+    );
+  }
+}
+
 export async function enqueue<N extends EventName>(
   queues: Queues,
   name: N,
   payload: EventPayload<N>,
   options?: JobsOptions,
 ): Promise<Job> {
-  if (transactionScope.getStore() !== undefined) {
-    throw new Error(
-      `enqueue("${name}") must happen after the PostgreSQL commit, never inside the transaction`,
-    );
-  }
+  assertOutsideTransaction(`enqueue("${name}")`);
   return queues[queueOfEvent[name]].add(name, parseEvent(name, payload), options);
 }
 
@@ -89,6 +93,9 @@ export function schedulePromotionBoundary(
 }
 
 /**
+ * Removing a boundary job is a Redis write that a PostgreSQL rollback cannot
+ * undo, so it is barred inside a transaction for the same reason enqueueing is.
+ *
  * Returns BullMQ's removal code per boundary: `1` when nothing blocked the
  * removal, including when there was no such job, and `0` when a worker already
  * holds the job. A cancel racing a running activate gets `0` and can log it; the
@@ -99,6 +106,7 @@ export async function removePromotionBoundaries(
   queues: Queues,
   promotionId: number,
 ): Promise<Record<PromotionBoundary, number>> {
+  assertOutsideTransaction(`removePromotionBoundaries(${promotionId})`);
   const [activate, expire] = await Promise.all([
     queues.events.remove(promotionBoundaryJobId(promotionId, 'activate')),
     queues.events.remove(promotionBoundaryJobId(promotionId, 'expire')),
