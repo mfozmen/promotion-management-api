@@ -9,6 +9,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Node.js 22
 - Express 5
 - TypeScript (strict mode)
+- PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
 - Vitest + Supertest (testing)
 - ESLint + Prettier
 - SonarCloud (static analysis / quality gate)
@@ -18,6 +19,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
+- PostgreSQL 16 for the integration tests
 
 ## Getting started
 
@@ -29,10 +31,23 @@ npm run test:cov
 npm run lint
 ```
 
+The integration tests run against a real PostgreSQL, never a mock. Point them at one with
+`TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`); a
+throwaway server is one command away:
+
+```bash
+docker run -d --rm --name pma-db-test -p 55432:5432   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promotion postgres:16-alpine
+```
+
+`globalSetup` applies `src/shared/db/migrations/*.sql` to a template database once; each test
+file then clones that template, so files stay isolated and can run in parallel. Regenerate the
+migrations with `npx drizzle-kit generate` after changing `src/shared/db/schema.ts`, and apply
+them to a running database with `npx drizzle-kit migrate`.
+
 ## Project structure
 
 ```
-src/    application source code
+src/    application source code (src/shared/db holds the Drizzle schema, client and SQL migrations)
 tests/  automated tests (unit, integration)
 docs/   design specs (docs/superpowers/specs)
 ```

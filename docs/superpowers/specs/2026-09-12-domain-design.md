@@ -78,7 +78,7 @@ create table promotions (
 
 create type pricing_rule_type as enum ('ingestion', 'promotion');
 
-create table pricing_rules (                    -- json-rules-engine rules, both layers
+create table pricing_rules (                    -- json-rules-engine rules, both layers; seeded by migration 0001
   id          bigint generated always as identity primary key,
   type        pricing_rule_type not null,
   name        text not null,

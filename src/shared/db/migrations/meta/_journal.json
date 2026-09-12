@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789228132185,
+      "tag": "0000_write_store",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1789228148832,
+      "tag": "0001_seed_pricing_rules",
+      "breakpoints": true
+    }
+  ]
+}

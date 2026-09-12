@@ -66,6 +66,7 @@ Money is stored as integer minor units, percentages as basis points, timestamps 
 - Every read-model write is a recompute from PostgreSQL, so handlers are idempotent and retry-safe; the event-handler runs with concurrency 1 to keep them ordered.
 - The read model is eventually consistent: a write is visible after the handler runs, typically well under a second for single products and a few seconds for a 50 000-product category.
 - Redis is a hard runtime dependency; an empty read model answers `503` until the cold-start rebuild completes.
+- Ingestion pricing rules are `pricing_rules` rows seeded by migration `0001`, not a TypeScript constant, so they change without a deploy; a `type` column (`ingestion`, `promotion`) keeps room for the second kind without a second table, and promotions stay rows in `promotions` (ADR-0004).
 
 ### Trade-offs
 

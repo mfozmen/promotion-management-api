@@ -38,6 +38,25 @@ use `gh pr diff <n>`.
 4. **Data and contracts.** Compare schema or migration changes against every
    query that touches the same tables. Check API response shapes against
    README/API docs and tests. Flag breaking changes to any existing endpoint.
+   The write store's trace points, all defined in `src/shared/db/schema.ts` and
+   `src/shared/db/migrations/`:
+   - `products` — `sku` unique, `base_price_cents >= 0`, `stock_quantity >= 0`,
+     `products_category_id_idx (category, id)` for keyset scans, and the
+     `ingest_job_id` / `ingest_source_offset` pair that decides which ingestion
+     row wins (they are written together, so they are null together).
+   - `promotions` — `promotions_no_overlapping_active_product` and
+     `promotions_no_overlapping_active_category` (GiST, SQLSTATE `23P01` maps to
+     `409`), `ends_at > starts_at`, the percentage ceiling of 10 000 basis
+     points, `value > 0`, and the draft/active target checks.
+   - `pricing_rules` — seeded by migration `0001`; a reader of the ingestion
+     rules depends on `type = 'ingestion'`, `active` and `priority`.
+   - `ingestion_jobs` — `file_sha256` unique (same file twice is a `409`) and
+     `ingestion_jobs_one_running_per_vendor` partial unique index.
+   - `ingestion_chunks` — `(job_id, chunk_index)` primary key, `next_offset`
+     checkpoint, `lease_until` claim expiry, and `attempts` counted apart from
+     `failures`.
+   - `reconciler_state` — a single row, seeded by migration `0000`.
+
 5. **Documents.** Check `ADR.md` for decisions the change contradicts or
    should record. Check whether `README.md` or `CONTRIBUTING.md` need updates.
 6. **Verify.** Run `npm run lint`, `npm run typecheck`, `npm run test:cov`.
