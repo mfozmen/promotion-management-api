@@ -191,6 +191,26 @@ rewritten.
   describes is therefore history, not the shipped state — see "A CI gate built,
   reviewed twice, then deleted" under Judgement.
 
+### 2026-09-12 — Reversal reconciled in the documents before the code (PR #35, `7105a12`)
+
+- Strategy: the owner reversed the design this branch had been building for
+  seven commits — promotion and pricing stay separate modules, and a promotion
+  keeps `discount_type` plus `value` instead of a `calculator` registry key and
+  a `params` jsonb bag. The reconciliation was asked for as a document change
+  first: rewrite section 4 of the domain spec and ADR-0004 so the rule event
+  names the winning _level_ and nothing else, and the arithmetic is one pure
+  function, `applyPromotion(basePriceCents, promotion)` returning a
+  `PricingOutcome` union. Then let the code branches (#29, #50) follow.
+- Human refinement: the ordering is the point and it is the owner's. The
+  advisory review had asked three times on #29 for the decision to be recorded
+  before the implementation, and this is the first round where that happened:
+  the design that was reversed was described in enough detail that anyone
+  implementing the resolver top to bottom would have built a rule event
+  carrying a calculator name and resolved nothing for every product. What was
+  left after `7105a12` was therefore superseded prose rather than a missing
+  update — a smaller and more findable class of defect, but not a free one, as
+  the next entry records.
+
 ## Judgement, challenges and verification
 
 ### 2026-09-12 — REVIEW.md rule contradicted the approved design (review-rules PR)
@@ -301,6 +321,40 @@ rewritten.
 - Ratio note: this episode is the clearest case so far of AI-generated work being
   net negative until a human asked what the tool already did. The script was
   well-tested, well-reviewed and unnecessary; the value came from deleting it.
+
+### 2026-09-12 — A reversal verified against a tree that had already moved (PR #35, `9cfdf12`, `c769001`)
+
+- Challenge: the reconciliation commit `7105a12` was written against a branch
+  head seven commits old, and every one of those seven commits (`5df9e6d`
+  through `9bab6b9` locally, `b86c909` through `796c201` on the remote) _added_
+  the design being reversed: the calculator registry, the factory, the
+  strategy vocabulary and the largest-discount default. Merging origin/main
+  (`9cfdf12`) and then the remote copy of this branch (`c769001`) brought those
+  commits back. Conflicting hunks were resolved in favour of the reversal and
+  were visible while resolving; the non-conflicting ones merged silently, which
+  is exactly where the retired vocabulary survived.
+- Verification: the stale-term sweep was re-run over the merged working tree
+  rather than trusted from the first pass, with `git blame` on every surviving
+  passage to attribute it to a commit. Three passages in section 4 of the
+  domain spec still carry the retired reasoning, each blaming to a
+  retired-design commit rather than to `7105a12`: "under the seeded default the
+  one that prices lower is applied" and "that rule wins over the largest-discount
+  rule" (both `4332243`), which contradict the product-level default the same
+  section now states two bullets earlier, and "not to the strategies"
+  (`09c9915`), which names the registry that no longer exists. The behaviour in
+  each sentence reads plausibly; only the justification belongs to the replaced
+  design.
+- Resolution: in ADR.md, the consequence bullet claiming the write store "still
+  has `calculator text` and `params jsonb`" was corrected — that half of the
+  reversal had landed too, on PR #50 in `e48dee9`, which regenerated
+  `0000_write_store.sql` with a `promotion_discount_type` enum and an integer
+  `value`. Before: "only the first half has landed … the schema still has
+  `calculator text` and `params jsonb`". After: both halves are written, each on
+  an open pull request, with the commit named for each, and `main` carries
+  neither. The spec passages are the owner's file and are reported to the
+  coordinator rather than edited here. The lesson generalises: a reversal
+  verified against one tree is not verified against a tree that moved, and the
+  check that counts is the one run last — after the final merge, not before it.
 
 ## Overall reflection
 

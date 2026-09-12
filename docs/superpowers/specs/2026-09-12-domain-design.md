@@ -56,6 +56,11 @@ create table promotions (
   name           text not null,
   discount_type  discount_type not null,                        -- 'percentage' | 'fixed'
   value          integer not null check (value > 0),            -- basis points, or minor units
+  -- integer, not bigint like products.base_price_cents: a percentage is at
+  -- most 10 000 basis points, and a fixed discount is capped at ~21 M minor
+  -- units, which is a promotion rather than a price. Matches the migration on
+  -- the write-store branch; REVIEW.md 1.1 names bigint for prices, and this
+  -- column is a discount.
   check (discount_type <> 'percentage' or value <= 10000),      -- 100 % is the ceiling
   starts_at      timestamptz not null,
   ends_at        timestamptz not null,
@@ -139,7 +144,12 @@ create table ingestion_chunks (
 
 ## 4. Promotion resolution and effective price
 
-- **Active** = `status = 'active' and starts_at <= now() < ends_at`.
+- **Active** = `status = 'active' and starts_at <= now() < ends_at`, decided by
+  the **database clock**. The application never forms its own opinion: a
+  resolver that needs the predicate in TypeScript takes the instant the query
+  returned and passes it in, so one `now` decides a boundary a millisecond wide
+  (REVIEW.md 1.7). Two clocks for one predicate is how a read model publishes a
+  discount for a promotion SQL considers expired.
 - **Applied promotion** for a product is decided by `json-rules-engine`, not by
   hard-coded precedence (owner decision, 2026-09-12). The resolver collects
   every active promotion that could apply to the product (its product-level
@@ -148,9 +158,6 @@ create table ingestion_chunks (
   with the highest priority names the winning candidate; ties break on the
   lower promotion id so the result is deterministic. The rules are data, so
   the precedence policy changes without a deploy.
-- Facts given to the engine, per candidate: `level` (`product` or `category`),
-  `discountType`, `value`, `basePriceCents`, `stockQuantity`, `category`,
-  `startsAt`, `endsAt`.
 - **The rule decides which promotion wins; it does not decide how one is
   computed.** A matching rule's event names the winner and nothing else:
   `{ type: 'selectCandidate', params: { level: 'product' | 'category' } }`.
@@ -169,9 +176,11 @@ create table ingestion_chunks (
   than one that can hold anything.
 - **Selection compares candidates, so each is priced first.** The resolver
   runs `applyPromotion` for every candidate, then runs the engine once over a
-  single fact set holding `basePriceCents`, `category`, `stockQuantity` and,
-  per candidate, its `level`, `discountType`, `value` and
-  `effectivePriceCents`. A rule can therefore compare them, which
+  single fact set — the only one, so a rule author has one list to read:
+  `basePriceCents`, `category`, `stockQuantity` and, per candidate, its `id`,
+  `level`, `discountType`, `value`, `startsAt`, `endsAt` and
+  `effectivePriceCents`. `id` is in it because ties break on the lower
+  promotion id, and a tiebreak cannot read a fact that is not there. A rule can therefore compare them, which
   `json-rules-engine` supports by giving an operator a `{ fact: ... }` value
   rather than a literal. The resolver applies the outcome it already computed
   for the winning level, so each candidate is priced once.
@@ -186,7 +195,7 @@ create table ingestion_chunks (
 - **The seeded default is product-level precedence.** A product's own
   promotion wins over its category's, even when the category discount is
   larger. This is not a free choice: REVIEW.md 7.4 makes it a required edge
-  case and section 3 of this document states it with its consequence for
+  case and this section states it with its consequence for
   admins, so the rule that ships in the migration encodes it. The alternative
   — whichever price is lower — is the same policy as "precedence by larger
   discount", which ADR-0004 rejects as surprising to an admin who set a
@@ -197,22 +206,30 @@ create table ingestion_chunks (
 - The commercial exception has a home without a code change: a product whose
   price must not fall further, because of a margin floor, a supplier agreement
   or a minimum advertised price, gets a higher-priority rule naming it, and
-  that rule wins over the largest-discount rule. This is why the policy is a
+  that rule wins over the product-level default rule. This is why the policy is a
   row: the default serves the customer, the exception serves the contract, and
   neither is a branch in a resolver.
 - Exactly one rule applies per product. Rules are evaluated in priority order
   and the highest-priority match wins, which is what keeps the case's "at most
   one active promotion" true at the applied level. Letting several stack would
-  be a change to that one selection step, not to the strategies.
+  be a change to that one selection step, not to the pricing function.
+- **A failed computation is not a silent base price.** `applyPromotion` returns
+  `{ ok: false, reason }` for a row the boundary should have rejected — a value
+  above 10 000 basis points, a base price outside the safe-integer range. The
+  event handler logs it with the `promotionId` and writes the base price, so
+  the product is priced and the defect is visible; ingestion counts it as a
+  rejected row rather than aborting the batch. Neither path leaves the previous
+  price in Redis with nothing recorded.
 - If no rule fires, no promotion is applied and the base price stands. A rule
   that names a candidate which is not in the fact set is a defect, logged and
   ignored rather than thrown, so a bad rule cannot take the storefront down.
 - The rule the case calls "at most one active promotion per product" is
   implemented as **at most one applied promotion**. A product-level and a
-  category-level promotion may both exist; under the seeded default the one
-  that prices lower is applied, so nothing is skipped and nothing stacks. The
-  storefront response names the promotion that was applied, so an admin can
-  always tell which of the two won and why.
+  category-level promotion may both exist; the product-level one wins even
+  when the category discount is larger, so a 50 % category sale skips an
+  accessory that carries its own 5 % promotion. That consequence is stated to
+  admins deliberately. The storefront response names the promotion that was
+  applied, so an admin can always tell which of the two won and why.
 - Same-level overlap (two active product promotions on one product, or two on
   one category, overlapping in time) is still rejected with `409` by the
   exclusion constraints (SQLSTATE 23P01), and the handler selects the
@@ -396,8 +413,8 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
 3. **Batch** 1 000 lines: parse, validate (zod), **dedupe by SKU in a `Map`
    (last row wins) and sort by `sku`** (a consistent lock order, so
    concurrent batches on overlapping SKUs cannot deadlock), run each row through the ingestion rules
-   (`json-rules-engine`, rules loaded from `pricing_rules` and cached for
-   60 s), producing `base_price_cents` and `pricing_rules_version`. Invalid
+   (`json-rules-engine`, rules loaded from `pricing_rules` where
+   `type = 'ingestion'` and cached for 60 s), producing `base_price_cents` and `pricing_rules_version`. Invalid
    rows are counted as rejected and logged with their byte offset; they never
    abort the batch.
 4. **Commit** one transaction: multi-row
@@ -530,7 +547,8 @@ src/
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
     promotion/   promotion.routes.ts, promotion.service.ts, promotion.repository.ts, promotion.schemas.ts, scheduling.ts
-    pricing/     effective-price.ts (pure), ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
+    promotion/   promotion.ts (the Promotion row as a type), effective-price.ts (applyPromotion, pure), promotion.routes.ts, promotion.service.ts, promotion.repository.ts, scheduling.ts
+    pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
@@ -555,6 +573,11 @@ Dockerfile           one image, command per service
   first read, a budget release leaving `failures` untouched while an
   error increments it, and a reconciler catch-up after an outage longer than
   its period (watermark sweep re-emits the missed boundary).
+- Named case, required by REVIEW.md 7.4: a product carrying both a
+  product-level and a category-level active promotion is priced by the
+  product-level one, **even when the category discount is larger**. It is named
+  here because it is the one test that pins the precedence policy, and a policy
+  no test pins is a policy that drifts.
 - Unit: pure functions and schemas (effective price, precedence, CSV byte
   splitting across chunk boundaries with BOM/CRLF/UTF-8, rule application).
 - Integration: real PostgreSQL and Redis from `docker compose`, database
