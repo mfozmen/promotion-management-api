@@ -108,7 +108,7 @@ The rule "at most one active promotion per product" is implemented as **at most 
 
 ### Trade-offs
 
-- Precedence lives in data, so a wrong or missing rule changes prices without a code review. The mitigation is that rule changes are migrations like any other schema change, the seeded default is version-controlled, and a rule naming an unknown candidate is ignored and logged rather than applied.
+- Precedence lives in data, so a wrong or missing rule changes prices without a code review. The mitigation is that the seeded default ships in a migration and is version-controlled, every later change is an ordinary row update that the table's `updated_at` records, and a rule naming an unknown candidate is ignored and logged rather than applied. Changing the policy therefore needs no deploy, which is the point, and the audit trail is the table rather than the git history.
 - The engine adds a per-resolution evaluation over at most two candidates. That cost lands on the event handler and the reconciler, never on a storefront read, because the read model stores the already-resolved price.
 - Cross-level coexistence is allowed rather than rejected. Rejecting it would require an application-side check that races; allowing it keeps the database the sole arbiter.
 - Percentage discounts round in the customer's disfavour by at most one cent (floor on the discount). Stated, deterministic, testable.
