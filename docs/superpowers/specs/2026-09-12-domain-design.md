@@ -213,11 +213,20 @@ create table ingestion_chunks (
   obvious carrier; there is no version column today) and a write path to hang
   the trigger on (there is no `pricing_rules` endpoint in section 10). Neither
   is built here.
-- **No test asserts that default.** A test pinning it would be asserting a
-  configuration value, and the row would then be unchangeable without turning
-  CI red — a policy that cannot change is not data. Tests insert the rule row
-  they assert against and check the mechanism: given this rule, the engine
+- **No test pins the runtime policy, and one test does read the seed.** A test
+  asserting the row a running database happens to hold would make the policy
+  unchangeable without turning CI red, and a policy that cannot change is not
+  data. Reading the _seeded_ rules out of the migrated database is a different
+  thing: the seed is a migration row — code, reviewed, changed by commit — so a
+  test that it selects the lower price is a test that the seed we ship is the
+  seed we meant, and the two change together. Everything else inserts the rule
+  row it asserts against and checks the mechanism: given this rule, the engine
   selects this candidate.
+- The extra facts — `category`, `stockQuantity` and each candidate's window —
+  are not read by the seeded rule. They are there for the rules an operator
+  writes later: a margin floor keyed on category, a stock-based adjustment.
+  Trimming the fact set to what today's seed happens to use would make the
+  layer smaller than its reason for existing.
 
 - Exactly one rule applies per product. Rules are evaluated in priority order
   and the highest-priority match wins, which is what keeps the case's "at most
@@ -230,6 +239,15 @@ create table ingestion_chunks (
   the product is priced and the defect is visible; ingestion counts it as a
   rejected row rather than aborting the batch. Neither path leaves the previous
   price in Redis with nothing recorded.
+- **The fact set always carries both candidate slots, and an absent one is
+  `null` rather than missing.** Most products in a category sale have no
+  promotion of their own, so arity one is the ordinary case, not the edge: a
+  seeded rule that only compares two candidates would match nothing for them,
+  no rule would fire, and a 50 % sale would publish base prices for 50 000
+  products while a two-candidate test stayed green. The seeded rule set covers
+  arity one explicitly — one candidate present means that candidate wins — and
+  section 12 runs the seed over a one-candidate product for exactly this
+  reason.
 - If no rule fires, no promotion is applied and the base price stands. A rule
   that names a candidate which is not in the fact set is a defect, logged and
   ignored rather than thrown, so a bad rule cannot take the storefront down.
@@ -486,7 +504,7 @@ on its first read; expiry and scheduled starts happen on time.
    Writes are progressive by design; building `category:{c}:new` and switching with `RENAME` is the upgrade if the mixed window ever matters.
 3. Storefront reads are pure Redis: `ZRANGE ... BYSCORE` for listings, `HGETALL` for detail. PostgreSQL load during the sale is the handler's scan only.
 4. New product in the category: `POST /api/products` → `product.upserted` → recompute finds the active category promotion → discounted entry written before the product is visible at all (a product exists in the storefront only once its hash exists).
-5. Cancel: `status = 'cancelled'` → delayed jobs removed → immediate `promotion.changed` → category rescanned → base prices restored.
+5. Cancel: `status = 'cancelled'` → delayed jobs removed → immediate `promotion.changed` → category rescanned → base price restored for products with no promotion of their own, and their own effective price for the rest.
 6. Scheduled start/end: the delayed `activate`/`expire` jobs fire at the boundary; the read model changes within the handler's scan time, not on a cache TTL.
 
 Base-price changes during a sale (vendor ingestion, the only update channel) go through
@@ -582,6 +600,14 @@ Dockerfile           one image, command per service
   first read, a budget release leaving `failures` untouched while an
   error increments it, and a reconciler catch-up after an outage longer than
   its period (watermark sweep re-emits the missed boundary).
+- Named case: the **seeded** rule set selects a winner for a two-candidate
+  product **and for a one-candidate product**, the second because a category
+  sale over products with no promotion of their own is the ordinary case and a
+  rule that only compares pairs matches nothing for it. Run the seeded rules
+  twice over the same two-candidate fixture with the candidates' values
+  swapped and assert the winning level _changes_: that proves the seed reads
+  the candidates rather than naming one unconditionally, without asserting
+  which policy it implements.
 - Named case: the **seeded** rule set selects a winner for a two-candidate
   product. It asserts that a winner exists, never which one — so a seed whose
   condition matches nothing cannot ship green, while the policy stays editable.

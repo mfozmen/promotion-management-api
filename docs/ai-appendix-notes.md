@@ -422,6 +422,74 @@ rewritten.
   test was cancelling the justification". Recorded in ADR-0004, REVIEW.md 7.4
   and section 4 of the domain spec.
 
+### 2026-09-12 — The contradiction reappeared inside the commit that resolved it (PR #35, `b580f4a`)
+
+- Challenge: `b580f4a` was the commit that adopted lowest-price selection across
+  the documents. It did so in five places and wrote the retired policy — product
+  level wins, so a 50 % category sale skips an accessory that carries its own
+  promotion — into the sixth, section 4 of the domain spec. A commit whose
+  message announces a policy is the last place a reader looks for the policy it
+  replaces, which is precisely why it survived the author's own read.
+- Verification: not by reasoning. Two independent reviews of the same diff
+  (`docs-scribe` as a blocking finding, `architecture-critic` separately) each
+  named the bullet; the author did not, on either pass. The rule holds that the
+  sweep must run over the whole document after the edit, not over the hunks the
+  edit touched — a stale-term search reads the file, a diff review reads the
+  change, and a contradiction between an unchanged line and a changed one is
+  invisible to the second.
+- Resolution: the bullet now says the seeded rule applies whichever candidate
+  prices the product lower, matching the other five places (`bc55689`). The
+  reusable part: when a policy changes, the count of places stating it is the
+  quantity to verify, and it is verified by searching for the old policy's words,
+  not by re-reading the diff.
+
+### 2026-09-12 — A scripted edit that matched nothing, and shipped (PR #35, `b580f4a` → `bc55689`, rule in `fd46829`)
+
+- Challenge: the commit that fixed the finding above ran a Python edit whose end
+  index came from `s.index("
+
+### Trade-offs")` — a heading that appears in
+
+five of the seven ADRs — so the slice matched an earlier ADR and came out
+empty, and `str.replace("", new)` inserts the replacement between every
+character of the file. All seven ADRs became 249 copies of one bullet, and the
+result was pushed, because the post-edit check asked whether the old text was
+gone, which a file of 249 identical bullets passes.
+
+- Verification and repair: `bc55689` restored ADR.md from `beba163`, the last
+  commit before the destruction, and re-applied the two intended edits with
+  anchors asserting a single occurrence. A restore from an earlier commit is
+  where an unrelated edit gets silently reverted, so the restored file was
+  diffed against `beba163` rather than eyeballed: the only differences are the
+  two intended hunks in ADR-0004, both earlier corrections (the rules-cache
+  bullet and the branch-scoped claim about `promotion.ts` in `1e624f5` and
+  `0000_write_store.sql` in `e48dee9`) are present, and all seven ADRs carry
+  their Context, Decision, Consequences, Trade-offs and Rejected alternatives.
+- Resolution: REVIEW.md 13.7 (`fd46829`) requires a scripted edit to assert its
+  anchor matches exactly once, with this failure as its evidence. The
+  destruction is the loud version of a quieter bug that had already shipped
+  twice on this project without being noticed: a replace that matches nothing
+  reports success and ships a document contradicting its own commit message.
+  The guard is asserting the match count; asserting presence, or asserting the
+  old text is absent afterwards, catches neither form.
+
+### 2026-09-12 — The coverage removed by a ruling had to land somewhere (PR #35, `b580f4a`)
+
+- Challenge: dropping the test that pinned the seeded precedence (previous
+  round, `beba163`) was right — it asserted configuration and froze a policy
+  stored as a row — but it deleted real coverage: nothing then exercised the
+  seeded rule set at all, and a seed that fires no rule, or a migration that
+  ships a malformed condition, would have passed the suite.
+- Verification: the gap was stated as a question — what breaks silently now that
+  no test reads the seed? — and answered by naming the failure the removed test
+  had incidentally caught.
+- Resolution: section 4 of the domain spec names a case that loads the seeded
+  rule set for a product with both a product-level and a category-level
+  candidate and asserts that a winner exists, never which one. A seed that
+  selects nothing fails; a seed edited from lowest-price to product-level still
+  passes. The principle: a ruling that removes a test names the weaker assertion
+  that keeps the mechanism covered, in the same round.
+
 ## Overall reflection
 
 - Estimated ratio: pending.
@@ -439,3 +507,15 @@ rewritten.
   reversal leaves sentences whose behaviour is corrected and whose "because"
   clause still argues the replaced policy. Two passes on this branch both
   found that class of defect after a merge, never before one.
+
+### 2026-09-12 — Running estimate after the destroyed-file round (PR #35, `fd46829`)
+
+- Share, documents only: unchanged in drafting — prose AI-written, decisions the
+  owner's. What moved this round is the tooling around the prose: the edits
+  themselves are scripted, and a scripted edit is AI-authored code operating on
+  documents nobody diffs line by line, which is a category of AI output this
+  appendix had not been counting.
+- Blind spot noticed: verification that reads the intended change rather than
+  the resulting file. Both failures this round — the contradiction left in an
+  untouched bullet, and the 249-bullet file that passed its own absence check —
+  were invisible to a diff review and obvious to anyone who opened the document.
