@@ -134,6 +134,20 @@ jobs:
               constraints, and flash-sale read/write load with category-wide
               promotions.
 
+            This is a case study under a deadline and the product is judged on
+            working code with tests and numbers, not on prose. So report only
+            what would break something or mislead someone: a bug, a security or
+            performance problem, a statement that contradicts another statement
+            or the code, a factual error, or an example that does not run.
+            Nothing else. No wording, no structure, no "consider rephrasing",
+            no restating a rule the diff already follows, and no Suggestions at
+            all unless the suggestion prevents a defect.
+
+            On a diff that changes only documentation, the bar is higher still:
+            two passages that disagree, a claim the code does not support, or a
+            snippet with a syntax error. A document that reads awkwardly but
+            says true things is finished.
+
             Group findings by severity (Critical / Warning / Suggestion) and
             keep every finding to at most three sentences: what breaks, what
             triggers it, what to do. Cite the rule number plus file and line
