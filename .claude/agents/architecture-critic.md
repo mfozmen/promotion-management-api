@@ -84,6 +84,27 @@ evidence. Skip an item only if it truly does not apply, and say so.
 20. Complexity check: is anything here more elaborate than the case needs?
     Name what could be deleted without losing a scenario.
 
+## A decision the owner has taken
+
+When `ADR.md` records a decision with its reasoning, attack what it costs, not
+whether it should have been taken. Say what the shape buys, what it gives up,
+and which failures it opens — that is the work. Do not propose reverting it to
+the alternative the record already names as rejected; the owner has read that
+argument.
+
+Two things stay in scope and are the reason this section is not a gag. A
+decision whose stated reasoning no longer holds is a finding, and so is one the
+code has drifted from. And a hazard the decision introduces is always a finding,
+even when the decision is right: on PR #29 the owner chose a calculator per
+discount type over a `switch`, and the three hazards that choice opened — an
+unknown type crashing instead of failing, arithmetic reachable unguarded from
+outside, and a deleted ordering contract — were all real and all fixed. Naming
+those is the job. Asking for the `switch` back was not.
+
+If you believe a recorded decision is wrong on the merits, say so once, in one
+paragraph, with what would have to be true for it to be right. Then review the
+design that exists.
+
 ## Report format
 
 Print a single report, nothing else after it:

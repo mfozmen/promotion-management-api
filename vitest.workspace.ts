@@ -1,8 +1,14 @@
+import { fileURLToPath } from 'node:url';
 import { configDefaults, defineWorkspace } from 'vitest/config';
+
+// A workspace project does not inherit the root config's resolve block, so the
+// @src alias has to be repeated per project or every aliased import fails to load.
+const resolve = { alias: { '@src': fileURLToPath(new URL('./src', import.meta.url)) } };
 
 // Two layers, so a machine with no PostgreSQL can still run `npm test` and commit.
 export default defineWorkspace([
   {
+    resolve,
     // Pure code: no store, no service, runs in the pre-commit hook. Everything outside
     // tests/integration, so a test file added anywhere else runs here rather than nowhere.
     test: {
@@ -13,6 +19,7 @@ export default defineWorkspace([
     },
   },
   {
+    resolve,
     // Our code against the real store, never a mock: constraints and queries only
     // PostgreSQL enforces. Needs TEST_DATABASE_URL; CI and the pre-push agents run it.
     test: {

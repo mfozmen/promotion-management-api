@@ -80,9 +80,11 @@ The compose file holds the two stores and a browser for each behind the `tools` 
 
 ```
 src/    application source code (src/shared/db holds the Drizzle schema, client and SQL migrations)
-tests/  automated tests (unit, integration)
-docs/   design specs (docs/superpowers/specs), end-to-end cases, one file per user journey (docs/e2e-cases)
+tests/  automated tests (unit, integration, e2e), each layer mirroring src/
+docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
+
+Inside a layer the tree mirrors `src/`, one test file per source file. Tests import their subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.config.ts` `resolve.alias`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
 
 ## Database schema
 
