@@ -97,7 +97,7 @@ tests/  automated tests (unit, integration, e2e), each layer mirroring src/
 docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
 
-Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias, the last six having moved off relative specifiers in `ba5c2ca` (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time; PR #50, commit `75130b7`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias, (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
 
 ## Database schema
 
@@ -133,7 +133,7 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 | ------ | --------- | -------------------------------------------------------------- |
 | GET    | `/health` | Liveness probe, returns `{"status":"ok"}`; no query parameters |
 
-Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`); the health route is at `/health` today — it is what the compose healthcheck calls (`eb71ecd`) — and the dependency-checking `/api/health` arrives with PR #30. Until that merges, nothing should poll `/api/health`.
+Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`); the health route is at `/health` today, which is what the compose healthcheck calls, and the dependency-checking `/api/health` arrives with the HTTP skeleton. Until it does, nothing should poll `/api/health`.
 
 ## Development workflow
 
