@@ -261,7 +261,7 @@ describe('POST /api/promotions/:id/assign', () => {
     expect(res.status).toBe(409);
   });
 
-  it('answers 409 with the conflicting id when the assign would overlap', async () => {
+  it('answers 409 without naming the promotion in the way when the assign would overlap', async () => {
     const category = uniqueCategory();
     const running = await request(app())
       .post('/api/promotions')

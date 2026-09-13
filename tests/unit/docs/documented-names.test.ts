@@ -44,6 +44,12 @@ const MEMBER = /`([A-Z][A-Za-z0-9]*)\.([a-zA-Z][A-Za-z0-9_]*)(?:\([^`]*\))?`/g;
 /** An `ADR-00NN` citation anywhere in the documents. */
 const CITATION = /\bADR-(\d{4})\b/g;
 
+/** A `REVIEW.md 8.3b` citation: the rulebook's own numbering, cited from anywhere. */
+const RULE_CITATION = /\bREVIEW\.md (?:§\s*)?(\d{1,2}[a-z]?\.\d{1,2}[a-z]?)/g;
+
+/** A rule as the rulebook defines it, at the start of a line. */
+const RULE_DEFINITION = /^(\d{1,2}[a-z]?\.\d{1,2}[a-z]?) /gm;
+
 function wholeWord(name: string): RegExp {
   return new RegExp(`\\b${name}\\b`);
 }
@@ -147,6 +153,26 @@ describe('the documents', () => {
     }
 
     expect({ records: records.size > 0, dangling }).toEqual({ records: true, dangling: [] });
+  });
+
+  it('cite only REVIEW.md rules that exist', async () => {
+    // A merge renumbered two rules and moved one citation, and nothing here could
+    // see it: this file checked paths, members and ADR numbers, and a rule number
+    // is the same kind of claim about another file (REVIEW.md 13.11). The renumber
+    // was verified by hand, which is the habit the rule exists to replace.
+    const rules = new Set(
+      [...(await readFile('REVIEW.md', 'utf8')).matchAll(RULE_DEFINITION)].map(([, n]) => n),
+    );
+    const dangling: string[] = [];
+
+    for (const document of DOCUMENTS) {
+      const text = await readFile(document, 'utf8');
+      for (const [, rule] of text.matchAll(RULE_CITATION)) {
+        if (rule !== undefined && !rules.has(rule)) dangling.push(`${document}: REVIEW.md ${rule}`);
+      }
+    }
+
+    expect({ rules: rules.size > 50, dangling }).toEqual({ rules: true, dangling: [] });
   });
 
   it('checks enough names and citations that an empty pattern could not pass', async () => {

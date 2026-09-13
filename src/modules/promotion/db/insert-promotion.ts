@@ -4,7 +4,6 @@ import { isForeignKeyViolation } from '../../../shared/db/foreign-key-violation.
 import { promotions } from './schema/promotions.js';
 import { promotionColumns } from './promotion-columns.js';
 import type { CreatePromotion } from '../domain/dto/create-promotion-schema.js';
-import { findConflictingPromotion } from './find-conflicting-promotion.js';
 import { databaseNow } from './database-now.js';
 import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcome.js';
 
@@ -45,14 +44,6 @@ export async function insertPromotion(
     // foreign key rejects it and the route answers 404 rather than paging someone.
     if (isForeignKeyViolation(error)) return { ok: false, reason: 'no-such-product' };
     if (!isExclusionViolation(error)) throw error;
-    return {
-      ok: false,
-      reason: 'overlap',
-      conflictingPromotionId: await findConflictingPromotion(
-        db,
-        { productId: input.productId, category: input.category },
-        { startsAt: new Date(input.startsAt), endsAt: new Date(input.endsAt) },
-      ),
-    };
+    return { ok: false, reason: 'overlap' };
   }
 }

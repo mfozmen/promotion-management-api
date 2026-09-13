@@ -15,7 +15,7 @@ export async function settleAnnouncement(
     await work;
   } catch (error) {
     deps.log.error(
-      { promotionId, error: { message: error instanceof Error ? error.message : 'unknown' } },
+      { promotionId, err: error },
       'a promotion change could not be announced; the read model stays stale until this promotion changes again',
     );
   }

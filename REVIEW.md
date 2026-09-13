@@ -582,26 +582,26 @@ and there is nothing to fix by seeing it again, so a 404 does not echo the path.
 
 This binds every message that reaches a response, not only the ones a
 middleware writes. A handler's own 4xx message crosses as written, unbounded and
-uninspected, so a message naming a row the caller
-never saw is a finding wherever it was built.
+uninspected, so a message naming a row the caller never saw is a finding wherever
+it was built. A schema's message is the same case one layer down — a custom or
+refinement message must not interpolate the value it rejected — though under the
+current envelope a schema's message reaches nobody, so the message a caller reads
+is the one the handler passed to `createError`.
 
-One identifier is carved out, and only one: `409 PROMOTION_OVERLAP` returns
-`details.conflictingPromotionId`, the id of the active promotion whose window the
-caller's request collided with. It is a stored value the caller never held, so it
-is an exception rather than an application of this rule, and it is bounded to that
-single integer — an admin refused a promotion cannot act without knowing which one
-to cancel. Anything more about that row — its name, its window, its discount — is
-the finding this rule already describes.
-
-This binds every message that reaches a response, not only the ones a
-middleware writes. A handler's own 4xx message crosses as written: the envelope
-bounds its length and inspects nothing, so a message naming a row the caller
-never saw is a finding wherever it was built. A schema's message is the same
-case one layer down — a custom or refinement message must not interpolate the
-value it rejected, because the validator forwards what the schema produced.
+There is no carve-out. This rule used to grant one: the overlap `409` returned
+`details.conflictingPromotionId`, argued as a bounded exception because an admin
+refused a promotion "cannot act without knowing which one to cancel". They can —
+the two exclusion constraints are keyed on product and on category, so the filter
+that finds the blocker is one the admin already has. The exception cost a query
+on every conflict whose result was discarded, and it made this rule cite itself
+as its own exception. What it bought was a window comparison across a few rows.
+The honest price of removing it is that comparison, not a blocked task.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
-another row's fields, which they never had.
+another row's fields, which they never had. The carve-out was removed when the
+envelope lost `details`: the code that cited this rule as forbidding the id sat
+beside a rule mandating it, and the next author would have added it back,
+correctly, per the rulebook.
 
 8.4 No internal detail escapes to the client: no stack trace, no SQL text, no
 connection string, no secret, in a response. A log line is read by the operator,

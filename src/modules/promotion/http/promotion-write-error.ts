@@ -4,12 +4,10 @@ import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcom
 /**
  * The one place a failed promotion write becomes a status.
  *
- * The overlap 409 names no promotion. It used to carry the conflicting row's id
- * in `details.conflictingPromotionId`, argued as the one exception worth making;
- * the envelope has since dropped `details` entirely, and the exception was always
- * the weaker half of the argument — ADR-0004 records that handing a caller another
- * row's identifier is what REVIEW.md 8.3b forbids. The message says what happened
- * and the admin's own list says which promotion it was.
+ * The overlap 409 names no promotion. The envelope carries a message and nothing
+ * else, and another row's identifier is not the caller's to read (REVIEW.md 8.3b).
+ * The cost is real and worth stating: an admin refused a promotion compares
+ * windows across the active rows for that target to find the one in the way.
  */
 export function promotionWriteError(
   outcome: Extract<PromotionWriteOutcome, { ok: false }>,

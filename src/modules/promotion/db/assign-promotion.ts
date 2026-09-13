@@ -4,7 +4,6 @@ import { isExclusionViolation } from '../../../shared/db/exclusion-violation.js'
 import { isForeignKeyViolation } from '../../../shared/db/foreign-key-violation.js';
 import { promotions } from './schema/promotions.js';
 import type { AssignPromotion } from '../domain/dto/assign-promotion-schema.js';
-import { findConflictingPromotion } from './find-conflicting-promotion.js';
 import { promotionColumns } from './promotion-columns.js';
 import { databaseNow } from './database-now.js';
 import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcome.js';
@@ -24,7 +23,11 @@ export async function assignPromotion(
   try {
     const [row] = await db
       .update(promotions)
-      .set({ productId: target.productId ?? null, category: target.category ?? null, status: 'active' })
+      .set({
+        productId: target.productId ?? null,
+        category: target.category ?? null,
+        status: 'active',
+      })
       .where(
         and(
           eq(promotions.id, id),
@@ -50,17 +53,6 @@ export async function assignPromotion(
     // foreign key rejects it and the route answers 404 rather than paging someone.
     if (isForeignKeyViolation(error)) return { ok: false, reason: 'no-such-product' };
     if (!isExclusionViolation(error)) throw error;
-    const [window] = await db
-      .select({ startsAt: promotions.startsAt, endsAt: promotions.endsAt })
-      .from(promotions)
-      .where(eq(promotions.id, id))
-      .limit(1);
-    return {
-      ok: false,
-      reason: 'overlap',
-      conflictingPromotionId: window
-        ? await findConflictingPromotion(db, target, window, id)
-        : null,
-    };
+    return { ok: false, reason: 'overlap' };
   }
 }
