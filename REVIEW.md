@@ -740,6 +740,9 @@ business noun (`promotions.ts`, `pricing-rules.ts`) is a finding; it belongs to
 the module that owns it, under `db/schema/`. Migrations are the exception and
 stay in `shared/db/`. ADR-0008.
 
+8c.11 A class reads top-down: fields, constructor, public methods, then private
+methods. What a caller can use is at the top; how it is done is below. Enforced
+by ESLint `@typescript-eslint/member-ordering`. ADR-0008.
 ---
 
 ## 9. Failure handling and operations
