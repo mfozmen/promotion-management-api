@@ -8,8 +8,7 @@ import { GracefulShutdown } from './shared/graceful-shutdown.js';
 
 const config = loadConfig();
 
-// Before the first request rather than beside it: the health check is what `up --wait`
-// waits on, so it must not answer in front of a schema that is not there yet.
+// The health check `up --wait` waits on must not answer in front of a missing schema.
 await runMigrations(config.DATABASE_URL);
 
 const app = createApp();

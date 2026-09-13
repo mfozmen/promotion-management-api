@@ -75,8 +75,7 @@ describe('loadConfig', () => {
   });
 
   it('throws naming DATABASE_URL without echoing the value when the URL is malformed', () => {
-    // A connection string carries a password and this error reaches a startup
-    // log, so the value must not travel with it.
+    // The value carries a password and the error reaches a startup log.
     const attempt = () => loadConfig({ ...validEnv, DATABASE_URL: 'not a url s3cretpassw0rd' });
 
     expect(attempt).toThrow('DATABASE_URL');
