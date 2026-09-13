@@ -106,9 +106,7 @@ describe('demo seed', () => {
   it('leaves one whole catalogue when two seeds race', async () => {
     // Raced twice because the upsert takes two different paths and only one of them is reached
     // on a database that already holds the rows: an empty catalogue races speculative insertion,
-    // a full one races the no-op update. Both serialise, so whichever commits second finds the
-    // first's promotion committed and deletes it by name before inserting its own, and neither
-    // run fails. On READ COMMITTED, which is the pool's default and the only level it sets.
+    // a full one races the no-op update. On READ COMMITTED, the pool's only level.
     await db().$client.query(`delete from products where sku like 'DEMO-%'`);
     expect(await Promise.all([seed(), seed()].map(sqlStateOf))).toEqual([undefined, undefined]);
     expect(await Promise.all([seed(), seed()].map(sqlStateOf))).toEqual([undefined, undefined]);
