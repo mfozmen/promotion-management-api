@@ -43,21 +43,36 @@ services:
       retries: 12
       start_period: 5s
 
-  migrate:
-    image: node:22-alpine
-    profiles: [migrate]
-    working_dir: /app
-    volumes:
-      - .:/app
-      - /app/node_modules
+  api:
+    build: .
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '127.0.0.1:3100:3100'
     depends_on:
       postgres:
         condition: service_healthy
-    command: ['sh', '-c', 'npm ci --ignore-scripts && npx drizzle-kit migrate']
+      redis:
+        condition: service_healthy
     networks:
       - promotion
+    healthcheck:
+      # node rather than curl or wget: the alpine image has neither, and this one answers
+      # only after the entrypoint has migrated, which is what makes `up --wait` mean
+      # "migrated and serving" instead of "a process exists".
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3100/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   adminer:
     image: adminer:4

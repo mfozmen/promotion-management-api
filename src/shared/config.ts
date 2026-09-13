@@ -4,7 +4,8 @@ import { z } from 'zod';
 // derived instead: ADR-0003.
 const env = z
   .object({
-    PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+    // 3100, not the 3000 every other Node service on a developer's machine takes.
+    PORT: z.coerce.number().int().min(1).max(65_535).default(3100),
     // zod runs the refine even after the format check fails, so `new URL` here
     // would throw a TypeError carrying the password into a startup log.
     DATABASE_URL: z

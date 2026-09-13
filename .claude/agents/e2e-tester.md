@@ -29,33 +29,29 @@ without the compose file, so the system under test is the compose project, not
 a server you launched by hand.
 
 1. `npm ci` only if `node_modules` is missing.
-2. Bring the stack up, wait for it to be healthy, then apply the schema:
+2. Bring the stack up and wait for it to be healthy:
 
    ```
-   docker compose up -d --wait      # exits non-zero if any service is unhealthy
-   docker compose run --rm migrate  # applies every migration; non-zero if one fails
+   docker compose up -d --wait   # exits non-zero if any service is unhealthy
    ```
 
-   The migration is a second verb rather than part of `up`, because `--wait`
-   waits for a container to be running and gets a one-shot wrong both ways: an
-   exited one counts as a wait failure, so a `migrate` service inside `up` makes
-   a healthy stack exit 1, and one still running satisfies it, so `up -d --wait`
-   returns 0 over a migration that has not finished — or has not succeeded. That
-   second half is why you cannot infer a migrated database from a green `up`.
-   `run --rm` returns the migration's own status and is safe to repeat:
-   `drizzle-kit migrate` applies only what `__drizzle_migrations` does not
-   already record. An unmigrated database fails every endpoint that reads one,
-   so do not skip it on a fresh volume.
+   There is no migration command to run afterwards and you should not look for
+   one. The `api` container applies the migrations in its own entrypoint before
+   it serves, so `--wait` is waiting on a healthcheck that cannot pass in front
+   of an unmigrated schema. Verified by running it: from empty volumes,
+   `up -d --wait` returned 0 with all six tables in place and `/health`
+   answering. Drizzle's migrations table applies only pending rows, so a fresh
+   volume and a warm one both end `up` current.
 
-3. **The host port is 3000**, published by the compose file. Every health check
+3. **The host port is 3100**, published by the compose file. Every health check
    and every measurement uses it. Only one run can hold it at a time, which is
    deliberate: two runs measuring the same machine at once produce numbers
    neither of them can trust, so runs serialise. If another session holds the
    port, ask that session to finish rather than starting a second stack.
-4. Wait until `curl -sf localhost:3000/api/health` returns 200, at most 30
+4. Wait until `curl -sf localhost:3100/api/health` returns 200, at most 30
    seconds. If it never does, print `docker compose logs --tail 40 api` and
    FAIL.
-5. **If something else holds port 3000, stop and say so; never kill it.** The
+5. **If something else holds port 3100, stop and say so; never kill it.** The
    process you did not start may be another run mid-measurement or a server the
    owner is using, and you cannot tell an orphan from a live server. Reaping one
    is a person's decision, not yours.
