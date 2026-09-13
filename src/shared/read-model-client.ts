@@ -5,8 +5,10 @@ import { Redis } from 'ioredis';
  *  5-9 ms warm, but ADR-0009 records 130-192 ms p99 on a route that only
  *  serialises a constant at 100 connections, so a 200 ms budget would have
  *  answered 503 under load rather than during an outage — the opposite of the
- *  point. A second is far below any client's patience and still bounds a
- *  partition to a second per request instead of tens of them. */
+ *  point. A second is far below any client's patience, and it bounds a
+ *  command rather than a request: the readiness gate runs to completion before
+ *  the route's own commands, so a partition parks a detail request for three
+ *  seconds and a listing for the same, not for one. */
 const COMMAND_TIMEOUT_MS = 1_000;
 
 /** The storefront's client, on the read-model database (ADR-0003 keeps the

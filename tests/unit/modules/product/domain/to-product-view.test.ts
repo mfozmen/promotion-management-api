@@ -30,6 +30,31 @@ describe('toProductView', () => {
     expect(() => toProductView({ ...stored, promotionId: '3', promotionName: '' })).toThrow();
   });
 
+  it('reads an empty pair as no promotion, because Redis has no null', () => {
+    // Probed against ioredis: HSET serialises both null and undefined to ''.
+    // A writer building the hash from a row whose promotion columns are NULL
+    // therefore writes '' for both, and refusing that would 500 every product
+    // without a promotion — which on a listing is the whole page.
+    const view = toProductView({ ...stored, promotionId: '', promotionName: '' });
+
+    expect(view.promotion).toBeNull();
+  });
+
+  it('still refuses half a pair when the other half is empty', () => {
+    expect(() =>
+      toProductView({ ...stored, promotionId: '', promotionName: 'Winter sale' }),
+    ).toThrow();
+    expect(() => toProductView({ ...stored, promotionId: '3', promotionName: '' })).toThrow();
+  });
+
+  it('refuses a promotion named only with spaces, which renders as no title', () => {
+    expect(() => toProductView({ ...stored, promotionId: '3', promotionName: '   ' })).toThrow();
+  });
+
+  it('refuses an empty price, which is not the same as an absent promotion', () => {
+    expect(() => toProductView({ ...stored, effectivePriceCents: '' })).toThrow();
+  });
+
   it('refuses a name with no id, which would name a discount nothing gave', () => {
     expect(() => toProductView({ ...stored, promotionName: 'Winter sale' })).toThrow();
   });

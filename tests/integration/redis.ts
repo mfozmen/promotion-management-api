@@ -68,7 +68,7 @@ export async function seedProducts(redis: Redis, products: readonly SeedProduct[
       ...(product.promotionId === undefined
         ? {}
         : { promotionId: String(product.promotionId), promotionName: product.promotionName }),
-      ingestionRulesVersion: '1789238046',
+      pricingRulesVersion: '1789238046',
       updatedAt: '2026-09-12T00:00:00.000Z',
     });
     pipeline.zadd(categoryKey(product.category), product.effectivePriceCents, String(product.id));

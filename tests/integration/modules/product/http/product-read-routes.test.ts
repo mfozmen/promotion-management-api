@@ -254,6 +254,19 @@ describe('a rebuild that has removed a product the index still lists', () => {
     expect(res.headers['retry-after']).toBeUndefined();
   });
 
+  it('calls a wrong-typed key the same writer bug on the detail route as on the listing', async () => {
+    await seedProducts(redis(), [product({ id: 1 })]);
+    await redis().unlink('product:1');
+    await redis().set('product:1', 'not a hash');
+
+    const res = await request(app()).get('/api/products/1');
+
+    // The listing answered 500 for this and the detail route answered 503 with
+    // a Retry-After, so clients and CDNs retried a permanent writer bug.
+    expect(res.status).toBe(500);
+    expect(res.headers['retry-after']).toBeUndefined();
+  });
+
   it('calls that product a rebuild on the detail route, not a missing product', async () => {
     await seedProducts(redis(), [product({ id: 1 })]);
     await redis().unlink('product:1');

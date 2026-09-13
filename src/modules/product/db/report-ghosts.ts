@@ -35,7 +35,9 @@ export function reportGhosts(key: string, absent: number): void {
   }
 
   logger.warn(
-    { key, requests: open.requests, missing: open.missing },
+    // The interval, so `requests` has a denominator rather than being a count
+    // since some moment the reader has to guess at.
+    { key, requests: open.requests, missing: open.missing, windowMs: WINDOW_MS },
     'read model lists ids whose hashes are gone',
   );
   windows.set(key, { openedAt: now, requests: 0, missing: 0 });

@@ -3,6 +3,9 @@ import { z } from 'zod';
 /** Redis answers strings, and `z.coerce.number()` is not a parser: it reads ''
  *  and ' ' as 0, '0x10' as 16, and would have served a product for nothing at
  *  200. Digits only, then the number. */
+const blankIsAbsent = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value;
+
 const cents = z
   .string()
   .regex(/^\d+$/)
@@ -21,13 +24,18 @@ export const storedProduct = z
     basePriceCents: cents,
     effectivePriceCents: cents,
     stockQuantity: cents,
-    promotionId: cents.optional(),
-    promotionName: z.string().min(1).optional(),
+    // Absent or empty, both meaning no promotion: Redis has no null, and
+    // ioredis writes both `null` and `undefined` into a hash as ''. A writer
+    // building this from a row whose promotion columns are NULL emits '', and
+    // refusing it would fail every product without a promotion — on a listing,
+    // the whole page. A price has no such spelling and stays strict.
+    promotionId: z.preprocess(blankIsAbsent, cents.optional()),
+    promotionName: z.preprocess(blankIsAbsent, z.string().optional()),
   })
   // Both or neither: the writer writes the pair together, so half a pair is a
-  // bug in it. A name defaulted to empty renders a discount attributed to a
-  // promotion with no title, and a name without an id names a discount that
-  // nothing gave.
+  // bug in it. A name that is empty or only spaces renders a discount
+  // attributed to a promotion with no title, and a name without an id names a
+  // discount that nothing gave.
   .refine(
     ({ promotionId, promotionName }) =>
       (promotionId === undefined) === (promotionName === undefined),
