@@ -43,6 +43,34 @@ services:
       retries: 12
       start_period: 5s
 
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '127.0.0.1:3100:3100'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - promotion
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3100/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
+
   adminer:
     image: adminer:4
     profiles: [tools]

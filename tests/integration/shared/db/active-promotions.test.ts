@@ -1,6 +1,6 @@
 import { inArray, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { activePromotions, products, promotions } from '../../../../src/shared/db/schema.js';
+import { activePromotions, products, promotions } from '@src/shared/db/schema.js';
 import { useTestDatabase } from '../../db.js';
 
 const db = useTestDatabase();

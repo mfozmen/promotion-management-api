@@ -27,7 +27,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      # The queue integration tests need a real Redis on 6399, as they do locally.
       redis:
         image: redis:7-alpine
         ports:
@@ -57,6 +56,38 @@ jobs:
 
       - name: Type check
         run: npm run typecheck
+
+      - name: No schema drift
+        run: |
+          npm run db:generate < /dev/null 2>&1 | tee "$RUNNER_TEMP/db-generate.log"
+          grep -qE 'No schema changes|Your SQL migration file' "$RUNNER_TEMP/db-generate.log"
+          git add -AN src/shared/db/migrations
+          git diff --exit-code src/shared/db/migrations
+
+      # A journal entry sorted into the middle on merge is skipped for ever on every database
+      # that already passed its timestamp, and the file looks perfectly ordered afterwards,
+      # so only a comparison against the base can see it. REVIEW.md 11.5.
+      - name: Migrations are appended, never inserted
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          JOURNAL: src/shared/db/migrations/meta/_journal.json
+        run: |
+          # A base that does not resolve is a failure, not an empty journal: without this
+          # every git error reads as "the base has no migrations yet" and passes.
+          git cat-file -e "$BASE^{commit}"
+          git show "$BASE:$JOURNAL" > "$RUNNER_TEMP/base.json" 2>/dev/null || echo '{"entries":[]}' > "$RUNNER_TEMP/base.json"
+          node -e '
+            const fs = require("fs");
+            const base = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/base.json", "utf8")).entries;
+            const head = JSON.parse(fs.readFileSync(process.env.JOURNAL, "utf8")).entries;
+            const kept = JSON.stringify(head.slice(0, base.length)) === JSON.stringify(base);
+            if (!kept) throw new Error("the entries the base carries were changed; regenerate the new migration instead of reordering the journal (REVIEW.md 11.5)");
+            const highest = Math.max(0, ...base.map((e) => e.when));
+            for (const entry of head.slice(base.length)) {
+              if (entry.when <= highest) throw new Error(`${entry.tag} carries a timestamp the base already passed; regenerate it (REVIEW.md 11.5)`);
+            }
+          '
 
       - name: Test with coverage
         run: npm run test:cov

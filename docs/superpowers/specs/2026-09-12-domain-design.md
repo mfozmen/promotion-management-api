@@ -40,21 +40,23 @@ create table products (
   category               text not null,
   base_price_cents       bigint not null check (base_price_cents >= 0),
   stock_quantity         integer not null check (stock_quantity >= 0),
-  ingestion_rules_version  integer,                -- set by ingestion, null for manual creates
+  pricing_rules_version  bigint,                -- max(updated_at) of the rule set, epoch ms; null for manual creates
   ingest_job_id          bigint,                 -- ingestion job that last wrote this product (identity, monotonic)
   ingest_source_offset   bigint,                 -- byte offset of that row inside its file
   created_at             timestamptz not null default now(),
-  updated_at             timestamptz not null default now()
+  updated_at             timestamptz not null default now(),
+  -- both written by the same upsert; the guard still needs its `is null` branch for manual rows
+  check ((ingest_job_id is null) = (ingest_source_offset is null))
 );
 create index products_category_id_idx on products (category, id);   -- keyset scans per category
 
-create type discount_type as enum ('percentage', 'fixed');
+create type promotion_discount_type as enum ('percentage', 'fixed');
 create type promotion_status as enum ('draft', 'active', 'cancelled');
 
 create table promotions (
   id             bigint generated always as identity primary key,
   name           text not null,
-  discount_type  discount_type not null,                        -- 'percentage' | 'fixed'
+  discount_type  promotion_discount_type not null,                        -- 'percentage' | 'fixed'
   value          integer not null check (value > 0),            -- basis points, or minor units
   -- integer, not bigint like products.base_price_cents: a percentage is at
   -- most 10 000 basis points, and a fixed discount is capped at ~21 M minor
@@ -85,10 +87,10 @@ create table promotions (
 
 create type pricing_rule_type as enum ('ingestion', 'promotion');
 
-create table pricing_rules (                    -- json-rules-engine rules, both layers
+create table pricing_rules (                    -- json-rules-engine rules, both layers; migration 0001 seeds type='ingestion' only
   id          bigint generated always as identity primary key,
   type        pricing_rule_type not null,
-  name        text not null,
+  name        text not null unique,             -- lets the seed re-apply without doubling a rule
   conditions  jsonb not null,
   event       jsonb not null,
   priority    integer not null default 0,
@@ -545,7 +547,7 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    (last row wins) and sort by `sku`** (a consistent lock order, so
    concurrent batches on overlapping SKUs cannot deadlock), run each row through the ingestion rules
    (`json-rules-engine`, rules loaded from `pricing_rules` where
-   `type = 'ingestion'` and cached for 60 s), producing `base_price_cents` and `ingestion_rules_version`. Invalid
+   `type = 'ingestion'` and cached for 60 s), producing `base_price_cents` and `pricing_rules_version`. Invalid
    rows are counted as rejected and logged with their byte offset; they never
    abort the batch.
 4. **Commit** one transaction: multi-row

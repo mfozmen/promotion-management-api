@@ -644,6 +644,20 @@ comment lines, all of them passing the rule this one replaced.
 explains a mechanism belongs in the design spec. A comment points at them; it
 does not reproduce them.
 
+8b.3a **Read your own comments back before you push, against the question "does
+a reader with `ADR.md` open learn anything here?"** If the answer is no, the
+comment is deleted and a pointer replaces it — the record already has the
+reasoning, the file needs only the name of where it lives. This is 8b.3 with a
+trigger, because 8b.3 alone did not fire: on one pull request three separate
+review rounds removed the same reproduced prose from `docker-compose.yml`,
+`migrate.ts` and two test files, each round writing the next copy. The failure
+is not ignorance of the rule. It is that the paragraph feels like diligence
+while it is being written and only reads as duplication next to the record, so
+the check has to happen after writing and before pushing, on the diff, not
+while composing. Two shapes are exempt because they are not explanation: a line
+that records a measurement (`9.4 s`, `exit 3`) and a line that names the trap a
+reader would otherwise fall into.
+
 8b.4 A trimming pass is reviewed by reading what was cut. A deleted comment
 leaves nothing behind to notice it went: one trim removed two contracts while
 every file looked better afterwards. A contract that only a comment was holding
@@ -787,6 +801,23 @@ that adds a query-serving index names the query in its comment.
 
 11.4 The migration and the ORM schema describe the same thing; drift is a
 finding.
+
+11.5 **A conflict in `meta/_journal.json` is resolved by regenerating the newer
+migration, never by reordering the entries.** Drizzle's migrator applies every
+entry whose `when` is greater than the single most recently applied row and
+never compares the hash it stores, so an entry sorted into the middle of the
+journal is skipped for ever on every database that has already passed that
+timestamp, while the boot reports success. Sorting is the tidy-looking
+resolution and the wrong one: it leaves the file internally ordered, so any
+check that only reads the file passes. The comparison that catches it is against
+the pull request's base — the entries the base carries are unchanged, and every
+new one is newer than all of them — and it lives in the `ci` workflow, because
+that is where the refs are; a unit test has no business knowing branch names.
+`tests/unit/shared/db/migration-journal.test.ts` keeps only what one file can
+answer: increasing, unique timestamps in file order. Evidence: the first version
+of the guard asserted the applied row count against a freshly migrated database,
+where the timestamps increase by construction, and could not fail; the second
+was defeated by sorting the journal, which left both its assertions true.
 
 ---
 
