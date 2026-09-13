@@ -74,6 +74,74 @@ services:
       retries: 12
       start_period: 180s
 
+  # The same image as `api`, one command each (ADR-0003). No healthcheck: these processes
+  # register no consumer yet, so there is nothing to ask them that a liveness check would not
+  # answer for a process that is merely alive — `up --wait` treats them as up once running, and
+  # each gains a check when it gains work.
+  event-handler:
+    build: .
+    restart: unless-stopped
+    command: ['node', 'dist/workers/event-handler.js']
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
+      REDIS_URL: redis://redis:6379
+      REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
+      REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - promotion
+
+  ingestion-worker:
+    build: .
+    restart: unless-stopped
+    command: ['node', 'dist/workers/ingestion-worker.js']
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
+      REDIS_URL: redis://redis:6379
+      REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
+      REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - promotion
+    # The case study's own constraint, and the one Scenario A is measured against: a
+    # 500 000-row import has to survive this, so the limit is the test rather than a setting.
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+  reconciler:
+    build: .
+    restart: unless-stopped
+    command: ['node', 'dist/workers/reconciler.js']
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
+      REDIS_URL: redis://redis:6379
+      REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
+      REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      - promotion
+
   adminer:
     image: adminer:4
     profiles: [tools]

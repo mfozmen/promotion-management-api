@@ -33,12 +33,27 @@ Docker with the Compose plugin, and Node for the two npm scripts below.
 
 ```bash
 cp .env.example .env   # placeholders only; .env is gitignored
-npm run up             # PostgreSQL, Redis, the api and the test stores, all healthy
+npm run up             # PostgreSQL, Redis, the api, three workers and the test stores
 ```
 
 The API is on http://127.0.0.1:3100 and BullMQ's dashboard on
 http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data;
 add `-v` to that compose command to drop the volumes too.
+
+`event-handler`, `ingestion-worker` and `reconciler` run from the same image as `api`, one
+command each, and they wait on `api` rather than on PostgreSQL: `api` is the only process that
+migrates, so waiting on the database alone would let a worker connect before the schema exists.
+
+**They start, connect and wait — none of them consumes anything yet.** Each logs the queues it
+holds and says that no consumer is registered, so an idle queue is not mistaken for a drained
+one. The projection arrives with issue #12, the chunk processor with #105, the reconciler sweep
+with the other half of #18. They carry no healthcheck for the same reason: until a worker has
+work, a check could only confirm the process is alive, which `up --wait` already does.
+
+`ingestion-worker` is capped at 256 MiB and half a CPU, which is the case study's own
+constraint rather than a setting: Scenario A's claim is that a 500 000-row import survives that
+cap, and the measurement is taken against it. `tests/unit/docs/compose-workers.test.ts` parses
+the compose file and fails if the cap goes missing.
 
 ## Develop
 
