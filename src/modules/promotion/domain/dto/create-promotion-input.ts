@@ -9,7 +9,7 @@ import { z } from 'zod';
  * that is already over before it reaches the database; whether a stored
  * promotion is running is PostgreSQL's to decide.
  */
-export const createPromotionSchema = z
+export const createPromotionInput = z
   .strictObject({
     name: z.string().trim().min(1).max(200),
     discountType: z.enum(['percentage', 'fixed']),
@@ -36,4 +36,4 @@ export const createPromotionSchema = z
     path: ['endsAt'],
   });
 
-export type CreatePromotion = z.infer<typeof createPromotionSchema>;
+export type CreatePromotion = z.infer<typeof createPromotionInput>;

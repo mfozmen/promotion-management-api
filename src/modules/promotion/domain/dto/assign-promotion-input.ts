@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Assigning names exactly one target: a draft with neither is still a draft. */
-export const assignPromotionSchema = z
+export const assignPromotionInput = z
   .strictObject({
     productId: z.number().int().positive().optional(),
     category: z.string().trim().min(1).max(100).optional(),
@@ -11,4 +11,4 @@ export const assignPromotionSchema = z
     path: ['category'],
   });
 
-export type AssignPromotion = z.infer<typeof assignPromotionSchema>;
+export type AssignPromotion = z.infer<typeof assignPromotionInput>;

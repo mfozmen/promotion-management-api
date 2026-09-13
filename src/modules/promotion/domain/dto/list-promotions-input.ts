@@ -5,7 +5,7 @@ import { z } from 'zod';
  * would be a time predicate, and those belong in SQL rather than in a query
  * string the caller composes.
  */
-export const listPromotionsQuerySchema = z.strictObject({
+export const listPromotionsInput = z.strictObject({
   status: z.enum(['draft', 'active', 'cancelled']).optional(),
   category: z.string().trim().min(1).max(100).optional(),
   productId: z.coerce.number().int().positive().optional(),
@@ -16,4 +16,4 @@ export const listPromotionsQuerySchema = z.strictObject({
   limit: z.coerce.number().int().positive().max(100).default(50),
 });
 
-export type ListPromotionsQuery = z.infer<typeof listPromotionsQuerySchema>;
+export type ListPromotionsInput = z.infer<typeof listPromotionsInput>;

@@ -8,7 +8,7 @@ import { z } from 'zod';
  * stock are `CHECK (>= 0)` — because a boundary that agrees with the schema is
  * a better error message, not a substitute for the constraint.
  */
-export const createProductSchema = z.strictObject({
+export const createProductInput = z.strictObject({
   sku: z.string().trim().min(1).max(64),
   name: z.string().trim().min(1).max(200),
   category: z.string().trim().min(1).max(100),
@@ -17,4 +17,4 @@ export const createProductSchema = z.strictObject({
   stockQuantity: z.number().int().nonnegative().max(2_147_483_647),
 });
 
-export type CreateProduct = z.infer<typeof createProductSchema>;
+export type CreateProduct = z.infer<typeof createProductInput>;
