@@ -109,7 +109,7 @@ jobs:
             exit 0
           fi
           files=$(git diff --name-only "$BASE" "$HEAD")
-          if grep -qE '^(src/|tests/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|sonar-project\.properties$)' <<<"$files"; then
+          if grep -qE '^(src/|tests/|scripts/|package(-lock)?\.json$|.*\.config\.(ts|mjs|js)$|tsconfig.*\.json$|sonar-project\.properties$)' <<<"$files"; then
             echo 'needed=true' >> "$GITHUB_OUTPUT"
           else
             echo 'needed=false' >> "$GITHUB_OUTPUT"

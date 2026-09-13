@@ -97,7 +97,11 @@ an invariant.
 
 2.5 A concurrency claim in a comment or a PR description must have a test that
 runs the operations in parallel and asserts the invariant afterwards. "Should be
-fine" is not a test.
+fine" is not a test. Writing the test is also how the claim gets checked, not just
+the code: the rule catches a wrong description as often as a wrong mechanism.
+
+Evidence: a README said two concurrent demo seeds left the loser aborting on 23P01, and
+the test this rule demanded showed neither run fails.
 
 2.6 A `WHERE` clause on a nullable column states its `NULL` branch explicitly.
 `NULL` compared with anything is `NULL`, not `TRUE`, and a row-value
@@ -1029,7 +1033,14 @@ made the other side's claim false while touching none of its lines.
 Evidence: the queue story added a `SIGTERM` handler while this branch's ADR
 said, thirty lines from anything either side edited, that the process had none.
 
-13.10 A cleanliness check is evidence about the tree at the moment it ran, so a
+13.10 A new top-level TypeScript directory joins `tsconfig.json`'s `include`,
+or nothing type-checks it; `eslint .` walks the whole tree and gives the opposite
+impression. `tsc --noEmit --listFiles` answers the question.
+
+Evidence: `scripts/` arrived while `include` still read `["src", "tests"]`, so
+`--listFiles` counted nothing in it while `eslint .` walked it clean.
+
+13.11 A cleanliness check is evidence about the tree at the moment it ran, so a
 check run before a merge says nothing about the tree after it. Re-run it on
 what you are about to commit, and do not treat a merge's own list of conflicted
 files as the list of files to resolve: `git add -A` after a conflict turns an
@@ -1053,7 +1064,7 @@ that passed. That is why this one exits non-zero and is verified in both
 directions — it fails on a marker in the working tree, and on one that
 `git add -A` has already staged, which is the case that got past it.
 
-13.11 **Two files that have to agree are checked by a test that reads both, not
+13.12 **Two files that have to agree are checked by a test that reads both, not
 by a diff.** When a value is written twice — a URL in a compose healthcheck and
 the route that serves it, a port in a Dockerfile and in a config, a queue name
 in a producer and a consumer — changing one side leaves a diff that is

@@ -15,7 +15,7 @@ const DOCUMENTS = [
   '.claude/agents/impact-analyzer.md',
   '.claude/agents/test-case-generator.md',
 ];
-const ROOTS = ['src/', 'tests/', 'docs/', '.claude/', '.github/'];
+const ROOTS = ['src/', 'tests/', 'docs/', 'scripts/', 'fixtures/', '.claude/', '.github/'];
 
 const BACKTICKED = /`([^`\s]+)`/g;
 
@@ -36,6 +36,10 @@ const NAMED_BUT_ABSENT = new Map([
   ],
   ['src/shared/db/schema/', 'where the table schemas were before they moved into their modules'],
   ['src/modules/vendor/', 'a module the agent triggers name before it is written'],
+  [
+    'scripts/generate-vendor-csv.ts',
+    'the vendor-file generator the ingestion story names as a deliverable, not written yet',
+  ],
 ]);
 
 /** `Foo.bar` or `Foo.bar(args)` in a document: a member of one of our own declarations. */
@@ -126,7 +130,7 @@ describe('the documents', () => {
       for (const [, owner, member] of text.matchAll(MEMBER)) {
         const source = owner === undefined ? undefined : declarations.get(owner);
         // A whole word: `includes` stayed green on `connect` because of `connectTimeout`.
-        // ponytail: a match in a comment counts too; parsing the file is the upgrade.
+        // A match in a comment counts too; parsing the file is the upgrade.
         if (source !== undefined && member !== undefined && !wholeWord(member).test(source)) {
           missing.push(`${document}: ${owner}.${member}`);
         }
@@ -158,8 +162,15 @@ describe('the documents', () => {
   it('cite only REVIEW.md rules that exist', async () => {
     // A merge renumbered two rules and moved one citation, and nothing here could
     // see it: this file checked paths, members and ADR numbers, and a rule number
-    // is the same kind of claim about another file (REVIEW.md 13.11). The renumber
+    // is the same kind of claim about another file (REVIEW.md 13.12). The renumber
     // was verified by hand, which is the habit the rule exists to replace.
+    //
+    // What this does NOT catch, stated so nobody reads it as stronger than it is:
+    // a citation that moved one rule off still names a rule that exists. A second
+    // renumber on this same branch did exactly that — a citation of the two-files
+    // rule went on resolving, to the cleanliness rule that took its number — and
+    // this test stayed green. It catches a number nothing defines, which is the
+    // half a machine can see; the other half is still a reader's.
     const rules = new Set(
       [...(await readFile('REVIEW.md', 'utf8')).matchAll(RULE_DEFINITION)].map(([, n]) => n),
     );
