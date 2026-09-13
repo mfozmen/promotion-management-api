@@ -47,47 +47,36 @@ old name never reports healthy instead of handing the suite a server without it.
 `docker compose --profile test rm -sfv postgres-test`, which drops the volume; a restart keeps it
 and changes nothing (ADR-0003).
 
-`event-handler`, `ingestion-worker` and `reconciler` run from the same image as `api`, one
-command each. Each waits on all three of `postgres`, `redis` and `api` being healthy; the gate
-that matters is `api`, the only process that migrates, because waiting on the stores alone would
-let a worker connect before the schema exists.
+Three worker services run from the same image as `api`, one command each, and each waits on
+`postgres`, `redis` and `api` being healthy — `api` is the gate that matters, being the only
+process that migrates.
 
-**They start, connect and wait — none of them consumes anything yet.** Each logs that it holds a
-producer handle on every queue and that no consumer is registered, so an idle queue is not
-mistaken for a drained one; no worker holds a subset of the queues. On `docker compose stop` each
-closes the queue within `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s) and exits anyway if it has not closed
-by then. `api` is given the same budget but spends it on its HTTP drain and then closes the queue
-and the pool with no bound of their own, so on `api` the grace period is a ceiling rather than a
-bound: exit 137 with no `shutdown complete` line means it hung there. Those four services — `api`
-and the three workers, the only ones that close a queue — are given
-`stop_grace_period: 15s` so a worker's bound can be reached and logged: Docker's default grace is
-also 10 s, which would kill the process at the same moment as the warning explaining why the stop
-is slow (ADR-0003). The projection arrives with issue #12, the chunk processor
-with #105, and the reconciler's boundary sweep is already
-written, in `src/modules/reconciler/`, waiting on the schedule that calls it. They carry no healthcheck for the same reason: until a worker has
-work, a check could only confirm the process is alive, which `up --wait` already does. All three
-run under `restart: unless-stopped`, as `postgres`, `redis` and `api` do — a worker that exits is
-restarted, one you stop by hand stays stopped. The `tools` browsers and the test stores set no
-restart policy, so Docker's default leaves them stopped once they stop.
+- `reconciler` **consumes `reconciler.run` on the `maintenance` queue** and registers the
+  repeatable that publishes it every five minutes, so the promotion boundary sweep runs on a fresh
+  stack with nothing to start by hand.
+- `event-handler` will drain `promotions` and `products` for the read model; it consumes nothing
+  yet (issue #12).
+- `ingestion-worker` will drain `ingestion` for the chunk processor; it consumes nothing yet
+  (issue #105). It is capped at 256 MiB and half a CPU — the case study's own constraint, and what
+  Scenario A's 500 000-row import is measured against — and runs with
+  `NODE_OPTIONS=--max-old-space-size=192` so V8's heap ceiling sits under that cap.
 
-`ingestion-worker` is capped at 256 MiB and half a CPU, which is the case study's own
-constraint rather than a setting: Scenario A's claim is that a 500 000-row import survives that
-cap, and the measurement is taken against it. It also runs with
-`NODE_OPTIONS=--max-old-space-size=192`, because V8 otherwise picks a heap ceiling _above_ the
-container limit (`docker run -m 256m node:22-alpine` reports 259 MB) and the cap would arrive as
-an unexplained `SIGKILL` instead of a heap error the import can catch; move one number and move
-the other.
+Each start-up line carries a `consuming` list: `maintenance` for the reconciler, empty for the
+other two, so an idle queue is not read as a drained one. None of the three has a healthcheck, so
+`--wait` treats them as up once they are running.
 
-`api` and `ingestion-worker` share a named `uploads` volume mounted at `/app/uploads`: `api`
-writes the uploaded file there and the worker reads it back by `file_ref`, so the two have to be
-on the same host. Both services set `UPLOAD_DIR=/app/uploads` explicitly, and the image creates
-that directory and gives it to the `node` user before dropping privileges: a named volume takes
-its ownership from the image, so without that the mountpoint is root-owned and the first upload
-fails with `EACCES` on a volume that looks correctly mounted (ADR-0003). Nothing writes to it yet
-— the upload endpoint and chunk worker arrive with issue #16.
-`tests/unit/docs/compose-workers.test.ts` parses the compose file and the `Dockerfile`, and fails
-if the cap, the heap ceiling under it, the grace period, the shared mount or its ownership goes
-missing.
+`api` and `ingestion-worker` share a named `uploads` volume at `/app/uploads`, because `api` writes
+the uploaded file and the worker reads it back by `file_ref`; nothing writes to it yet (the upload
+endpoint and chunk worker arrive with issue #16).
+
+`docker compose stop` gives those four services — `api` and the three workers, the ones that close
+a queue — `stop_grace_period: 15s` for a shutdown budgeted at `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s),
+one deadline over the whole sequence, after which the process exits anyway.
+
+Why each of those is what it is — the grace period against the drain budget, the heap ceiling under
+the memory cap, the volume's ownership, `unless-stopped` rather than `always` — is in ADR-0003.
+`tests/unit/docs/compose-workers.test.ts` parses the compose file and the `Dockerfile` and fails if
+any of them goes missing.
 
 ## Develop
 
@@ -172,7 +161,7 @@ Stop the stack with `docker compose down`, or `docker compose down -v` to drop t
 
 `.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
 
-The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, the three worker services (`event-handler`, `ingestion-worker`, `reconciler`) running that same image with one command each, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. The workers have no healthcheck and no consumer yet, so `--wait` treats them as up once they are running. The `monitoring` profile is not built: issue #18 adds it.
+The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, the three worker services (`event-handler`, `ingestion-worker`, `reconciler`) running that same image with one command each, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. The workers have no healthcheck, so `--wait` treats them as up once they are running, whether or not they consume. The `monitoring` profile is not built: issue #18 adds it.
 
 ### The queue
 
@@ -184,11 +173,13 @@ delayed boundary jobs, `products` carries `product.upserted`, `ingestion` carrie
 announcements, or a full read-model rebuild, from sitting in front of a flash
 sale's `promotion.changed`: each queue gets its own worker, so two events that
 need different priority get different consumers rather than a priority number
-inside one queue (ADR-0003). No worker consumes any of them yet: `src/workers/`
-is empty, so the reconciler's boundary sweep
-(`src/modules/reconciler/commands/sweep-boundaries-command.ts`, PR #111) runs
-only when something calls it. The worker services story brings the entry points
-and the schedule.
+inside one queue (ADR-0003). One of the four has a consumer: `src/workers/reconciler.ts`
+takes `reconciler.run` off `maintenance` and runs the boundary sweep
+(`src/modules/reconciler/commands/sweep-boundaries-command.ts`). `readmodel.rebuild`
+shares that queue and has no handler, so publishing one fails into the dead-letter
+set rather than being acknowledged by a process that ignored it — deliberate, and the
+read-model story adds the handler. Nothing consumes `promotions`, `products` or
+`ingestion` yet (issues #12 and #105).
 
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
@@ -200,11 +191,12 @@ check that they differ mean something.
 has no default and is required (`.env.example` sets the compose one), but it
 starts and serves without a Redis
 there: connection errors are logged and every publish fails at its 2 s bound
-rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the
-HTTP server first and the queues last, and waits at most `SHUTDOWN_DRAIN_TIMEOUT_MS`
+rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the HTTP
+server first, the pool next and the queues last, and `SHUTDOWN_DRAIN_TIMEOUT_MS`
 (default 10 s; digits only, so a blank value is rejected rather than read as the
-`0` that exits immediately) for open connections before closing the
-queues anyway (ADR-0003).
+`0` that exits immediately) is one deadline over that whole sequence, not one per
+step: whatever has not finished by then is abandoned and the process exits
+(ADR-0003). Every process in the image stops the same way.
 
 ## Project structure
 
