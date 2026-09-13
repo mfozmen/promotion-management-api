@@ -517,7 +517,10 @@ Evidence: twice in one pull request a control passed review while never firing
 in production. Express prints a raw stack on every environment except `test`,
 which is the one the suite runs in, and a compensating `debug` log line sat
 under a root logger running at `info` while the capture logger in the test ran
-at `trace`.
+at `trace`. A third time, a test asserted the assignment a shallow `Object.freeze`
+does stop and never the one it does not: the rows inside the frozen table stayed
+writable, and a row's fields are what the response is built from. Assert the
+reachable breach, not the one the control obviously covers.
 
 7.5 **Determinism.** Fixed clocks (injected `now` or fake timers), fixed
 fixtures, no random data, no `sleep` to wait for a worker. Poll a condition with
@@ -567,29 +570,34 @@ rather than ignored, so a typo in a client is visible.
 8.2 Numeric query parameters are validated as integers with bounds. `page=-1`,
 `page=1e9`, `pageSize=99999` and `page=abc` each have a defined answer.
 
-8.3 Errors are `{ error: { code, message, details? } }` with the right status:
-`400` validation, `404` missing, `409` conflict, `429` backpressure, `503` read
-model not ready. The message is for a human; the code is for a client.
+8.3 Errors are `{ error: { message } }` with the right status: `400`
+validation, `404` missing, `409` conflict, `429` backpressure, `503` read model
+not ready. The status is the taxonomy a client branches on; the message is for a
+human, and it is the whole body: no code, no field-level breakdown (ADR-0009).
 
 8.3b A response may name where a problem is and which of the caller's own
 fields or identifiers it concerns. It never reproduces a stored value, and it
 never repeats a free-form value the caller sent: a value is not an identifier
-and there is nothing to fix by seeing it again, so a 404 does not echo the path
-and a parser's message is replaced rather than forwarded.
+and there is nothing to fix by seeing it again, so a 404 does not echo the path.
+
+This binds every message that reaches a response, not only the ones a
+middleware writes. A handler's own 4xx message crosses as written, unbounded and
+uninspected, so a message naming a row the caller
+never saw is a finding wherever it was built.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
-another row's fields, which they never had. `Unrecognized key: "discountTyp"` is
-correct: the client cannot fix the request without knowing which of its own keys
-was wrong.
+another row's fields, which they never had.
 
-8.3c Cap an echoed field name or identifier at 64 characters and truncate
-rather than omit, so a long key cannot turn an error body into a mirror.
+8.4 No internal detail escapes to the client: no stack trace, no SQL text, no
+connection string, no secret, in a response. A log line is read by the operator,
+not the caller, so the stack of an unexpected error belongs there — it is the
+only way to diagnose a 500 — and never in the body. An error is logged under
+`err`, where pino's own serializer shapes it; a hand-written whitelist beside
+it is a finding (12.9).
 
-Evidence: the first draft of the exception had no bound, so a multi-kilobyte key
-would have come straight back in the error body.
-
-8.4 No internal detail escapes: no stack trace, no SQL text, no connection
-string, no secret, in a response or a log line.
+A 5xx marked `expose: true` returns its message, so a host, a port, a statement
+or a credential in one is a finding at the raise site: the library masks the
+forgetful raiser and nothing masks the deliberate one.
 
 8.5 Handlers log and rethrow; `catch {}` is a finding. A caught error that is
 neither logged nor rethrown is a silent failure.
@@ -666,7 +674,11 @@ described the old behaviour change in the same commit; leaving the code right
 and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not. An ADR states the decision and the current state; it carries no pull
-request, commit or issue number — that history is git's.
+request, commit or issue number — that history is git's. The check for that is
+a reader, not a pattern: a quoted error message or a sample value carries
+digits and a hexadecimal-looking string without citing anything, and no
+tightening tells the two apart, because the difference is what the number
+refers to. Grep to find candidates, then read them.
 
 Some references are checkable and some are not. `tests/unit/docs/documented-names.test.ts` reads every backticked repository path, every `Foo.bar` whose `Foo` the tree exports, and every `ADR-00NN` citation out of the deliverable documents and the agent definitions, and fails on one the tree does not hold, with a named exemption for each path a document mentions without claiming it exists; prose claims stay a reader’s, because `value "99999999999" is out of range for type integer` is a quoted error rather than a citation and no pattern tells those apart. Evidence: a day of renames left four documents naming a logger file, a schema directory and a calculator that no longer existed, and two careful readings passed over the same four. Evidence for the member half: a class extraction renamed a method, the code was right everywhere and two ADR bullets still called it by the old name, because an IDE renames the code and never the prose. Evidence for the citation half: a renumber left five citations pointing one record off, and each still read like a valid reference.
 
@@ -985,6 +997,22 @@ file of 249 identical bullets passes. The quiet version of the same bug is a
 replace that matches nothing, reports success, and ships a document saying the
 opposite of what its commit message claims; that one shipped twice before it
 was noticed.
+
+13.8 **A merged configuration file is checked by parsing it, not by reading
+it.** A merge can leave two blocks under one key, and git, the parser and a
+reader are each content: every line is kept, a duplicate key is legal, and each
+block is individually correct.
+
+Evidence: two `services:` blocks in `ci.yml` after a merge, of which YAML kept
+the second, so every integration test would have run against no Redis.
+
+13.9 **After a merge, re-read the prose against the merged tree — a conflict
+marker is not the list of what the merge broke.** The sentences most likely to
+be wrong afterwards are the ones that never conflicted, because one side's code
+made the other side's claim false while touching none of its lines.
+
+Evidence: the queue story added a `SIGTERM` handler while this branch's ADR
+said, thirty lines from anything either side edited, that the process had none.
 
 ## 13b. The rulebook learns
 

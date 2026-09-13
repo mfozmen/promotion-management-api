@@ -1,10 +1,11 @@
 import { createApp } from './app.js';
-import { loadConfig } from './shared/config.js';
-import { runMigrations } from './shared/db/migrate.js';
 import { eventRegistry } from './events/event-registry.js';
 import { eventRouting } from './events/event-routing.js';
-import { EventQueue } from './shared/queue/event-queue.js';
+import { loadConfig } from './shared/config.js';
+import { runMigrations } from './shared/db/migrate.js';
 import { GracefulShutdown } from './shared/graceful-shutdown.js';
+import { logger } from './shared/logger.js';
+import { EventQueue } from './shared/queue/event-queue.js';
 
 const config = loadConfig();
 
@@ -20,7 +21,7 @@ const queue = EventQueue.connect(
 );
 
 const server = app.listen(config.PORT, () => {
-  console.log(`Server listening on port ${config.PORT}`);
+  logger.info({ port: config.PORT }, 'listening');
 });
 
 process.on('SIGTERM', () => {
@@ -28,11 +29,11 @@ process.on('SIGTERM', () => {
   void new GracefulShutdown(queue, config.SHUTDOWN_DRAIN_TIMEOUT_MS)
     .run(server)
     .then((path) => {
-      console.log(`Shutdown ${path} after ${Date.now() - startedAt} ms`);
+      logger.info({ path, ms: Date.now() - startedAt }, 'shutdown complete');
       process.exit(0);
     })
-    .catch((error: Error) => {
-      console.error('Shutdown failed:', error.message);
+    .catch((error: unknown) => {
+      logger.error({ err: error }, 'shutdown failed');
       process.exit(1);
     });
 });

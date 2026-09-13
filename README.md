@@ -2,16 +2,18 @@
 
 [![CI](https://github.com/mfozmen/promotion-management-api/actions/workflows/ci.yml/badge.svg)](https://github.com/mfozmen/promotion-management-api/actions/workflows/ci.yml) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=coverage)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=mfozmen_promotion-management-api&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=mfozmen_promotion-management-api)
 
-A REST API for managing products and time-bound promotions for ModaCo, an e-commerce platform. It supports listing and filtering products with category-aware, paginated, effective-price-sorted queries, and creating, cancelling and assigning percentage or fixed-value promotions to a product or an entire category, enforcing at most one active promotion per product.
+A REST API for managing products and time-bound promotions for ModaCo, an e-commerce platform. It supports listing and filtering products with category-aware, paginated, effective-price-sorted queries, and creating, cancelling and assigning percentage or fixed-value promotions to a product or an entire category, enforcing at most one applied promotion per product.
 
 ## Tech stack
 
 - Node.js 22
 - Express 5
 - TypeScript (strict mode)
+- zod (request and event-payload validation)
+- pino + pino-http (structured JSON logging)
+- http-errors (the error envelope: status, `expose`, response headers)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
 - BullMQ on Redis 7 (event queue; see [ADR-0003](./ADR.md))
-- zod (payload validation at the queue boundary)
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
@@ -46,6 +48,8 @@ npm test
 npm run test:cov # needs a PostgreSQL and that Redis, see below
 npm run lint
 ```
+
+`npm run dev` starts the API on `PORT` (default `3100`); `GET http://localhost:3100/api/health` should answer `{"status":"ok"}`. Read its logs on the terminal: under `tsx watch` a redirect such as `npm run dev > out.log` swallows them, so use `npx tsx src/server.ts > out.log` when you need them in a file.
 
 The suite is split into layers, so the one that needs nothing can run anywhere:
 
@@ -82,7 +86,7 @@ checks the tool's own success line, then `git add -AN src/shared/db/migrations` 
 `git diff --exit-code src/shared/db/migrations`, so a schema change committed without its
 migration fails the build. It reads the success line rather than the exit code because
 `drizzle-kit generate` exits 0 even when it fails and writes nothing; `git add -AN` is what
-makes an untracked new migration visible to the diff (ADR-0003, commit `c14fa50`).
+makes an untracked new migration visible to the diff (ADR-0003).
 
 Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data` and `redis-data` volumes as well. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
 
@@ -122,11 +126,7 @@ queues anyway (ADR-0003).
 
 ## Project structure
 
-```
-src/    application source code (each module owns its tables under db/schema/; src/shared/db holds the client, the migrator and the SQL migrations)
-tests/  automated tests (unit, integration, e2e), each layer mirroring src/
-docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
-```
+Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7). The tree and the naming rules are in [CONTRIBUTING.md](./CONTRIBUTING.md) under "Source layout"; this file does not repeat them.
 
 Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias, (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
 
@@ -134,7 +134,9 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 
 The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), and `0002_active_promotions.sql` creates the `active_promotions` view. Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/workers/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
 
-`active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver (#36) and the admin reads will select from it instead of restating the predicate (ADR-0004, commit `1aaaffc`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed (commit `2142664`). It is not an endpoint; no route exposes it.
+`active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver and the admin reads select from it instead of restating the predicate (ADR-0004). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
+
+`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
 
 ## Dynamic pricing rules
 
@@ -160,11 +162,21 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 ## API
 
-| Method | Path      | Description                                                    |
-| ------ | --------- | -------------------------------------------------------------- |
-| GET    | `/health` | Liveness probe, returns `{"status":"ok"}`; no query parameters |
+All endpoints are mounted under the `/api` prefix (ADR-0009).
 
-Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`); the health route is at `/health` today, which is what the compose healthcheck calls, and the dependency-checking `/api/health` arrives with the HTTP skeleton. Until it does, nothing should poll `/api/health`.
+| Method | Path          | Description                               | Query parameters |
+| ------ | ------------- | ----------------------------------------- | ---------------- |
+| GET    | `/api/health` | Liveness probe, returns `{"status":"ok"}` | none             |
+
+Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`), and the health route moved from `GET /health` to `GET /api/health` with the boundary (ADR-0009), so the prefix holds for everything that ships today.
+
+### Conventions
+
+- **Errors.** Every failure returns `{ "error": { "message": "..." } }`, and the status is what a client branches on. A 4xx carries the message its raiser wrote; a 5xx carries `Internal server error` unless the raiser marked it readable, which is `http-errors`' own `expose` rather than a rule of ours (ADR-0009).
+- **An unexpected error** — anything the `http-errors` library does not recognise — answers `500` with `Internal server error` and nothing else; the stack goes to the log under `err` and never to the response (ADR-0010).
+- **Validation.** Request bodies, query strings and path parameters are validated at the boundary with strict zod schemas: an unknown field is a `400`, not a silently ignored typo. The rejection names the failing part and nothing more (`Invalid request body`): no field path, no issue list, no echo of what you sent. Strictness is top-level; a nested object declares its own with `z.strictObject(...)` (ADR-0009).
+- **Request bodies** are capped at 100kb. Everything body-parser refuses keeps the status that says which failure it was — 400 for a body that cannot be read, 413 for one over the cap, 415 for a charset it will not decode — and its own message, which describes the caller's own request rather than anything of ours (ADR-0009).
+- **Correlation id.** Send `x-request-id` (matching `^[A-Za-z0-9._-]{1,128}$`) to trace a request; anything else is replaced by a generated uuid. The id used is returned in the `x-request-id` response header and appears as `reqId` on every JSON log line (ADR-0010).
 
 ## Development workflow
 
