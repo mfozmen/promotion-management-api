@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { products } from '@src/modules/product/db/schema/products.js';
-import { upsertProducts } from '@src/modules/product/db/upsert-products.js';
+import { ProductRepository } from '@src/modules/product/db/product-repository.js';
 import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
@@ -11,7 +11,7 @@ let sequence = 0;
 /** A distinct SKU per call, so files sharing one database clone do not collide. */
 const sku = () => `SKU-${(sequence += 1)}`;
 
-const product = (overrides: Partial<Parameters<typeof upsertProducts>[1][number]> = {}) => ({
+const product = (overrides: Partial<Parameters<ProductRepository['upsertMany']>[1][number]> = {}) => ({
   sku: sku(),
   name: 'a name',
   category: 'shoes',
@@ -28,11 +28,11 @@ const rowFor = async (value: string) => {
   return row;
 };
 
-describe('upsertProducts', () => {
+describe('ProductRepository.upsertMany', () => {
   it('inserts new products and returns their ids in the order given', async () => {
     const batch = [product(), product(), product()];
 
-    const ids = await upsertProducts(db(), batch);
+    const ids = await new ProductRepository(db()).upsertMany(db(), batch);
 
     expect(ids).toHaveLength(3);
     expect(new Set(ids).size).toBe(3);
@@ -44,7 +44,7 @@ describe('upsertProducts', () => {
   it('stores the provenance the announcement and a resume both depend on', async () => {
     const batch = [product({ ingestJobId: 42, ingestSourceOffset: 4096, pricingRulesVersion: 3 })];
 
-    await upsertProducts(db(), batch);
+    await new ProductRepository(db()).upsertMany(db(), batch);
 
     const row = await rowFor(batch[0]!.sku);
     expect(row?.ingestJobId).toBe(42);
@@ -54,9 +54,9 @@ describe('upsertProducts', () => {
 
   it('updates a product already stored under that sku rather than failing on the unique', async () => {
     const existing = product({ name: 'old', basePriceCents: 1000, stockQuantity: 5 });
-    await upsertProducts(db(), [existing]);
+    await new ProductRepository(db()).upsertMany(db(), [existing]);
 
-    const ids = await upsertProducts(db(), [
+    const ids = await new ProductRepository(db()).upsertMany(db(), [
       { ...existing, name: 'new', basePriceCents: 2500, stockQuantity: 0 },
     ]);
 
@@ -69,9 +69,9 @@ describe('upsertProducts', () => {
 
   it('keeps one row per sku across a re-import, so a replay does not duplicate the catalogue', async () => {
     const batch = [product(), product()];
-    await upsertProducts(db(), batch);
+    await new ProductRepository(db()).upsertMany(db(), batch);
 
-    const second = await upsertProducts(db(), batch);
+    const second = await new ProductRepository(db()).upsertMany(db(), batch);
 
     const first = await db().select().from(products).where(eq(products.sku, batch[0]!.sku));
     expect(first).toHaveLength(1);
@@ -80,10 +80,10 @@ describe('upsertProducts', () => {
 
   it('moves updated_at forward on an update, so a re-import is visible as one', async () => {
     const existing = product();
-    await upsertProducts(db(), [existing]);
+    await new ProductRepository(db()).upsertMany(db(), [existing]);
     const before = (await rowFor(existing.sku))?.updatedAt;
 
-    await upsertProducts(db(), [{ ...existing, stockQuantity: 99 }]);
+    await new ProductRepository(db()).upsertMany(db(), [{ ...existing, stockQuantity: 99 }]);
 
     expect((await rowFor(existing.sku))?.updatedAt?.getTime()).toBeGreaterThan(
       before?.getTime() ?? 0,
@@ -96,7 +96,7 @@ describe('upsertProducts', () => {
     // one batch is a vendor's mistake, not a reason to fail 499 good rows.
     const repeated = sku();
 
-    const ids = await upsertProducts(db(), [
+    const ids = await new ProductRepository(db()).upsertMany(db(), [
       product({ sku: repeated, stockQuantity: 1 }),
       product({ sku: repeated, stockQuantity: 2 }),
     ]);
@@ -106,6 +106,6 @@ describe('upsertProducts', () => {
   });
 
   it('writes nothing and returns nothing for an empty batch', async () => {
-    expect(await upsertProducts(db(), [])).toEqual([]);
+    expect(await new ProductRepository(db()).upsertMany(db(), [])).toEqual([]);
   });
 });

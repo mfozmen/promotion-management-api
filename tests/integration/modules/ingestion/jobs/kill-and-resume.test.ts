@@ -7,6 +7,7 @@ import { products } from '@src/modules/product/db/schema/products.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { ChunkProcessor } from '@src/modules/ingestion/jobs/chunk-processor.js';
+import { ProductRepository } from '@src/modules/product/db/product-repository.js';
 import { BasePriceCalculatorCache } from '@src/modules/pricing/domain/base-price-calculator-cache.js';
 import type { PricingRuleRow } from '@src/modules/pricing/domain/dto/pricing-rule-row.js';
 import { pricingRules } from '@src/modules/pricing/db/schema/pricing-rules.js';
@@ -114,6 +115,7 @@ describe('a worker killed mid-chunk', () => {
     // ordering survives that one.
     const dying = new ChunkProcessor({
       db: db(),
+      products: new ProductRepository(db()),
       calculators: calculatorsThatOnRow((n) =>
         n === 3 ? Promise.reject(new Error('killed mid-batch')) : Promise.resolve(),
       ),
@@ -140,6 +142,7 @@ describe('a worker killed mid-chunk', () => {
     // The dead worker still holds its lease, so nothing else touches the chunk.
     const blocked = new ChunkProcessor({
       db: db(),
+      products: new ProductRepository(db()),
       calculators: calculators(),
       batchSize: BATCH,
       reenqueue: () => Promise.resolve(),
@@ -152,6 +155,7 @@ describe('a worker killed mid-chunk', () => {
 
     const resumed = new ChunkProcessor({
       db: db(),
+      products: new ProductRepository(db()),
       calculators: calculators(),
       batchSize: BATCH,
       reenqueue: () => Promise.resolve(),

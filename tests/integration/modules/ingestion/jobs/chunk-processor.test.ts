@@ -8,6 +8,7 @@ import { claimChunk } from '@src/modules/ingestion/db/claim-chunk.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { ChunkProcessor } from '@src/modules/ingestion/jobs/chunk-processor.js';
+import { ProductRepository } from '@src/modules/product/db/product-repository.js';
 import { BasePriceCalculator } from '@src/modules/pricing/domain/base-price-calculator.js';
 import { BasePriceCalculatorCache } from '@src/modules/pricing/domain/base-price-calculator-cache.js';
 import type { PricingRuleRow } from '@src/modules/pricing/domain/dto/pricing-rule-row.js';
@@ -132,6 +133,7 @@ function recorder() {
 const processorWith = (publish: (ids: readonly number[]) => Promise<void>, batchSize = 100) =>
   new ChunkProcessor({
     db: db(),
+    products: new ProductRepository(db()),
     calculators: calculators(),
     publish,
     batchSize,
@@ -200,6 +202,7 @@ describe('ChunkProcessor', () => {
 
     const result = await new ChunkProcessor({
       db: db(),
+      products: new ProductRepository(db()),
       calculators: calculators(),
       reenqueue: () => Promise.resolve(),
       log: { error: (...args: unknown[]) => logged.push(args) },
@@ -221,6 +224,7 @@ describe('ChunkProcessor', () => {
     await expect(
       new ChunkProcessor({
         db: db(),
+        products: new ProductRepository(db()),
         calculators: calculatorsThatOnRow((n) =>
           n === 2 ? Promise.reject(new Error('killed mid-batch')) : Promise.resolve(),
         ),
@@ -275,6 +279,7 @@ describe('ChunkProcessor', () => {
     await expect(
       new ChunkProcessor({
         db: db(),
+        products: new ProductRepository(db()),
         calculators: broken,
         publish: recorder().publish,
         reenqueue: () => Promise.resolve(),
@@ -298,6 +303,7 @@ describe('ChunkProcessor', () => {
 
     const superseded = new ChunkProcessor({
       db: db(),
+      products: new ProductRepository(db()),
       calculators: calculators(),
       batchSize: 2,
       reenqueue: () => Promise.resolve(),
@@ -332,6 +338,7 @@ describe('ChunkProcessor', () => {
 
     const result = await new ChunkProcessor({
       db: db(),
+      products: new ProductRepository(db()),
       calculators: calculatorsThatOnRow(async () => {
         // A second invocation, holding the chunk, commits its own batch first.
         await db()
@@ -363,6 +370,7 @@ describe('ChunkProcessor', () => {
 
     const result = await new ChunkProcessor({
       db: db(),
+      products: new ProductRepository(db()),
       calculators: calculators(),
       batchSize: 2,
       budgetMs: 500,
@@ -395,6 +403,7 @@ describe('ChunkProcessor', () => {
 
     const result = await new ChunkProcessor({
       db: db(),
+      products: new ProductRepository(db()),
       calculators: calculators(),
       batchSize: 2,
       budgetMs: 500,
@@ -484,6 +493,7 @@ describe('ChunkProcessor', () => {
     await expect(
       new ChunkProcessor({
         db: db(),
+        products: new ProductRepository(db()),
         // The kill lands on the third row, which is inside the second batch's
         // transaction: that batch's rows and its checkpoint go together.
         calculators: calculatorsThatOnRow((n) =>

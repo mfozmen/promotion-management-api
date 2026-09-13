@@ -1,7 +1,8 @@
 import { TransactionRollbackError } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import type { Db } from '../../../shared/db/client.js';
-import { upsertProducts, type ProductUpsert } from '../../product/db/upsert-products.js';
+import type { ProductRepository } from '../../product/db/product-repository.js';
+import type { ProductUpsert } from '../../product/domain/dto/product-upsert.js';
 import type { BasePriceCalculatorCache } from '../../pricing/domain/base-price-calculator-cache.js';
 import { checkpointBatch } from '../db/checkpoint-batch.js';
 import { claimChunk } from '../db/claim-chunk.js';
@@ -39,6 +40,8 @@ export class ChunkProcessor {
   private readonly db: Db;
   /** Only `current` is used, so a test can supply a rule set that fails on purpose. */
   private readonly calculators: Pick<BasePriceCalculatorCache, 'current'>;
+  /** Only `upsertMany` is used: the module that owns the table owns the write. */
+  private readonly products: Pick<ProductRepository, 'upsertMany'>;
   private readonly publish: (productIds: readonly number[]) => Promise<unknown>;
   /** Only `error` is used: the one line an operator finds a lost announcement by. */
   private readonly log: Pick<Logger, 'error'>;
@@ -51,6 +54,7 @@ export class ChunkProcessor {
   constructor(options: {
     db: Db;
     calculators: Pick<BasePriceCalculatorCache, 'current'>;
+    products: Pick<ProductRepository, 'upsertMany'>;
     publish: (productIds: readonly number[]) => Promise<unknown>;
     log: Pick<Logger, 'error'>;
     /**
@@ -67,6 +71,7 @@ export class ChunkProcessor {
   }) {
     this.db = options.db;
     this.calculators = options.calculators;
+    this.products = options.products;
     this.publish = options.publish;
     this.log = options.log;
     this.reenqueue = options.reenqueue;
@@ -204,7 +209,7 @@ export class ChunkProcessor {
 
     try {
       await this.db.transaction(async (tx) => {
-        ids = await upsertProducts(tx, batch.rows);
+        ids = await this.products.upsertMany(tx, batch.rows);
         const moved = await checkpointBatch(tx, {
           jobId,
           chunkIndex,
