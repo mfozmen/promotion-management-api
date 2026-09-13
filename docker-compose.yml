@@ -45,6 +45,7 @@ services:
 
   migrate:
     image: node:22-alpine
+    profiles: [migrate]
     working_dir: /app
     volumes:
       - .:/app
@@ -55,7 +56,6 @@ services:
       postgres:
         condition: service_healthy
     command: ['sh', '-c', 'npm ci --ignore-scripts && npx drizzle-kit migrate']
-    restart: 'no'
     networks:
       - promotion
 

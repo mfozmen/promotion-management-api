@@ -29,11 +29,19 @@ without the compose file, so the system under test is the compose project, not
 a server you launched by hand.
 
 1. `npm ci` only if `node_modules` is missing.
-2. Bring the stack up and wait for it to be healthy:
+2. Bring the stack up, wait for it to be healthy, then apply the schema:
 
    ```
-   docker compose up -d --wait   # exits non-zero if any service is unhealthy
+   docker compose up -d --wait      # exits non-zero if any service is unhealthy
+   docker compose run --rm migrate  # applies every migration; non-zero if one fails
    ```
+
+   The migration is a second verb rather than part of `up`, because `--wait`
+   counts an exited one-shot as a wait failure and a `migrate` service inside
+   `up` makes a healthy stack exit 1. `run --rm` returns the migration's own
+   status and is safe to repeat: `drizzle-kit migrate` applies only what
+   `__drizzle_migrations` does not already record. An unmigrated database fails
+   every endpoint that reads one, so do not skip it on a fresh volume.
 
 3. **The host port is 3000**, published by the compose file. Every health check
    and every measurement uses it. Only one run can hold it at a time, which is
