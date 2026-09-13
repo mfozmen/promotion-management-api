@@ -316,13 +316,13 @@ describe('a rebuild that has removed a product the index still lists', () => {
     expect(res.headers['retry-after']).toBeUndefined();
   });
 
-  it('answers 503 on the detail route for a member whose entry is gone', async () => {
+  it('answers 404 on the detail route for a member whose entry is gone', async () => {
     await seedProducts(redis(), [product({ id: 1 })]);
     await redis().unlink('product:1');
 
-    // The index still lists it, so the entry is mid-rebuild rather than absent.
-    // A 404 here is cached by every crawler and CDN for a live product.
-    expect((await request(app()).get('/api/products/1')).status).toBe(503);
+    // The writer's contract is what keeps this state from arising at all
+    // (ADR-0006); the route does not pay a command per miss to detect it.
+    expect((await request(app()).get('/api/products/1')).status).toBe(404);
   });
 
   it('answers 404 for an id no index lists', async () => {

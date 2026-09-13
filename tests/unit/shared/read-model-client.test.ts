@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createReadModelClient } from '@src/shared/read-model-client.js';
 
-describe('the storefront client limits its wait on Redis', () => {
-  it('fails a command rather than queueing it while the server is away', () => {
+describe('createReadModelClient', () => {
+  it('limits its wait on Redis: fails a command rather than queueing it while the server is away', () => {
     const client = createReadModelClient('redis://localhost:6379', 9);
     const { db, enableOfflineQueue, maxRetriesPerRequest, commandTimeout } = client.options;
     client.disconnect();

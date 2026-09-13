@@ -13,10 +13,8 @@ const stored = {
   stockQuantity: '3',
 };
 
-const products = (
-  find: () => Promise<Record<string, string> | undefined>,
-  isListed: () => Promise<boolean> = () => Promise.resolve(false),
-) => ({ find, isListed }) as unknown as ProductReadRepository;
+const products = (find: () => Promise<Record<string, string> | undefined>) =>
+  ({ find }) as unknown as ProductReadRepository;
 
 describe('FindProductQuery', () => {
   it('answers the product a shopper asked for, mapped to the view', async () => {
@@ -33,19 +31,6 @@ describe('FindProductQuery', () => {
     // The route decides nothing; if this were undefined the route would have
     // to branch, which is the shape this fold exists to remove.
     expect((raised as createError.HttpError).status).toBe(404);
-  });
-
-  it('answers 503 for a product the index still lists, so a crawler caches no 404', async () => {
-    const raised = await new FindProductQuery(
-      products(
-        () => Promise.resolve(undefined),
-        () => Promise.resolve(true),
-      ),
-    )
-      .execute(7)
-      .catch((error: unknown) => error);
-
-    expect((raised as createError.HttpError).status).toBe(503);
   });
 
   it('lets the store own answer through, so an outage is not a 404', async () => {

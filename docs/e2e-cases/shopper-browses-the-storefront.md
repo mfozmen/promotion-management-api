@@ -12,7 +12,7 @@ cheapest thing I want without opening every product.
 Acceptance criteria
 
 - The list can be filtered to one category, and with no category chosen the shopper browses the whole catalogue.
-- The list is paginated. While prices are still, two pages never share a product or skip one; while a sale is changing them, a product whose price moves may be seen twice or missed, because the pages are cut by price and the price is what changed. **This second half is not ratified.** The case study asks for pagination and says nothing about what a shopper is owed while a sale moves prices, and nothing on issue #13 records a decision either. Until the owner decides, shopper-3 promises the shopper less than the case study's own word does.
+- The list is paginated. While prices are still, two pages never share a product or skip one; while a sale is changing them, a product whose price moves may be seen twice or missed, because the pages are cut by price and the price is what changed. (owner decision, 2026-09-13; the reasoning is in ADR-0006's trade-offs).
 - The list can be sorted by effective price, ascending or descending.
 - Each page tells the shopper how many products the list holds, so they know how many pages there are.
 - Paging reaches the first 10 000 products of a category by design; a request past that depth is refused rather than served slowly, and the total still reports the whole catalogue (owner decision, 2026-09-13).
