@@ -22,7 +22,8 @@ Docker image, four commands (`api`, `event-handler`, `ingestion-worker`,
 - PostgreSQL 16, Drizzle ORM, `drizzle-kit` SQL migrations under
   `src/shared/db/migrations/` (the DDL deliverable). Extension `btree_gist`.
 - Redis 7. Logical DB `0` = read model, DB `1` = BullMQ. Rebuilds never
-  `FLUSH`; they `SCAN` + `UNLINK` by prefix.
+  `FLUSH`; they recompute each entry through the write script and `SCAN` + `UNLINK`
+  only the ids the write store no longer has.
 - Money is integer minor units (`*_cents bigint`); percentages are basis
   points (`10000 = 100 %`). No floats in pricing. Drizzle bigint columns use
   `mode: 'number'` (values stay far below 2^53).
@@ -643,7 +644,7 @@ Manual (all under `/api/admin`, plus Bull Board at `/admin/queues`):
 | `POST /api/admin/queues/:name/drain?confirm=true`         | drop waiting jobs                                                   |
 | `POST /api/admin/dlq/retry` / `discard` (`?queue=`)       | re-queue or delete failed jobs                                      |
 | `POST /api/vendor/imports/:id/pause` / `resume` / `abort` | control one file; resume re-enqueues its pending chunks             |
-| `POST /api/admin/read-model/rebuild?category=`            | scoped or full rebuild via `SCAN`+`UNLINK`                          |
+| `POST /api/admin/read-model/rebuild?category=`            | scoped or full rebuild, recomputing through the write script        |
 
 Alarms (monitoring stack, compose profile `monitoring`): the API and every
 worker expose `GET /metrics` with `prom-client` (default Node metrics plus

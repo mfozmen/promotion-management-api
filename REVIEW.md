@@ -269,7 +269,11 @@ the designed behaviour when the read model is missing is `503` until
 hash field without a corresponding rebuild path is a finding: the rebuild is
 what makes the field true for the other 499 999 products.
 
-5.3 No `FLUSHALL`/`FLUSHDB`. Rebuilds use `SCAN` + `UNLINK` by prefix on the
+5.3 No `FLUSHALL`/`FLUSHDB`. A rebuild deletes and rewrites each entry inside the
+one script that writes it (ADR-0003's ordering clauses: a prefix delete takes the
+ordering token with the entry, and absence of a token has to mean never written).
+`SCAN` + `UNLINK` by prefix is for the orphans that remain — ids the write store
+no longer has — on the
 read-model database only. `KEYS` in any code path is a finding.
 
 5.4 The queue database and the read-model database are separate logical
