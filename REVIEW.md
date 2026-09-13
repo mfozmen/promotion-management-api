@@ -291,6 +291,13 @@ fill-on-miss, or any read-through path reintroduces stampedes and the
 cancel-then-read race, and must bring the stampede lock and the ordering
 argument with it.
 
+5.8 **A Redis `ReplyError` is not proof of a permanent fault.** `-LOADING`,
+`-OOM`, `-BUSY`, `-MISCONF` and `-READONLY` all arrive in the same class as
+`-WRONGTYPE`, so a classifier that maps the class to a `500` answers a restart
+with a status nothing retries. Classify on the error string, and let anything
+unrecognised be the retryable answer: guessing "come back" at a permanent fault
+costs one retry, and guessing "permanent" at an outage costs the outage.
+
 ---
 
 ## 6. Performance, especially in loops
