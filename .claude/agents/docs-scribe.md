@@ -34,8 +34,9 @@ not, ask for it rather than re-deriving the whole branch.
   first one and hides what actually changed.
 
 **A verdict is about this pull request.** A finding that can only be fixed by
-code in another story is not a blocker here: name it once, say which issue owns
-it, and do not raise it again on the next head. Repeating it makes every round
+code in another story is not a blocker here: name it once, say which component
+owns it, and do not raise it again on the next head. The issue number goes in
+your report and the pull request thread, never in the record itself (8b.5). Repeating it makes every round
 red for something this branch cannot close.
 
 ## What belongs in this pull request
@@ -45,7 +46,9 @@ describes. Two limits keep that from becoming a loop:
 
 - **A record describes the tree, not a component nobody has written.** When a
   decision commits a future story to something, state the obligation and the
-  hazard in one place and name the story that owns the shape. Detail about an
+  hazard in one place and name the component that owns the shape — the component,
+  not the issue number: an ADR carries no issue, pull request or commit reference
+  (8b.5). Detail about an
   unbuilt component generates a new question every time it is read, and none of
   those questions can be answered in the branch that wrote it.
 - **A stale claim in a document this branch does not otherwise touch belongs to

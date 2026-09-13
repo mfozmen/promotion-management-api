@@ -34,8 +34,9 @@ not, ask for it rather than re-deriving the whole branch.
   first one and hides what actually changed.
 
 **A verdict is about this pull request.** A finding that can only be fixed by
-code in another story is not a blocker here: name it once, say which issue owns
-it, and do not raise it again on the next head. Repeating it makes every round
+code in another story is not a blocker here: name it once, say which component
+owns it, and do not raise it again on the next head. The issue number goes in
+your report and the pull request thread, never in the record itself (8b.5). Repeating it makes every round
 red for something this branch cannot close.
 
 ## Method
