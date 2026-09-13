@@ -27,6 +27,10 @@ const NAMED_BUT_ABSENT = new Map([
     'evidence of a name that reads as an instruction, never a file here',
   ],
   [
+    'src/shared/safe-request-id.ts',
+    'where ADR-0010 sends the correlation-id pattern when a second caller needs it, so the move is decided rather than improvised',
+  ],
+  [
     'src/middleware/',
     'the directory the HTTP boundary was moved out of, named by ADR-0009 as what it replaced',
   ],

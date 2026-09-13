@@ -92,21 +92,19 @@ describe('HttpError mapping', () => {
     });
   });
 
-  it('says which come back later it was, when the cause hides the reason', async () => {
+  it('tells an unreachable store from a cold start without copying the raised message', async () => {
     const captured = captureLogger();
     const raised = new HttpError('READ_MODEL_NOT_READY', 'The read model cannot be reached');
     raised.cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
 
     await request(appThrowing(raised, captured)).get('/boom');
 
-    // `serializeError` reports the root of the chain, so with a cause present
-    // the raised message never reaches the log and an operator cannot tell an
-    // unreachable store from one that is still being built. Both answer the
-    // same code with the same public wording.
-    expect(captured.lines.find((line) => line.level === 40)).toMatchObject({
-      reason: 'The read model cannot be reached',
-      error: { code: 'ECONNREFUSED' },
-    });
+    // The two conditions differ in `type`, `message` and `code` already, so
+    // copying the raiser's words onto the line bought nothing and wrote an
+    // unredacted string beside the redacted one.
+    const line = captured.lines.find((entry) => entry.level === 40);
+    expect(line).toMatchObject({ error: { type: 'Error', code: 'ECONNREFUSED' } });
+    expect(line).not.toHaveProperty('reason');
   });
 
   it('does not call come back later a server fault', async () => {
@@ -132,6 +130,37 @@ describe('HttpError mapping', () => {
     // the status is whatever the code says it is.
     expect(new HttpError('CONFLICT', 'x').status).toBe(409);
     expect(new HttpError('READ_MODEL_NOT_READY', 'x').status).toBe(503);
+  });
+
+  it('answers a foreign 404 with the code a missing resource has', async () => {
+    // A dependency's `NotFound` fell through to `BAD_REQUEST` under a 404,
+    // so a client branching on `code` — which is what the envelope exists for
+    // — could not tell a missing resource from a malformed request.
+    const foreign = Object.assign(new Error('Not Found'), { status: 404, expose: true });
+
+    const res = await request(appThrowing(foreign)).get('/boom');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('answers a foreign 409 with the code a conflict has', async () => {
+    const foreign = Object.assign(new Error('Conflict'), { status: 409, expose: true });
+
+    expect((await request(appThrowing(foreign)).get('/boom')).body.error.code).toBe('CONFLICT');
+  });
+
+  it('bounds each detail message, not just how many there are', async () => {
+    const raised = new HttpError('VALIDATION_ERROR', 'Invalid request body', [
+      { path: 'body.sku', message: 'x'.repeat(5_000) },
+    ]);
+
+    const res = await request(appThrowing(raised)).get('/boom');
+
+    // The count was bounded and each message was not, so twenty details of a
+    // schema author's own wording had no size bound at all on an
+    // unauthenticated path.
+    expect(res.body.error.details[0].message.length).toBe(1_500);
   });
 
   it('truncates a details list at the envelope, whoever produced it', async () => {

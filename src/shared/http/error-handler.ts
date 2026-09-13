@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import type { ErrorRequestHandler } from 'express';
 import { CLIENT_ERRORS } from './client-errors.js';
 import type { ErrorCode } from './error-code.js';
+import { MAX_DETAIL_MESSAGE } from './max-detail-message.js';
 import { MAX_DETAILS } from './max-details.js';
 import { MAX_MESSAGE } from '../max-message.js';
 import { OTHER_CLIENT_ERROR } from './other-client-error.js';
@@ -94,14 +95,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       // ADR-0010.
       const { type, message, code } = serializeError(err);
       log.warn(
-        {
-          code: known.code,
-          status: known.status,
-          // No guard on the cast: nothing maps a foreign error onto a
-          // retriable code, so this is always one we raised.
-          reason: (err as HttpError).message.slice(0, MAX_MESSAGE),
-          error: { type, message, code },
-        },
+        { code: known.code, status: known.status, error: { type, message, code } },
         'request deferred',
       );
     } else {
@@ -120,7 +114,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       res.set('Retry-After', retryAfter());
     }
     if (known.details !== undefined) {
-      body.error.details = known.details.slice(0, MAX_DETAILS);
+      body.error.details = known.details
+        .slice(0, MAX_DETAILS)
+        .map(({ path, message }) => ({ path, message: message.slice(0, MAX_DETAIL_MESSAGE) }));
     }
     res.status(known.status).json(body);
 

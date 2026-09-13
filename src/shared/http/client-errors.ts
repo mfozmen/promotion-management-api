@@ -10,6 +10,11 @@ import type { ErrorCode } from './error-code.js';
 export const CLIENT_ERRORS: Readonly<Record<number, { code: ErrorCode; message: string }>> =
   Object.freeze({
     400: Object.freeze({ code: 'VALIDATION_ERROR', message: 'Request body could not be read' }),
+    404: Object.freeze({ code: 'NOT_FOUND', message: 'Resource not found' }),
+    409: Object.freeze({
+      code: 'CONFLICT',
+      message: 'The request conflicts with the current state',
+    }),
     413: Object.freeze({ code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' }),
     415: Object.freeze({
       code: 'UNSUPPORTED_MEDIA_TYPE',
