@@ -20,8 +20,10 @@ caught and how it was corrected. If not given, reconstruct from
 ## Re-running on a later head
 
 A pull request is reviewed many times. **After the first pass, review the delta,
-not the branch.** You have no memory of what you found last time, so you keep it
-yourself — see below. A commit alone cannot tell you what you found: an agent
+not the branch.** On the first pass there is no earlier commit and no earlier
+report: review `origin/main...HEAD` whole, and do not stop to ask for a range that
+does not exist yet. From the second pass on, you have no memory of what you found
+last time, so you keep it yourself — see below. A commit alone cannot tell you what you found: an agent
 given only a head either re-derives the branch, which is what this section exists
 to stop, or carries nothing forward and says so.
 
@@ -96,6 +98,15 @@ describes. Two limits keep that from becoming a loop:
   (8b.5). Detail about an
   unbuilt component generates a new question every time it is read, and none of
   those questions can be answered in the branch that wrote it.
+  **Name an absence; do not describe what fills it.** The rule above stops a record
+  describing a component nobody has written. It does not license silence about one:
+  where a reader would otherwise assume something is present, say it is not and name
+  the component that will bring it. "No worker consumes the queue yet; the chunk
+  worker is the ingestion story" is a fact about the tree. "The monitoring profile
+  will scrape every worker" is a description of something unbuilt. A pull request
+  that closes half an issue owes the first sentence loudly, in the README and in its
+  own body — otherwise a demo that half-works reads as a demo that is broken.
+
 - **A stale claim in a document this branch does not otherwise touch belongs to
   the branch that makes it true.** Report it, say which one, and leave it.
 

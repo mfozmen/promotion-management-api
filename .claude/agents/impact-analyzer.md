@@ -20,8 +20,10 @@ use `gh pr diff <n>`.
 ## Re-running on a later head
 
 A pull request is reviewed many times. **After the first pass, review the delta,
-not the branch.** You have no memory of what you found last time, so you keep it
-yourself — see below. A commit alone cannot tell you what you found: an agent
+not the branch.** On the first pass there is no earlier commit and no earlier
+report: review `origin/main...HEAD` whole, and do not stop to ask for a range that
+does not exist yet. From the second pass on, you have no memory of what you found
+last time, so you keep it yourself — see below. A commit alone cannot tell you what you found: an agent
 given only a head either re-derives the branch, which is what this section exists
 to stop, or carries nothing forward and says so.
 
