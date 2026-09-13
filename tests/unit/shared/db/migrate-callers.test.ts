@@ -15,17 +15,14 @@ async function sourceFiles(directory: string): Promise<string[]> {
   return files.flat();
 }
 
-// ADR-0003 gives the schema to the `api` boot alone. This fails on the branch that adds a
-// second caller, which is where the alarm is worth something — including a side-effect
-// import, which is a caller the moment the module runs.
+// ADR-0003: only the api boot migrates; this fails on the branch that adds a second caller.
 describe('runMigrations', () => {
   it('has exactly one caller in src/, because the schema belongs to the api boot alone', async () => {
     const files = await sourceFiles('src');
     const importers = await Promise.all(
       files.map(async (file) => ({
         file,
-        // `import(` and `export ... from` reach the module as surely as a plain import, and
-        // a barrel re-export is a live pattern here (`src/shared/db/schema/index.ts`).
+        // import( and export … from are callers too.
         imports: /(?:import|export)[\s(][^'"]*['"][^'"]*db\/migrate\.js['"]/.test(
           await readFile(file, 'utf8'),
         ),

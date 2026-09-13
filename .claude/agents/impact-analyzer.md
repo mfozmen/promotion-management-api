@@ -45,7 +45,7 @@ use `gh pr diff <n>`.
 4. **Data and contracts.** Compare schema or migration changes against every
    query that touches the same tables. Check API response shapes against
    README/API docs and tests. Flag breaking changes to any existing endpoint.
-   The write store's trace points, all defined in `src/shared/db/schema/` and
+   The write store's trace points, all defined in the modules' `db/schema/` directories and
    `src/shared/db/migrations/`:
    - `products` — `sku` unique, `base_price_cents >= 0`, `stock_quantity >= 0`,
      `products_category_id_idx (category, id)` for keyset scans, and the
@@ -60,7 +60,7 @@ use `gh pr diff <n>`.
      rules depends on `type = 'ingestion'`, `active` and `priority`. The seeded
      events are `adjustPercentBps` with a signed basis-point `value`, over the
      facts `category`, `stockQuantity` and `vendorPriceCents`; the wrapper in
-     `src/modules/pricing/ingestion-rules.ts` throws on anything else.
+     `src/modules/pricing/domain/base-price-calculator.ts` throws on anything else.
    - `ingestion_jobs` — `file_sha256` unique (same file twice is a `409`) and
      `ingestion_jobs_one_running_per_vendor` partial unique index.
    - `ingestion_chunks` — `(job_id, chunk_index)` primary key, `next_offset`

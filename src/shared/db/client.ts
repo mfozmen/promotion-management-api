@@ -1,9 +1,6 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import * as schema from './schema.js';
 
-// One pool per process; the two timeouts stop a single statement or an abandoned
-// transaction holding a connection for ever.
 export function createPool(connectionString: string): Pool {
   return new Pool({
     connectionString,
@@ -14,7 +11,7 @@ export function createPool(connectionString: string): Pool {
 }
 
 export function createDb(pool: Pool) {
-  return drizzle(pool, { schema });
+  return drizzle(pool);
 }
 
 export type Db = ReturnType<typeof createDb>;

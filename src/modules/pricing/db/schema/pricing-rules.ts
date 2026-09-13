@@ -16,7 +16,7 @@ export const pricingRules = pgTable(
   {
     id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
     type: pricingRuleType('type').notNull(),
-    name: text('name').notNull().unique(), // lets the seed re-apply without duplicating a rule
+    name: text('name').notNull().unique(),
     conditions: jsonb('conditions').notNull(),
     event: jsonb('event').notNull(),
     priority: integer('priority').notNull().default(0),
