@@ -1091,10 +1091,10 @@ check run before a merge says nothing about the tree after it. Re-run it on
 what you are about to commit, and do not treat a merge's own list of conflicted
 files as the list of files to resolve: `git add -A` after a conflict turns an
 unmerged path into a staged one, so the markers stop showing as unmerged and
-`git status` stops mentioning them. The check that holds is `git grep` for the
-markers over the working tree **and** `--cached` over the index, plus
-`git diff --name-only --diff-filter=U` — which is `npm run check:conflicts`, run
-by the pre-commit hook, because a check someone has to remember to type is not
+`git status` stops mentioning them. The check that holds is `git diff --check` over
+the working tree **and** `git diff --cached --check` over the index. Both are
+git's own, and a thirty-line script that reimplemented them with `git grep` was
+deleted once that was noticed: look for the check in the tool before writing
 one.
 
 Evidence: three conflict markers reached `58c6f87` and the pull request opened
