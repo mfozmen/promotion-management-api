@@ -422,7 +422,7 @@ Every endpoint in ADR-0003 to ADR-0007 has to agree on where it is mounted, how 
 
 ### Decision
 
-- **Prefix.** Everything is mounted on an `express.Router()` under `/api`, including the liveness probe, which moves from `GET /health` to `GET /api/health`. The queue dashboard and the Prometheus scrape sit outside it, operator-facing rather than client-facing.
+- **Prefix.** Everything is mounted on an `express.Router()` under `/api`, including the liveness probe, which moves from `GET /health` to `GET /api/health`. No operator surface exists yet; a queue dashboard or a metrics scrape mounts outside the prefix and outside the envelope, because neither is client-facing.
 - **Validation at the boundary.** `validate({ body?, query?, params? })` takes zod object schemas, calls `.strict()` on them once at route construction, and replaces each declared part with the parsed value. An unknown field is a `400`, not a silently ignored client typo. `req.query` is a getter in Express 5, so the parsed value is installed with `Object.defineProperty`.
 - **One error envelope.** `{ error: { code, message, details? } }` and nothing else. `HttpError(code, message, details?)` maps straight through.
 - **`HttpError` takes a code, not a status.** `STATUS` is exhaustive over the closed `ErrorCode`, so a code cannot be paired with a contradicting status.
@@ -470,3 +470,5 @@ A request does not end at the HTTP response: it emits an event a worker picks up
 
 - A diagnosis needing a request header or query string has to reproduce the request rather than read it back.
 - A caller-supplied id is accepted, not verified to be unique, so a fleet sending one constant id collapses onto a single `reqId`.
+- A deferral logs at `error` with a stack, like a fault. `BACKPRESSURE` and `READ_MODEL_NOT_READY` are operating conditions, so a rebuild or an outage writes one alertable line per request and real 500s sit inside that noise. Accepted while nothing raises either code; the story that raises one owns separating it.
+- `serializeError` copies the message and the stack as it finds them. A driver error composes its message out of the failing statement and the bound row, and the stack repeats that message, so the day a query runs behind a route both reach the log line. No route at this layer touches the database; the first story that queries PostgreSQL owns reducing a driver error against the real shape rather than an imagined one.
