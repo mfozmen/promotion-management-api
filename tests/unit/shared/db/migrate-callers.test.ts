@@ -15,19 +15,18 @@ async function sourceFiles(directory: string): Promise<string[]> {
   return files.flat();
 }
 
-// ADR-0003 gives the schema to `api` alone: one process migrates, nothing else that ships
-// this image may. Prose cannot hold that, and neither can an advisory lock — the migrator
-// reads the last applied row before it opens its transaction, so a second caller that loses
-// the race restarts, finds the winner's timestamp, and skips its own migration reporting
-// success. A lock would only make it wait politely before doing that. This fails on the
-// branch that adds the second caller, which is where the alarm is worth something.
+// ADR-0003 gives the schema to the `api` boot alone. This fails on the branch that adds a
+// second caller, which is where the alarm is worth something — including a side-effect
+// import, which is a caller the moment the module runs.
 describe('runMigrations', () => {
   it('has exactly one caller in src/, because the schema belongs to the api boot alone', async () => {
     const files = await sourceFiles('src');
     const importers = await Promise.all(
       files.map(async (file) => ({
         file,
-        imports: /from '.*db\/migrate\.js'/.test(await readFile(file, 'utf8')),
+        imports: /import\s+(?:.*\sfrom\s+)?'[^']*db\/migrate\.js'/.test(
+          await readFile(file, 'utf8'),
+        ),
       })),
     );
 
