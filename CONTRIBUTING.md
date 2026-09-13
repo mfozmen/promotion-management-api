@@ -17,6 +17,9 @@ src/
     db/         the client and the migrator; migrations/ holds the one journal
     http/       error type, error handler, request validator, logger
     config.ts
+    queue/      the BullMQ queues, generic over the catalogue they are given
+    graceful-shutdown.ts
+  events/       event-registry.ts and event-routing.ts: the application's event catalogue (ADR-0008)
 tests/
   unit/         mirrors src/, one test file per source file
   integration/  real PostgreSQL and Redis
