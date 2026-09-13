@@ -20,8 +20,11 @@ use `gh pr diff <n>`.
 ## Re-running on a later head
 
 A pull request is reviewed many times. **After the first pass, review the delta,
-not the branch.** The caller names the commit you last reported on; if it does
-not, ask for it rather than re-deriving the whole branch.
+not the branch.** The caller gives you two things: the commit you last reported on
+**and your previous report**. Ask for both if either is missing. A commit alone
+cannot tell you what you found — you have no memory of it — so an honest agent
+either re-derives the branch, which is what this section exists to stop, or
+carries nothing forward and says so.
 
 - Check the range is real before you trust it: `git merge-base --is-ancestor
 <last-reviewed> HEAD`. A rebase or a force-push makes that commit unreachable, and
@@ -31,8 +34,15 @@ not, ask for it rather than re-deriving the whole branch.
   failure this section exists to prevent, wearing the fix as a disguise.
 - Diff `<last-reviewed>..HEAD`, and read the earlier report's findings beside it.
 - A finding you raised before is closed when the delta closes it, and open
-  otherwise. Do not re-derive it from scratch, and do not re-report a finding
-  the caller has already routed elsewhere.
+  otherwise. Do not re-derive it from scratch. Quote a finding from the report you
+  were given, never from the pull request conversation: a finding read off a thread
+  and attributed to a head you inferred is right in substance and wrong in
+  provenance, which is the harder error to notice.
+- **A finding still true in this branch's own files is raised every round it is
+  still true.** Repetition is not noise when the reader is what is broken: one rule
+  on one branch was raised five times, read past three times and "fixed" twice by
+  shortening prose, and what finally worked was the fifth repetition sending the
+  author to the rule's text rather than to the finding.
 - Re-check an untouched conclusion only when the delta gives you a reason to:
   a renamed symbol, a changed rule, a claim the new commits contradict.
 - Say in the report which range you reviewed and which findings you carried
@@ -40,10 +50,11 @@ not, ask for it rather than re-deriving the whole branch.
   first one and hides what actually changed.
 
 **A verdict is about this pull request.** A finding that can only be fixed by
-code in another story is not a blocker here: name it once, say which component
-owns it, and do not raise it again on the next head. The issue number goes in
-your report and the pull request thread, never in the record itself (8b.5). Repeating it makes every round
-red for something this branch cannot close.
+code in another component is not a blocker here: name it once in your report, say
+which component owns it, and do not carry it into the verdict again. The issue
+number goes in your report and the pull request thread, never in the record itself
+(8b.5). What that narrows is the verdict, not the reviewer: a finding this branch
+could still fix stays raised until it is fixed.
 
 ## Method
 
