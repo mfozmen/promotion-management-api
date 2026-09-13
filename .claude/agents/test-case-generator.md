@@ -80,7 +80,9 @@ code's behaviour down as the expectation without noticing.
   Concrete values, so the run can assert them.
 - **Measure** — for any criterion that states a number: what is measured, over
   how many runs, and the value that fails it. "Fast" is not runnable; "p99 over
-  three runs of 15 s at 100 connections, under 100 ms" is.
+  three runs of 15 s at 100 connections, under 300 ms" is. A number also needs
+  somewhere to come from: name the run that produced it, and say so when it is
+  provisional rather than measured.
 
 ## Report format
 

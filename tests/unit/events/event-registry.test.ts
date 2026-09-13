@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { ingestionChunk } from '@src/modules/ingestion/domain/dto/ingestion-chunk.js';
-import { productUpserted } from '@src/modules/catalog/domain/dto/product-upserted.js';
-import { promotionChanged } from '@src/modules/promotion/domain/dto/promotion-changed.js';
+import { chunkProcess } from '@src/modules/ingestion/events/chunk-process.js';
+import { productUpserted } from '@src/modules/catalog/events/product-upserted.js';
+import { promotionChanged } from '@src/modules/promotion/events/promotion-changed.js';
 import { eventRegistry } from '@src/events/event-registry.js';
-import { readmodelRebuild } from '@src/events/readmodel-rebuild.js';
+import { readModelRebuild } from '@src/modules/storefront/events/readmodel-rebuild.js';
 import { reconcilerRun } from '@src/events/reconciler-run.js';
 
 // The eventRegistry only maps names to schemas; each schema is tested beside its source.
 describe('eventRegistry', () => {
   it('names exactly the events the design table lists', () => {
     expect(Object.keys(eventRegistry).sort()).toEqual([
-      'ingestion.chunk',
+      'chunk.process',
       'product.upserted',
       'promotion.changed',
       'readmodel.rebuild',
@@ -22,9 +22,9 @@ describe('eventRegistry', () => {
     expect(eventRegistry).toEqual({
       'product.upserted': productUpserted,
       'promotion.changed': promotionChanged,
-      'readmodel.rebuild': readmodelRebuild,
+      'readmodel.rebuild': readModelRebuild,
       'reconciler.run': reconcilerRun,
-      'ingestion.chunk': ingestionChunk,
+      'chunk.process': chunkProcess,
     });
   });
 });

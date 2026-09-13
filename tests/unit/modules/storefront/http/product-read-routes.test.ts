@@ -1,0 +1,32 @@
+import type { Redis } from 'ioredis';
+import request from 'supertest';
+import { describe, expect, it } from 'vitest';
+import { createApp } from '@src/app.js';
+import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
+import { logger as rootLogger } from '@src/shared/logger.js';
+
+/**
+ * One shape the real server cannot produce on demand: `pipeline.exec()` is
+ * typed nullable because ioredis answers null for a transaction that a WATCH
+ * aborted. The listing uses a plain pipeline, which has no WATCH, so the branch
+ * is unreachable against a live Redis and is pinned here instead.
+ */
+const redisAnsweringNoReplies = {
+  exists: () => Promise.resolve(1),
+  zrange: () => Promise.resolve(['1']),
+  zcard: () => Promise.resolve(1),
+  pipeline: () => ({ hgetall: () => undefined, exec: () => Promise.resolve(null) }),
+} as unknown as Redis;
+
+describe('productReadRoutes', () => {
+  describe('when Redis answers a pipeline with nothing at all', () => {
+    it('serves an empty page rather than failing', async () => {
+      const res = await request(
+        createApp(rootLogger, new ProductReadRepository(redisAnsweringNoReplies)),
+      ).get('/api/products');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ items: [], total: 1 });
+    });
+  });
+});

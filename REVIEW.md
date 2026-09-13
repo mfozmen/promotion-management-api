@@ -303,6 +303,14 @@ fill-on-miss, or any read-through path reintroduces stampedes and the
 cancel-then-read race, and must bring the stampede lock and the ordering
 argument with it.
 
+5.8 **A Redis `ReplyError` is not proof of a permanent fault.** `-LOADING`,
+`-OOM`, `-BUSY`, `-MISCONF` and `-READONLY` arrive in the same class as
+`-WRONGTYPE`, so classify on the error string and let an unrecognised reply be
+the retryable answer.
+
+Evidence: classifying on the class answered a Redis restart with a 500 that
+nothing retries.
+
 ---
 
 ## 6. Performance, especially in loops
@@ -408,15 +416,26 @@ state the write rate and why it is acceptable, or move the count to a query.
 
 6.21 **Redis memory and command cost are bounded.** A hash per product times
 500 000 products is the read model's footprint; a new field is multiplied by
-that. `ZRANGE` with `LIMIT` is O(log N + M); a `ZRANGE` without `LIMIT`, an
-`SMEMBERS` on a large set, or an `HGETALL` on an unbounded hash is a finding.
-Big pipelines are chunked (about 1 000 commands) so one reply does not buffer
-the whole category.
+that. `ZRANGE` with `LIMIT offset count` is O(log N + offset + M), **not**
+O(log N + M): Redis walks and discards `offset` members before it returns
+anything, so a page number large enough makes one unauthenticated request
+scan the whole set on a single-threaded server. A page size cap bounds the
+fan-out and not that scan, so an offset bound is its own rule: cap it, and
+name a keyset cursor on `(score, member)` as the upgrade when something has to
+walk further. A `ZRANGE` without `LIMIT`, an `SMEMBERS` on a large set, or an
+`HGETALL` on an unbounded hash is a finding. Big pipelines are chunked (about
+1 000 commands) so one reply does not buffer the whole category.
+
+Evidence: this rule stated the cost without the `offset` term, and the
+storefront listing shipped an unbounded `page` past a review that read the
+rule and agreed with it. The wrong half was the half a reviewer
+would lean on.
 
 6.22 **Measure what you claim.** Any change to a storefront route, the event
 handler or the chunk processor reports the `e2e-tester` numbers in the PR:
 requests per second, p50, p99, peak RSS. "Should be faster" without a number is
-a finding.
+a finding. A PR with no run yet names the numbers it is
+waiting on; what this forbids is a performance claim with no number behind it.
 
 ---
 
@@ -561,6 +580,21 @@ Evidence: five levels of `../` in a test that had moved four times in one
 evening (PR #29); then eleven test files red at once when the alias met a
 workspace whose projects did not carry it (PR #50).
 
+7.9 **A test that fakes a dependency's failure asserts the shape that
+dependency actually produces.** Run the failure against the real library once
+and build the double from what comes back, because the failing shape is the one
+nobody looks at.
+
+Evidence: `pipeline.exec()` resolves with `[[Error, null]]` rather than
+rejecting, so a double that rejected proved a branch ioredis never reaches.
+
+7.10 **When you relax a validator, name what it was detecting and say where
+that detection now lives.** A strict rule is often doing two jobs, and relaxing
+it for the first silently spends the second.
+
+Evidence: reading `''` as "no promotion" retired the check that a discounted
+price names its promotion, and nothing failed.
+
 ---
 
 ## 8. Boundaries, errors and API shape
@@ -585,9 +619,11 @@ never repeats a free-form value the caller sent: a value is not an identifier
 and there is nothing to fix by seeing it again, so a 404 does not echo the path.
 
 This binds every message that reaches a response, not only the ones a
-middleware writes. A handler's own 4xx message crosses as written, unbounded and
-uninspected, so a message naming a row the caller
-never saw is a finding wherever it was built.
+middleware writes. A handler's own 4xx message crosses as written: the envelope
+bounds its length and inspects nothing, so a message naming a row the caller
+never saw is a finding wherever it was built. A schema's message is the same
+case one layer down — a custom or refinement message must not interpolate the
+value it rejected, because the validator forwards what the schema produced.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
 another row's fields, which they never had.
@@ -770,13 +806,15 @@ ways in one section: "at most one active promotion per product", "at most one
 applied promotion", and "product level wins". No single name ran through the
 prose, so a rename had nothing to follow.
 
-8c.7 Directories are named for a role (`domain/`, `db/`, `http/`, `jobs/`),
+8c.7 Directories are named for a role (`domain/`, `db/`, `http/`, `events/`),
 never for a kind of syntax: `models/`, `types/`, `interfaces/`, `classes/`,
 `utils/`, `helpers/` are findings. The tree is in ADR-0008.
 
 8c.8 The one exception to 8c.7: `domain/dto/` holds every shape — type
-aliases, interfaces, zod schemas, message payloads — and `domain/` holds only
-behaviour, the classes of 8c.9. No other directory is split by syntax. ADR-0008.
+aliases, interfaces, zod schemas — and `domain/` holds only behaviour, the
+classes of 8c.9. An event payload is the exception to the exception: it lives
+in `events/` beside the handlers, not in `dto/`. No other directory is split by
+syntax. ADR-0008.
 
 8c.9 Behaviour is a class named for its role (`EffectivePriceCalculator`),
 its methods start with a verb (`calculate`), its collaborators arrive through
@@ -868,6 +906,16 @@ answer: increasing, unique timestamps in file order. Evidence: the first version
 of the guard asserted the applied row count against a freshly migrated database,
 where the timestamps increase by construction, and could not fail; the second
 was defeated by sorting the journal, which left both its assertions true.
+
+**Break the thing the test names and watch it fail.** A test and the code it
+covers can agree with each other and both be wrong; a mutation is the thing
+outside both, because it asks the test a question the code did not supply the
+answer to. It is the cheapest check in this file and the one that keeps
+catching this family. Evidence, all on pull requests this week: a widened path
+scan that was proved load-bearing only by reverting the widening with the
+broken paths still in place; a citation regex that matched nothing because an
+escape had been eaten; and a coverage threshold that surfaced a fallback
+nothing could reach. In each the suite was green and the defect was real.
 
 ---
 
