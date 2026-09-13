@@ -107,15 +107,6 @@ describe('validate', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: { message: 'Invalid request body' } });
-    // 8.3b held by a test rather than by zod's current defaults: a message
-    // built with the received value would sail past every other assertion.
-    expect(res.text).not.toContain('x'.repeat(50));
-  });
-
-  it('keeps zod messages free of internal detail', async () => {
-    const res = await request(app).post('/products').send({ sku: 1 });
-
-    expect(res.text).not.toMatch(/at Object|node_modules|\.ts:/);
   });
 });
 

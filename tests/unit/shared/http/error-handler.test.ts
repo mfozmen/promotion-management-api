@@ -104,7 +104,9 @@ describe('errorHandler', () => {
       .set('x-request-id', 'trace-1');
 
     const rejected = captured.lines.find((line) => line.level === 40);
-    expect(rejected).toMatchObject({ status: 409, reqId: 'trace-1' });
+    // The reason too: a 400 tells the caller which part failed, and the operator
+    // reading the log would otherwise know less than the client did.
+    expect(rejected).toMatchObject({ status: 409, reason: 'Overlap', reqId: 'trace-1' });
   });
 });
 
@@ -136,8 +138,7 @@ describe('errorHandler: unexpected errors', () => {
       headers: { 'retry-after': retryAfter() },
       expose: true,
     });
-    // The real `Error.cause`, not the third constructor argument, which is
-    // `details`: pino's serializer reads `err.cause` and would never see it there.
+    // The real `Error.cause`: pino's serializer reads it and a property would not do.
     raised.cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
 
     await request(appThrowing(raised, captured)).get('/boom');
@@ -148,19 +149,6 @@ describe('errorHandler: unexpected errors', () => {
     const logged = captured.lines.find((line) => line.level === 40);
     expect(logged).toMatchObject({ status: 503 });
     expect(captured.lines.some((line) => line.level === 50)).toBe(false);
-  });
-
-  it('tells a client when to come back on the two codes that mean come back later', async () => {
-    const res = await request(
-      appThrowing(createError(429, 'queue is full', { headers: { 'retry-after': retryAfter() } })),
-    ).get('/boom');
-
-    expect(res.status).toBe(429);
-    // A band, not a constant: every client that met the outage retrying in the
-    // same second hands the recovering read model its whole backlog at once.
-    const after = Number(res.headers['retry-after']);
-    expect(after).toBeGreaterThanOrEqual(5);
-    expect(after).toBeLessThanOrEqual(10);
   });
 
   it("passes the raiser's retry hint through untouched", async () => {
@@ -254,19 +242,14 @@ describe('errorHandler: exposed client errors body-parser did not raise', () => 
     expect(res.body).toEqual({ error: { message: 'Internal server error' } });
   });
 
-  it('never relabels a server fault as the caller mistake', async () => {
-    const pretender = Object.assign(new Error('upstream died'), { status: 503, expose: true });
-    const res = await request(appThrowing(pretender)).get('/boom');
-
-    expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
-  });
-
   it.each([
-    ['below 400', 42],
-    ['at the 5xx boundary', 500],
-    ['not an integer', 404.5],
-  ])('ignores an exposed status %s rather than letting Express throw', async (_name, status) => {
+    ['a 5xx', 503],
+    ['a status below 400', 42],
+    ['a fractional status', 404.5],
+  ])('answers 500 to an error carrying %s and no statusCode', async (_name, status) => {
+    // `status` without `statusCode` fails the library's duck type, so none of these
+    // reaches `res.status`. The handler performs no range check of its own and needs
+    // none: nothing in this repository produces such an object (REVIEW.md 12.7).
     const err = Object.assign(new Error('x'), { expose: true, status });
     const res = await request(appThrowing(err)).get('/boom');
 

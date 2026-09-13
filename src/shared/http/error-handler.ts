@@ -31,7 +31,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   const retriable = headers['retry-after'] !== undefined;
 
   if (err.status < 500 || retriable) {
-    req.log.warn({ status: err.status }, 'request rejected');
+    // The message too: the client is told which part failed, and without this the
+    // operator greps the reqId and finds only a status — knowing less than the caller.
+    req.log.warn({ status: err.status, reason: err.message }, 'request rejected');
   } else {
     req.log.error({ status: err.status, err }, 'server fault raised by a handler');
   }
