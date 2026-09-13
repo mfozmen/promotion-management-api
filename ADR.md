@@ -139,6 +139,8 @@ It does **not** catch a changed `POSTGRES_PASSWORD`, and nothing in the containe
 - Single PostgreSQL with computed effective price and a versioned Redis cache: simpler, but the sort by effective price cannot use an index and every cache miss during a flash sale is a top-N sort over the category; rejected once the read-model approach was costed.
 - Prisma: heavier runtime and generated client; Drizzle keeps SQL visible, which matters for the exclusion constraints and keyset scans.
 - Kafka or a hosted queue: more moving parts than a case study warrants; BullMQ reuses Redis and offers delayed jobs, retries and a dead-letter set out of the box.
+- An in-process command/query bus (Nest's CQRS recipe, MediatR): those buses dispatch in memory inside one process and ship no read store, so they address the axis this decision does not need and leave the one it does untouched. Express's router and middleware already collect the handlers and run the cross-cutting work, and a second dispatcher earns its keep only when one command has more than one entry point.
+- Event sourcing with an `AggregateRoot` and `apply()`: events here are notifications rather than the source of truth, and every read-model entry is recomputable from PostgreSQL. That recomputability is what lets the reconciler exist and what makes an at-least-once queue acceptable rather than dangerous.
 
 ---
 
