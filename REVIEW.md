@@ -725,6 +725,13 @@ module: `domain/` (types and pure rules, importing no store and no framework),
 `db/`, `http/`, `jobs/`; in `src/shared/db/schema/` one file per table. No
 `models/`, `types/`, `interfaces/`, `classes/`. The tree is in CONTRIBUTING.md.
 
+8c.8 The one exception to 8c.7: inside `domain/`, pure type and interface
+declarations go in `domain/dto/`, and the functions that operate on them stay
+in `domain/`. A `domain/` directory otherwise mixes data shapes with the logic
+that reads them at the same level, which is harder to scan than the split
+costs. This does not apply outside `domain/` — `http/`, `db/` and `jobs/` are
+not further split by syntax.
+
 ---
 
 ## 9. Failure handling and operations

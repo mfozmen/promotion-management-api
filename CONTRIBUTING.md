@@ -2,12 +2,13 @@
 
 ## Source layout
 
-Modular monolith: one directory per module under `src/modules/`, and inside a module directories are named for a role, never for a kind of syntax (REVIEW.md 8c.7). One exported declaration per file, the file named after it (8c.2).
+Modular monolith: one directory per module under `src/modules/`, and inside a module directories are named for a role, never for a kind of syntax (REVIEW.md 8c.7). One exported declaration per file, the file named after it (8c.2). One exception: inside `domain/`, type and interface declarations go in `domain/dto/`, kept apart from the functions that operate on them (8c.8) — `domain/` otherwise mixes data shapes with logic at the same level.
 
 ```
 src/
   modules/<module>/
-    domain/     types, interfaces, enum-like aliases and the pure rules over them; imports no store and no framework
+    domain/     the pure rules; imports no store and no framework
+      dto/      types, interfaces, enum-like aliases the rules above operate on (REVIEW.md 8c.8)
     db/         queries and repositories (Drizzle)
     http/       routes, handlers, request schemas (zod)
     jobs/       BullMQ processors
@@ -23,7 +24,7 @@ tests/
 
 Test files import their subject through the `@src/*` alias — `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'` — wired in `tsconfig.json` `paths` and `vitest.workspace.ts`, which declares the alias once and spreads it into both projects (a workspace project does not inherit the root `vitest.config.ts` `resolve` block). Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
 
-A module opens a directory when it has a file for it, not before. No `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/` anywhere.
+A module opens a directory when it has a file for it, not before. No `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/` anywhere, except `domain/dto/` (REVIEW.md 8c.8).
 
 ## Branch naming
 
