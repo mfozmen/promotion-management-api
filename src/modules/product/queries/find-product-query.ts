@@ -1,6 +1,6 @@
 import createError from 'http-errors';
 import type { ProductReadRepository } from '../db/product-read-repository.js';
-import { toProductView } from '../domain/to-product-view.js';
+import { productView } from '../domain/dto/product-view.js';
 
 export class FindProductQuery {
   constructor(private readonly products: ProductReadRepository) {}
@@ -10,6 +10,6 @@ export class FindProductQuery {
 
     if (Object.keys(hash).length === 0) throw createError(404, 'Product not found');
 
-    return toProductView(hash);
+    return productView.parse(hash);
   }
 }

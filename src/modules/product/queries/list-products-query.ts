@@ -1,6 +1,6 @@
 import { ProductReadRepository } from '../db/product-read-repository.js';
 import type { ListQuery } from '../domain/dto/list-query.js';
-import { toProductView } from '../domain/to-product-view.js';
+import { productView } from '../domain/dto/product-view.js';
 
 /** A page of a category, ordered by the price a shopper would pay. Three round
  *  trips whatever the page size: the page, the total, one pipeline. */
@@ -20,6 +20,6 @@ export class ListProductsQuery {
     // it (ADR-0006).
     const present = hashes.filter((hash) => Object.keys(hash).length > 0);
 
-    return { items: present.map(toProductView), page, pageSize, total };
+    return { items: present.map((hash) => productView.parse(hash)), page, pageSize, total };
   }
 }
