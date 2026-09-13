@@ -519,15 +519,9 @@ a timeout. A flaky test is a finding, not a retry.
 parallel. Shared mutable fixtures across files are a finding.
 
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
-the tree mirrors `src/` and one test file per source file, carrying that file's
-name: `calculate-effective-price.ts` is tested by
-`tests/unit/modules/promotion/domain/calculate-effective-price.test.ts`, and its
-top-level `describe` is the export's name. A rename in `src/` renames the test
-in the same commit (8c.6). Nothing at `tests/` root, no per-module top-level
-directories.
-
-Evidence: `tests/promotion/`, `tests/unit/` and a root-level test file on three
-open branches at once (PRs #29, #39).
+the tree mirrors `src/`, one test file per source file, with the same name
+(`x.ts` → `x.test.ts`) and the export's name as the top-level `describe`.
+Nothing at `tests/` root, no per-module top-level directories. ADR-0008.
 
 7.8 **A test imports its subject through the `@src/*` alias, production code
 never does.** `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'`
@@ -691,14 +685,10 @@ calculation". The alias clause is the owner's reading of 2026-09-13 on PR #29,
 written down here so #30, #37 and #39 are judged against the rulebook rather
 than against a comment thread (13b.1).
 
-8c.3 A file is named for the one thing it exports (8c.2, 8c.6), in kebab-case:
-a noun with its subject for a type, interface or object (`request-validator.ts`,
-`error-handler.ts`), the whole verb phrase for a function (`compile-rules.ts`,
-`calculate-effective-price.ts`, 8c.9). Never a bare verb with no subject:
-`validate.ts` says neither what is validated nor what the file holds.
-
-Evidence: `src/middleware/validate.ts` exported `validate()` and read as an
-instruction rather than a thing.
+8c.3 A file is named for the one thing it exports, in kebab-case, the whole
+name: the noun for a type or object, the verb phrase for a function. A bare
+verb with no subject (`validate.ts`) is a finding. ADR-0008. Evidence:
+`src/middleware/validate.ts` read as an instruction rather than a thing.
 
 8c.4 Names say what a thing is, not how it was built or when it arrived. No
 `utils`, `helpers`, `common`, `misc`, `manager`, `base` or `new` in a file or
@@ -726,26 +716,17 @@ ways in one section: "at most one active promotion per product", "at most one
 applied promotion", and "product level wins". No single name ran through the
 prose, so a rename had nothing to follow.
 
-8c.7 Directories are named for a role, never for a kind of syntax. Inside a
-module: `domain/` (the pure rules, importing no store and no framework — its
-types live in `domain/dto/`, 8c.8), `db/`, `http/`, `jobs/`; in
-`src/shared/db/schema/` one file per table. No `models/`, `types/`,
-`interfaces/`, `classes/`. The tree is in CONTRIBUTING.md.
+8c.7 Directories are named for a role (`domain/`, `db/`, `http/`, `jobs/`),
+never for a kind of syntax: `models/`, `types/`, `interfaces/`, `classes/`,
+`utils/`, `helpers/` are findings. The tree is in ADR-0008.
 
-8c.8 The one exception to 8c.7: inside `domain/`, pure type and interface
-declarations go in `domain/dto/`, and the functions that operate on them stay
-in `domain/`. A `domain/` directory otherwise mixes data shapes with the logic
-that reads them at the same level, which is harder to scan than the split
-costs. This does not apply outside `domain/` — `http/`, `db/` and `jobs/` are
-not further split by syntax.
+8c.8 The one exception to 8c.7: `domain/dto/` holds the types, `domain/`
+holds only the functions. No other directory is split by syntax. ADR-0008.
 
-8c.9 An interface is named for the role it plays, as the noun a reader would
-use, and each implementation is the variant plus that noun: `Discount`, with
-`fixedDiscount` and `percentageDiscount`, collected in `discounts`. A suffix
-such as `Calculator` on the interface is noise the implementations then have
-to repeat or drop. A function starts with a verb: `calculateEffectivePrice`,
-`compileRules`; one named for the value it returns (`effectivePrice`) reads as
-a property and is a finding. The file follows the name (8c.3, 8c.6). Why: ADR-0008.
+8c.9 An interface is the noun of its role (`Discount`), an implementation is
+the variant plus that noun (`fixedDiscount`), the record of them the plural
+(`discounts`). A function starts with a verb (`calculateEffectivePrice`); one
+named for its return value (`effectivePrice`) is a finding. ADR-0008.
 
 ---
 

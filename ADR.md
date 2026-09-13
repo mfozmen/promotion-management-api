@@ -354,4 +354,4 @@ tests/
 
 - More files, each short; the tree is the index, and a file name answers "what is this" without opening it.
 - The promotion module was written before the naming rules and does not yet match them: `discount-calculator.ts`, `discount-calculators.ts`, `discount-calculator-for.ts`, `effective-price.ts` and `pricing-input-error.ts` still carry the old names. They are renamed in PR #39 (`discount.ts`, `discounts.ts`, `discount-for.ts`, `calculate-effective-price.ts`, with `pricing-input-error.ts` folded into the last as the private `validateBasePriceAndDiscount`, since it serves one caller) rather than grandfathered, because an exception survives longer than the reason for it. Until that merges, this line is the record of the gap.
-- `REVIEW.md` 8c.2, 8c.3, 8c.7, 8c.8 and 8c.9 carry the enforceable form; a change here changes them in the same pull request.
+- `REVIEW.md` 7.7, 8c.2, 8c.3, 8c.7, 8c.8 and 8c.9 carry the enforceable form, one sentence each with a pointer here; the reasoning lives in this record only, so a change here changes them in the same pull request.
