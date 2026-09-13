@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { products } from '@src/modules/catalog/db/schema/products.js';
 import { activePromotions } from '@src/modules/promotion/db/schema/active-promotions.js';
 import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
-import { useTestDatabase } from '../db.js';
+import { sqlStateOf, useTestDatabase } from '../db.js';
 
 const db = useTestDatabase();
 
@@ -101,6 +101,50 @@ describe('demo seed', () => {
       ingestSourceOffset: null,
       pricingRulesVersion: null,
     });
+  });
+
+  it('leaves one whole catalogue when two seeds race', async () => {
+    // They serialise on the product rows rather than colliding: whichever commits second finds
+    // the first's promotion committed and deletes it by name before inserting its own, so
+    // neither run fails and the end state is one catalogue and one sale.
+    const states = await Promise.all([seed(), seed()].map(sqlStateOf));
+    expect(states).toEqual([undefined, undefined]);
+
+    const [catalogue] = await db()
+      .select({ products: count() })
+      .from(products)
+      .where(like(products.sku, 'DEMO-%'));
+    const [sales] = await db()
+      .select({ rows: count() })
+      .from(promotions)
+      .where(eq(promotions.name, 'Demo electronics flash sale'));
+    expect({ catalogue, sales }).toEqual({ catalogue: { products: 1000 }, sales: { rows: 1 } });
+  });
+
+  it('refuses to replace a promotion it does not own, and writes nothing', async () => {
+    // Owns its data rather than inheriting it: whichever tests ran first, this one starts from
+    // an empty catalogue and one promotion the seed did not write, and leaves neither behind.
+    await db().$client.query('delete from promotions');
+    await db().$client.query(`delete from products where sku like 'DEMO-%'`);
+    await db().$client.query(
+      `insert into promotions (name, discount_type, value, starts_at, ends_at, category, status)
+       values ('Operator winter sale', 'percentage', 1000, now(), now() + interval '7 days', 'Electronics', 'active')`,
+    );
+
+    try {
+      expect(await sqlStateOf(seed())).toBe('23P01');
+
+      // One implicit transaction, so the products the seed had already written go back with the
+      // promotion it could not insert. A half-filled catalogue would be the worse outcome: the
+      // next run converges on it and reports success.
+      const [catalogue] = await db()
+        .select({ products: count() })
+        .from(products)
+        .where(like(products.sku, 'DEMO-%'));
+      expect(catalogue).toEqual({ products: 0 });
+    } finally {
+      await db().$client.query(`delete from promotions where name = 'Operator winter sale'`);
+    }
   });
 
   // Two files carry the same four rows and nothing else keeps them equal, so editing the seed's
