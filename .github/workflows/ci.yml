@@ -56,8 +56,27 @@ jobs:
             echo "No analysable file changed; skipping the SonarCloud scan."
           fi
 
-      - name: SonarCloud Scan
+      # The gate blocks on findings, never on being unable to reach the server. A scanner
+      # that cannot log in fails with the same exit code as one that found a bug, which
+      # during the 2026-09-13 outage made every pull request red for a 503. So the
+      # reachability question is asked separately, once, before the scan: down means the
+      # scan is skipped and said so out loud, up means nothing changes and a finding still
+      # blocks. The distinction is the point — a `continue-on-error` here would have
+      # swallowed findings too, and would have outlived the outage.
+      - name: Is SonarCloud reachable
+        id: sonar_up
         if: steps.analysable.outputs.needed == 'true'
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 https://sonarcloud.io/api/system/status || echo 000)
+          if [ "$code" = '200' ]; then
+            echo 'up=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'up=false' >> "$GITHUB_OUTPUT"
+            echo "::warning::SonarCloud answered $code, not 200; the scan is skipped for this run and this commit is UNSCANNED. Re-run this job once https://status.sonarqube.com is green."
+          fi
+
+      - name: SonarCloud Scan
+        if: steps.analysable.outputs.needed == 'true' && steps.sonar_up.outputs.up == 'true'
         uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

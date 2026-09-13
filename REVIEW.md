@@ -829,6 +829,17 @@ falls inside it is a finding. Accepting a finding, or marking it won't-fix or
 false-positive, in the SonarCloud web interface is the same bypass by another
 route, and is a finding for the same reason.
 
+A run that could not reach SonarCloud is not a clean run. The scan step asks
+the reachability question separately and skips itself on anything but a 200,
+annotating the commit as unscanned, so an outage cannot turn a pull request
+red for a 503 — but it cannot turn one green either: an unscanned commit still
+owes a scan, and the job is re-run once the service is back, before the pull
+request goes to the owner. `continue-on-error` on the scan itself would have
+been the shorter fix and the wrong one, because it swallows findings as
+readily as outages and nobody removes it afterwards. Evidence: during the
+2026-09-13 outage every open pull request was red on a 503 with lint,
+typecheck, drift and tests all green.
+
 This rule is carried by review, not enforced by a check, and that is a
 deliberate stopping point rather than an oversight: the free plan's quality
 gate judges ratings, coverage, duplication and hotspot review, so a CRITICAL
