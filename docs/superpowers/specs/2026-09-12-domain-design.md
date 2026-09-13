@@ -454,9 +454,10 @@ where p.id = any($1);
   The handler runs as a single serialised instance; per-category locks are
   the upgrade if one instance cannot keep up with write volume.
 
-## 6. Events (BullMQ, Redis DB 1)
+## 6. Events (BullMQ, the Redis database `REDIS_QUEUE_DB` names, default 1)
 
-Two queues. Defaults for every job: `attempts: 3`, exponential backoff from
+Four queues, one per urgency class, routed by `eventRouting` rather than by the
+caller (ADR-0003). Defaults for every job: `attempts: 3`, exponential backoff from
 1 s, `removeOnComplete: 1000`, `removeOnFail: false` (the failed set is the
 dead-letter queue, visible in Bull Board and the admin endpoints).
 

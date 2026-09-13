@@ -41,19 +41,19 @@ For a database that is not the compose one, `npm run db:migrate` applies the sam
 Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
 
 ```bash
-docker run -d --rm -p 6399:6379 redis:7-alpine
+docker run -d --rm -p 6399:6379 redis:7-alpine # only the integration layer needs it
 npm test
-npm run test:cov # needs a PostgreSQL, see below
+npm run test:cov # needs a PostgreSQL and that Redis, see below
 npm run lint
 ```
 
 The suite is split into layers, so the one that needs nothing can run anywhere:
 
-| Layer                              | Command                    | Needs           | Runs                        |
-| ---------------------------------- | -------------------------- | --------------- | --------------------------- |
-| unit (`tests/unit/`)               | `npm test`                 | nothing         | pre-commit hook, everywhere |
-| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL | CI, before every push       |
-| both, with coverage                | `npm run test:cov`         | real PostgreSQL | CI (the 100 % gate)         |
+| Layer                              | Command                    | Needs                                 | Runs                        |
+| ---------------------------------- | -------------------------- | ------------------------------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing                               | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL and the Redis on 6399 | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | the same two                          | CI (the 100 % gate)         |
 
 The integration tests run against a real PostgreSQL, never a mock. Point them at one with
 `TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
@@ -110,8 +110,9 @@ each other (ADR-0007). `src/server.ts` reads both from `src/shared/config.ts` an
 passes the queue one to `EventQueue.connect`, which is what makes the configuration
 check that they differ mean something.
 
-`npm run dev` opens the queue connections at startup against `REDIS_URL`
-(default `redis://127.0.0.1:6379`), but it starts and serves without a Redis
+`npm run dev` opens the queue connections at startup against `REDIS_URL`, which
+has no default and is required (`.env.example` sets the compose one), but it
+starts and serves without a Redis
 there: connection errors are logged and every publish fails at its 2 s bound
 rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the
 HTTP server first and the queues last, and waits at most `SHUTDOWN_DRAIN_TIMEOUT_MS`
