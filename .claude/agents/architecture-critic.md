@@ -25,6 +25,12 @@ A pull request is reviewed many times. **After the first pass, review the delta,
 not the branch.** The caller names the commit you last reported on; if it does
 not, ask for it rather than re-deriving the whole branch.
 
+- Check the range is real before you trust it: `git merge-base --is-ancestor
+<last-reviewed> HEAD`. A rebase or a force-push makes that commit unreachable, and
+  `git log A..B` does not fail on it — it silently reports everything in B, which is the
+  whole branch. Review the whole branch when that happens, and **say in the report that
+  the range was not usable**. A report that says "delta" over a full re-read is the
+  failure this section exists to prevent, wearing the fix as a disguise.
 - Diff `<last-reviewed>..HEAD`, and read the earlier report's findings beside it.
 - A finding you raised before is closed when the delta closes it, and open
   otherwise. Do not re-derive it from scratch, and do not re-report a finding
