@@ -353,7 +353,7 @@ tests/
 **Naming.**
 
 - A class is the noun phrase of its role: `EffectivePriceCalculator`, `RuleCompiler`, `RowPricer`, `RuleSetLoader`. Its methods start with a verb: `calculate`, `compile`, `price`, `load`.
-- A class reads top-down: fields, constructor, public methods, private methods. The interface a caller uses is the first thing on the screen; the mechanics come after it. ESLint `@typescript-eslint/member-ordering` holds the order so a review never has to.
+- A class reads top-down: fields, constructor, public methods, private methods. The interface a caller uses is the first thing on the screen; the mechanics come after it. ESLint `@typescript-eslint/member-ordering` holds the order so a review never has to; the rule lands with the first classes, in PR #39.
 - An interface is the noun of its role, as a reader would say it: `Discount`. Each implementation is the variant plus that noun: `PercentageDiscount`, `FixedDiscount`. A suffix on the interface (`DiscountCalculator`) is noise every implementation then has to repeat or drop.
 - A private method or a free helper starts with a verb: `validateBasePriceAndDiscount`, `withoutPriorities`. One named for the value it returns reads as a property.
 - A file carries the whole name of the one thing it exports: `effective-price-calculator.ts`, `discount.ts`, `percentage-discount.ts`. Never a bare verb with no subject (`validate.ts`).
