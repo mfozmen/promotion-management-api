@@ -14,56 +14,72 @@ export interface ProductEntry {
   pricingRulesVersion?: number;
 }
 
-/** The instant PostgreSQL read the rows, taken in the same statement as the
- *  SELECT. It orders writes; wall-clock from the worker would not, because two
- *  workers' clocks differ by more than the race it settles. */
-export type SourceReadAt = string;
+/** A token is `<epoch microseconds>:<category>`, the category empty once the
+ *  product is gone. Microseconds stay exact as Lua numbers until the year 2255. */
+const READ_TOKEN = `
+local tokens = KEYS[1]
+local id = ARGV[1]
+local sourceReadAt = ARGV[2]
+local wasCategoryKey = ARGV[3]
 
-/** One write per product, applied only if this recompute read PostgreSQL later
- *  than whatever last wrote. Whole-write atomicity: the hash, both sorted sets
- *  and the token move together or not at all, so a reader never sees a price
- *  from one recompute beside a score from another.
- *
- *  Rejects on equal, because two recomputes that read at the same instant saw
- *  the same rows and the later arrival carries no new information.
- *
- *  An absent token means never written, never "assume newer" — which is why a
- *  delete leaves its token behind (ADR-0003). */
-const WRITE = `
-local token = redis.call('HGET', KEYS[1], ARGV[1])
-if token and token >= ARGV[2] then return 0 end
-redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
-redis.call('DEL', KEYS[2])
-redis.call('HSET', KEYS[2], unpack(cjson.decode(ARGV[3])))
-redis.call('ZADD', KEYS[3], ARGV[4], ARGV[1])
-redis.call('ZADD', KEYS[4], ARGV[4], ARGV[1])
+local token = redis.call('HGET', tokens, id)
+local wasCategory = ''
+if token then
+  local colon = string.find(token, ':', 1, true)
+  if tonumber(string.sub(token, 1, colon - 1)) >= tonumber(sourceReadAt) then return 0 end
+  wasCategory = string.sub(token, colon + 1)
+end
+`;
+
+/** Entry, both memberships and token move together, so a reader never sees one
+ *  recompute's price beside another's score. */
+const WRITE = `${READ_TOKEN}
+local entry = KEYS[2]
+local category = KEYS[3]
+local allProducts = KEYS[4]
+local price = ARGV[4]
+local categoryName = ARGV[5]
+
+if wasCategory ~= '' and wasCategory ~= categoryName then
+  redis.call('ZREM', wasCategoryKey .. wasCategory, id)
+end
+redis.call('HSET', tokens, id, sourceReadAt .. ':' .. categoryName)
+redis.call('DEL', entry)
+redis.call('HSET', entry, unpack(ARGV, 6))
+redis.call('ZADD', category, price, id)
+redis.call('ZADD', allProducts, price, id)
 return 1
 `;
 
-/** One write per product removed, under the same token rule: a delete that read
- *  PostgreSQL earlier than the last write must not undo it. The token survives
- *  the hash, which is what makes it a tombstone rather than an absence. */
-const REMOVE = `
-local token = redis.call('HGET', KEYS[1], ARGV[1])
-if token and token >= ARGV[2] then return 0 end
-redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
-redis.call('DEL', KEYS[2])
-redis.call('ZREM', KEYS[3], ARGV[1])
-redis.call('ZREM', KEYS[4], ARGV[1])
+/** The token outlives the entry, which is what makes a delete a tombstone: an
+ *  absent token means never written (ADR-0003). */
+const REMOVE = `${READ_TOKEN}
+local entry = KEYS[2]
+local allProducts = KEYS[3]
+
+if wasCategory ~= '' then
+  redis.call('ZREM', wasCategoryKey .. wasCategory, id)
+end
+redis.call('HSET', tokens, id, sourceReadAt .. ':')
+redis.call('DEL', entry)
+redis.call('ZREM', allProducts, id)
 return 1
 `;
 
 export class ProductWriteRepository {
-  /** One hash for every token rather than a key per product: a tombstone is a
-   *  field that outlives its product, the read path never sees it, and 50 000
-   *  products cost one key instead of 50 000. */
+  /** One hash for every token rather than a key per product: the read path never
+   *  sees it, and a catalogue costs one key instead of one per product. */
   static readonly TOKENS = 'readmodel:source-read-at';
 
-  constructor(private readonly redis: Redis) {}
+  constructor(private readonly redis: Redis) {
+    // Sends each body once and calls it by SHA afterwards.
+    redis.defineCommand('writeProductEntry', { numberOfKeys: 4, lua: WRITE });
+    redis.defineCommand('removeProductEntry', { numberOfKeys: 3, lua: REMOVE });
+  }
 
-  /** True when the write applied, false when an equal or later token was
-   *  already stored — the caller's read of PostgreSQL was not the newest. */
-  async write(entry: ProductEntry, sourceReadAt: SourceReadAt): Promise<boolean> {
+  /** False when an equal or later token was already stored: that caller's read
+   *  of PostgreSQL was not the newest. */
+  async write(entry: ProductEntry, sourceReadAt: string): Promise<boolean> {
     const fields: string[] = [
       'id',
       String(entry.id),
@@ -82,8 +98,7 @@ export class ProductWriteRepository {
       'updatedAt',
       new Date().toISOString(),
     ];
-    // Both or neither: a name without an id names a discount nothing gave, and
-    // an id without a name renders a discount with no title (ADR-0006).
+    // Both or neither (ADR-0006).
     if (entry.promotionId !== undefined && entry.promotionName !== undefined) {
       fields.push('promotionId', String(entry.promotionId), 'promotionName', entry.promotionName);
     }
@@ -91,35 +106,40 @@ export class ProductWriteRepository {
       fields.push('pricingRulesVersion', String(entry.pricingRulesVersion));
     }
 
-    return this.apply(WRITE, entry.id, entry.category, sourceReadAt, [
-      JSON.stringify(fields),
+    return this.applied('writeProductEntry', [
+      ProductWriteRepository.TOKENS,
+      ProductReadRepository.productKey(entry.id),
+      ProductReadRepository.categoryKey(entry.category),
+      ProductReadRepository.ALL_PRODUCTS,
+      String(entry.id),
+      sourceReadAt,
+      // The key the product may be leaving is not known until Lua reads the
+      // token, so the prefix travels and the name is joined there.
+      ProductReadRepository.categoryKey(''),
       String(entry.effectivePriceCents),
+      entry.category,
+      ...fields,
     ]);
   }
 
-  async remove(id: number, category: string, sourceReadAt: SourceReadAt): Promise<boolean> {
-    return this.apply(REMOVE, id, category, sourceReadAt, []);
-  }
-
-  private async apply(
-    script: string,
-    id: number,
-    category: string,
-    sourceReadAt: SourceReadAt,
-    extra: string[],
-  ): Promise<boolean> {
-    const applied = await this.redis.eval(
-      script,
-      4,
+  /** The category comes from the token rather than the caller: a row PostgreSQL
+   *  no longer holds cannot say which set it was scored in. */
+  async remove(id: number, sourceReadAt: string): Promise<boolean> {
+    return this.applied('removeProductEntry', [
       ProductWriteRepository.TOKENS,
       ProductReadRepository.productKey(id),
-      ProductReadRepository.categoryKey(category),
       ProductReadRepository.ALL_PRODUCTS,
       String(id),
       sourceReadAt,
-      ...extra,
-    );
+      ProductReadRepository.categoryKey(''),
+    ]);
+  }
 
-    return applied === 1;
+  /** `defineCommand` adds the method at runtime, which the ioredis types do not
+   *  see; the script returns 0 when an equal or later token already stood. */
+  private async applied(name: string, args: string[]): Promise<boolean> {
+    const redis = this.redis as unknown as Record<string, (...a: string[]) => Promise<unknown>>;
+
+    return (await redis[name]!.call(this.redis, ...args)) === 1;
   }
 }

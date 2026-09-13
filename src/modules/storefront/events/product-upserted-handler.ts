@@ -1,4 +1,3 @@
-import type { ProductReadRepository } from '../db/product-read-repository.js';
 import type { ProductSourceRepository } from '../db/product-source-repository.js';
 import type { ProductWriteRepository } from '../db/product-write-repository.js';
 import type { ProductUpserted } from '../../product/events/product-upserted.js';
@@ -11,7 +10,6 @@ export class ProductUpsertedHandler {
   constructor(
     private readonly source: ProductSourceRepository,
     private readonly readModel: ProductWriteRepository,
-    private readonly stored: ProductReadRepository,
   ) {}
 
   async handle({ productIds }: ProductUpserted): Promise<void> {
@@ -22,7 +20,8 @@ export class ProductUpsertedHandler {
       const row = found.get(id);
 
       if (row === undefined) {
-        await this.removeDeleted(id, sourceReadAt);
+        // The token carries the category, so a deleted row does not have to.
+        await this.readModel.remove(id, sourceReadAt);
         continue;
       }
 
@@ -44,15 +43,5 @@ export class ProductUpsertedHandler {
         sourceReadAt,
       );
     }
-  }
-
-  /** A deleted row cannot say which category it was in, so the entry that is
-   *  about to go says it instead. An entry already gone needs no removal, and
-   *  the token stands either way. */
-  private async removeDeleted(id: number, sourceReadAt: string): Promise<void> {
-    const entry = await this.stored.find(id);
-
-    if (entry?.category !== undefined)
-      await this.readModel.remove(id, entry.category, sourceReadAt);
   }
 }

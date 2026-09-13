@@ -19,10 +19,10 @@ const entry = (over: Partial<ProductEntry> = {}): ProductEntry => ({
   ...over,
 });
 
-/** PostgreSQL hands these back as `clock_timestamp()`; the ordering that matters
- *  is string ordering on the ISO form, which is why the column is read as text. */
-const EARLY = '2026-09-14T10:00:00.000000+00:00';
-const LATER = '2026-09-14T10:00:01.000000+00:00';
+/** The shape `ProductSourceRepository` emits: epoch microseconds as digits. The
+ *  last test in this file proves it against PostgreSQL rather than this double. */
+const EARLY = '1789380000000000';
+const LATER = '1789380001000000';
 
 describe('ProductWriteRepository', () => {
   let write: ProductWriteRepository;
@@ -83,25 +83,24 @@ describe('ProductWriteRepository', () => {
     await write.write(entry({ category: 'coats' }), LATER);
 
     expect(await redis().zscore(ProductReadRepository.categoryKey('coats'), '1')).toBe('10000');
-    // The old category still scores it: this write only knows the new one. The
-    // reconciler sweeps promotion boundaries rather than read-model keys, and
-    // nothing consumes `reconciler.run`, so the product is listed under both
-    // categories until one of them is written.
-    expect(await redis().zscore(ProductReadRepository.categoryKey('knitwear'), '1')).toBe('10000');
+    // The token remembers the category, so the write that moves the product is
+    // the one that can clear the membership it is leaving (spec section 5).
+    expect(await redis().zscore(ProductReadRepository.categoryKey('knitwear'), '1')).toBeNull();
   });
 
   describe('remove', () => {
     it('takes the product out of the hash and both sorted sets', async () => {
       await write.write(entry(), EARLY);
 
-      expect(await write.remove(1, 'knitwear', LATER)).toBe(true);
+      expect(await write.remove(1, LATER)).toBe(true);
       expect(await read.find(1)).toBeUndefined();
       expect(await redis().zscore(ProductReadRepository.ALL_PRODUCTS, '1')).toBeNull();
+      expect(await redis().zscore(ProductReadRepository.categoryKey('knitwear'), '1')).toBeNull();
     });
 
     it('leaves a token behind, so a recompute in flight cannot resurrect it', async () => {
       await write.write(entry(), EARLY);
-      await write.remove(1, 'knitwear', LATER);
+      await write.remove(1, LATER);
 
       // The absent hash is not "never written": the token says otherwise.
       expect(await write.write(entry(), EARLY)).toBe(false);
@@ -111,21 +110,9 @@ describe('ProductWriteRepository', () => {
     it('refuses a delete that read earlier than the last write', async () => {
       await write.write(entry(), LATER);
 
-      expect(await write.remove(1, 'knitwear', EARLY)).toBe(false);
+      expect(await write.remove(1, EARLY)).toBe(false);
       expect(await read.find(1)).toBeDefined();
     });
-  });
-
-  it('round-trips a name Lua and cjson have to survive, through the real server', async () => {
-    // The script hands the field list to `cjson.decode` and then `unpack`, and
-    // a product name is the one field a person types: quotes, a backslash, a
-    // colon and a non-Latin script all pass through a parser this test does not
-    // own (REVIEW.md 7.11), so it is proved against the server, not a double.
-    const name = 'Kazak "kış" 50% \\ 2/3 — çok güzel: bak';
-
-    expect(await write.write(entry({ name }), EARLY)).toBe(true);
-
-    expect((await read.find(1))?.name).toBe(name);
   });
 
   it('omits the pricing rules version when the product has none', async () => {

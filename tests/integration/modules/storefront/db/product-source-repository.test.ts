@@ -55,25 +55,29 @@ describe('ProductSourceRepository', () => {
     expect(rows.map((r) => r.id)).toEqual([one]);
   });
 
-  it('reads the instant from the database clock, in the same statement', async () => {
+  it('reads the instant from the database clock, as epoch microseconds', async () => {
     const [one] = await insert([{ sku: 'SKU-F' }]);
 
     const before = Date.now();
     const { sourceReadAt } = await new ProductSourceRepository(db()).read([one!]);
 
-    // A worker's own clock would not order two workers' writes; this one is
-    // PostgreSQL's, and it parses as a timestamp rather than being any string.
-    expect(Number.isNaN(Date.parse(sourceReadAt))).toBe(false);
-    expect(Date.parse(sourceReadAt)).toBeGreaterThan(before - 60_000);
+    // Digits only, so the Lua compare is a number's and no rendering of a
+    // timestamp can sort above another (ADR-0003).
+    expect(sourceReadAt).toMatch(/^\d+$/);
+    expect(Number(sourceReadAt) / 1000).toBeGreaterThan(before - 60_000);
   });
 
-  it('still answers with an instant when the batch matched nothing', async () => {
+  it('renders the empty batch with the same clock rather than a worker own clock', async () => {
+    const [one] = await insert([{ sku: 'SKU-I' }]);
+
+    const matched = await new ProductSourceRepository(db()).read([one!]);
     const { rows, sourceReadAt } = await new ProductSourceRepository(db()).read([404_404]);
 
-    // An empty batch still orders its removals, and a second statement to
-    // fetch the instant would be a second instant.
+    // An empty batch still orders its removals, and an instant of another shape
+    // would outrank every token PostgreSQL ever wrote.
     expect(rows).toEqual([]);
-    expect(Number.isNaN(Date.parse(sourceReadAt))).toBe(false);
+    expect(sourceReadAt).toMatch(/^\d+$/);
+    expect(Number(sourceReadAt)).toBeGreaterThan(Number(matched.sourceReadAt));
   });
 
   it('carries the pricing rules version when the row has one, and null when not', async () => {
