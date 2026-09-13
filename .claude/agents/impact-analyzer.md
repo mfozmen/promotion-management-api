@@ -34,7 +34,7 @@ use `gh pr diff <n>`.
      (default 1), one per urgency class: `promotions` carrying
      `promotion.changed`, `catalog` carrying `product.upserted`, `ingestion`
      carrying `ingestion.chunk`, and `maintenance` carrying `readmodel.rebuild`
-     and `reconcile.run`. A promotion
+     and `reconciler.run`. A promotion
      boundary is a delayed `promotion.changed` under the write-once job id
      `promo:{id}:{activate|expire}`;
    - cache reads, writes and invalidations (key names, TTLs, what triggers a purge);

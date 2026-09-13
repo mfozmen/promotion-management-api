@@ -7,5 +7,5 @@ export const eventRouting = {
   'product.upserted': 'catalog',
   'ingestion.chunk': 'ingestion',
   'readmodel.rebuild': 'maintenance',
-  'reconcile.run': 'maintenance',
+  'reconciler.run': 'maintenance',
 } as const satisfies Record<EventName, QueueName>;

@@ -8,7 +8,7 @@ describe('eventRouting', () => {
       'product.upserted': 'catalog',
       'ingestion.chunk': 'ingestion',
       'readmodel.rebuild': 'maintenance',
-      'reconcile.run': 'maintenance',
+      'reconciler.run': 'maintenance',
     });
   });
 

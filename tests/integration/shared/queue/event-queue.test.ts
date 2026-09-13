@@ -96,7 +96,7 @@ describe('EventQueue', () => {
   }, 30_000);
 
   it('applies the retry, backoff and dead-letter defaults to every job', async () => {
-    const job = await bus.publish('reconcile.run', {});
+    const job = await bus.publish('reconciler.run', {});
 
     expect(job.opts.attempts).toBe(EventQueue.defaultJobOptions.attempts);
     expect(job.opts.backoff).toEqual({ type: 'exponential', delay: 1000 });
