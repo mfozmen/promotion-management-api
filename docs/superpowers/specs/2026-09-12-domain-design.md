@@ -368,8 +368,8 @@ create table ingestion_chunks (
   applied, so an admin can always tell which of the two won and why.
 - Same-level overlap (two active product promotions on one product, or two on
   one category, overlapping in time) is still rejected with `409` by the
-  exclusion constraints (SQLSTATE 23P01), and the handler selects the
-  overlapping promotion to report `{ conflictingPromotionId }`. The engine
+  exclusion constraints (SQLSTATE 23P01), and the refusal names no promotion:
+  the envelope carries a message and nothing read from a row. The engine
   would pick a winner either way, so this is no longer about correctness: it
   keeps an admin from quietly shadowing a colleague's campaign, and it keeps
   the candidate set small enough that resolution stays a two-row decision.
@@ -402,9 +402,8 @@ create table ingestion_chunks (
   (case-sensitive), because a categories table is out of scope. A category
   promotion is not rejected when no product carries that category yet:
   Scenario B requires products ingested later to inherit it. Instead the
-  create and assign responses include `productCount` (a `count(*)` on the
-  category at that instant) so a typo shows up as `0` in the admin's face, and
-  the API logs a warning at `productCount = 0`.
+  a mistyped category is accepted and invisible at the API; `productCount` was
+  designed for this and not built (ADR-0004).
 - Storefront responses carry `basePriceCents`, `effectivePriceCents` and
   `promotion: { id, name } | null` so any price can be explained.
 - Promotion responses carry a derived `state`: `draft`, `scheduled` (before
@@ -697,8 +696,10 @@ src/
     promotion/
       domain/    effective-price-calculator.ts (EffectivePriceCalculator: discounts injected, the lookup inline in calculate, the input guard a private method), percentage-discount.ts and fixed-discount.ts (one Discount class each, formula and value check together), candidate-selection.ts (runs the engine over already-loaded rules, pure)
         dto/     promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), discount.ts (the Discount interface: valueError + discountCents) — REVIEW.md 8c.8
-      db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
-      http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
+      db/        promotion-repository.ts (PromotionRepository: the writes, the reads and the one `state` fragment), selection-rules-repository.ts (loads the type='promotion' rules, holds their cache)
+      commands/  one class per write use case: create-promotion-command.ts, assign-promotion-command.ts, cancel-promotion-command.ts, plus promotion-write-error.ts (an outcome becomes a status here)
+      queries/   one class per read use case: find-promotion-query.ts, list-promotions-query.ts
+      http/      promotion-routes.ts and the input schemas under domain/dto/*-input.ts; the route calls one use case and decides nothing (ADR-0008)
     pricing/
       domain/    base-price-calculator.ts (compiles the rules, owns the engine, serialises its runs, prices a row), base-price-calculator-cache.ts (caches a compiled calculator; the query that feeds it is the caller's)
         dto/     pricing-rule-row.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8
@@ -724,7 +725,7 @@ Dockerfile           one image, command per service
   both or neither target (`400`), a vendor row with a negative price or stock
   rejected without aborting its batch, an ingested row updating a manually
   created product (null ingest columns), a category promotion whose category matches
-  no product (`201` with `productCount: 0` and a warning log), assigning a draft whose `endsAt` has passed
+  no product (`201`, and the miss is invisible until the storefront is read), assigning a draft whose `endsAt` has passed
   (`409`), two concurrent assigns of one draft (one `200`, one `409`), a
   product created in a category with an active promotion is discounted on its
   first read, a budget release leaving `failures` untouched while an

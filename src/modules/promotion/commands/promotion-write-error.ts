@@ -1,0 +1,15 @@
+import createError, { type HttpError } from 'http-errors';
+import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcome.js';
+
+/** The overlap 409 names no promotion: the envelope carries a message and
+ *  nothing else, and another row's identifier is not the caller's to read. */
+export function promotionWriteError(
+  outcome: Extract<PromotionWriteOutcome, { ok: false }>,
+): HttpError {
+  if (outcome.reason === 'no-such-product') return createError(404, 'No such product');
+  if (outcome.reason === 'not-found') return createError(404, 'No such promotion');
+  if (outcome.reason === 'not-assignable') {
+    return createError(409, 'Only a draft whose window has not passed can be assigned a target');
+  }
+  return createError(409, 'An active promotion already covers that target for this window');
+}

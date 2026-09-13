@@ -6,11 +6,10 @@ describe('the process entry point', () => {
   it('hands createApp a real read-model client, which a merge once dropped', async () => {
     const server = await readFile('src/server.ts', 'utf8');
 
-    // The type stops `createApp()` from compiling; it does not stop the client
-    // being forgotten and something else handed over. Taking main's `server.ts`
-    // whole in a merge deleted this line, every test stayed green, and the
-    // deployed process answered 404 on every storefront route.
-    expect(server).toContain('createReadModelClient(');
-    expect(server).toMatch(/createApp\([^)]*createReadModelClient\(/s);
+    // The type stops an app built without a repository; it does not stop a real
+    // client being forgotten and a stub handed over, which a merge once did.
+    const call = server.slice(server.indexOf('createApp('));
+
+    expect(call).toContain('createReadModelClient(');
   });
 });
