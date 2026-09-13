@@ -29,14 +29,14 @@ const vendorRow = (over: Partial<Record<string, unknown>> = {}) => ({
 
 describe('the seeded rules through the engine wrapper', () => {
   it('compiles every seeded ingestion rule', async () => {
-    const compiled = await BasePriceCalculator.compile(await loadSeededRules());
+    const compiled = await BasePriceCalculator.fromRules(await loadSeededRules());
     const seeded = await loadSeededRules();
 
     expect(compiled.ruleIds).toEqual(seeded.map((rule) => rule.id));
   });
 
   it('prices the case-study row the way issue #9 says it should', async () => {
-    const compiled = await BasePriceCalculator.compile(await loadSeededRules());
+    const compiled = await BasePriceCalculator.fromRules(await loadSeededRules());
 
     // 80000 +15 % markup = 92000, -3 % bulk stock = 89240, +5 % commission = 93702.
     await expect(compiled.calculate(vendorRow())).resolves.toMatchObject({
@@ -46,7 +46,7 @@ describe('the seeded rules through the engine wrapper', () => {
   });
 
   it('leaves a row that matches only the commission at the commission', async () => {
-    const compiled = await BasePriceCalculator.compile(await loadSeededRules());
+    const compiled = await BasePriceCalculator.fromRules(await loadSeededRules());
 
     await expect(
       compiled.calculate(vendorRow({ category: 'Apparel', stockQuantity: 10 })),
@@ -54,7 +54,7 @@ describe('the seeded rules through the engine wrapper', () => {
   });
 
   it('stamps the row with the version the seeded rules carry', async () => {
-    const compiled = await BasePriceCalculator.compile(await loadSeededRules());
+    const compiled = await BasePriceCalculator.fromRules(await loadSeededRules());
     const seeded = await loadSeededRules();
     const newest = Math.max(...seeded.map((rule) => rule.updatedAt.getTime()));
 
@@ -80,7 +80,7 @@ describe('the seeded rules through the engine wrapper', () => {
     try {
       // The catalogue would otherwise be stored at raw vendor cost with the
       // job reporting success, so the whole run stops here instead.
-      await expect(BasePriceCalculator.compile(await loadSeededRules())).rejects.toThrowError(
+      await expect(BasePriceCalculator.fromRules(await loadSeededRules())).rejects.toThrowError(
         /no active ingestion pricing rules/,
       );
     } finally {

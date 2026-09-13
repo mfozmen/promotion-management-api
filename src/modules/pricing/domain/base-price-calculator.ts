@@ -27,7 +27,7 @@ export class BasePriceCalculator {
     readonly pricingRulesVersion: number,
   ) {}
 
-  static async compile(rows: readonly PricingRuleRow[]): Promise<BasePriceCalculator> {
+  static async fromRules(rows: readonly PricingRuleRow[]): Promise<BasePriceCalculator> {
     const active = BasePriceCalculator.activeIngestionRules(rows);
     if (active.length === 0) {
       throw new Error('no active ingestion pricing rules (none seeded, or every rule deactivated)');
