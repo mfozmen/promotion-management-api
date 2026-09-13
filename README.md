@@ -106,8 +106,9 @@ src/modules/         one module per directory, each owning its tables under db/s
 src/shared/db/       the client, the migrator and the SQL migrations
 src/shared/http/     the HTTP boundary: the error type and its status table, the error handler,
                      the not-found handler, the request validator and the request logger
-src/shared/          config.ts, logger.ts (the root logger and the error whitelist every log site
-                     uses), read-model-client.ts (the storefront's Redis client)
+src/shared/          config.ts, logger.ts (the root logger), serialize-error.ts (the error
+                     whitelist every log site uses), max-message.ts,
+                     read-model-client.ts (the storefront's Redis client)
 tests/               unit, integration and e2e, each layer mirroring src/
 docs/                design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```

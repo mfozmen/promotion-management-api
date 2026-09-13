@@ -78,7 +78,7 @@ export function serializeError(err: unknown): Record<string, unknown> {
   }
 
   const chain = causeChain(err);
-  const root = chain[chain.length - 1]!;
+  const root = chain.at(-1)!;
   const { code } = root as Error & { code?: unknown };
 
   return {

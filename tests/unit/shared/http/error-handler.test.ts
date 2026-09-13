@@ -4,8 +4,8 @@ import request from 'supertest';
 import { errorHandler } from '@src/shared/http/error-handler.js';
 import { httpLogger } from '@src/shared/http/http-logger.js';
 import { HttpError } from '@src/shared/http/http-error.js';
-import { DrizzleQueryError } from 'drizzle-orm';
 import { captureLogger, type CapturedLogger } from '../../capture-logger.js';
+import { overlapError } from '../../overlap-error.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
 function appThrowing(error: unknown, captured: CapturedLogger = captureLogger()): Express {
@@ -18,27 +18,6 @@ function appThrowing(error: unknown, captured: CapturedLogger = captureLogger())
 
   return app;
 }
-
-// The real class, not a hand-built lookalike: drizzle puts the statement and
-// the bound row in `message` and the SQLSTATE on `cause`, and a fixture that
-// guesses that shape certifies the leak it was written to catch.
-const overlap = () => {
-  const pgError = Object.assign(
-    new Error('conflicting key value violates exclusion constraint "promotions_no_overlap"'),
-    {
-      name: 'PostgresError',
-      code: '23P01',
-      detail: 'Key (product_id)=(3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80) conflicts.',
-      where: 'PL/pgSQL function',
-    },
-  );
-
-  return new DrizzleQueryError(
-    'insert into "promotions" ("product_id", "discount_bp", "customer_email") values ($1, $2, $3)',
-    ['3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80', 2000, 'ayse@example.com'],
-    pgError,
-  );
-};
 
 describe('HttpError mapping', () => {
   it.each([
@@ -281,7 +260,7 @@ describe('an error after the response has started', () => {
     app.use(httpLogger(captured.logger));
     app.get('/stream', (_req, res, next) => {
       res.status(200).type('json').write('{"items":[');
-      next(overlap());
+      next(overlapError());
     });
     app.use(errorHandler);
 
@@ -302,64 +281,19 @@ describe('an error after the response has started', () => {
 });
 
 describe('log hygiene for driver errors', () => {
-  it('keeps the statement and the bound row out of the log', async () => {
+  it('logs a driver failure through the whitelist rather than the error itself', async () => {
     const captured = captureLogger();
-    await request(appThrowing(overlap(), captured)).get('/boom');
+    await request(appThrowing(overlapError(), captured)).get('/boom');
 
-    const serialised = JSON.stringify(captured.lines.find((line) => line.level === 50));
-    expect(serialised).not.toContain('discount_bp');
-    expect(serialised).not.toContain('3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80');
-    expect(serialised).not.toContain('customer_email');
-    expect(serialised).not.toContain('ayse@example.com');
-    expect(serialised).not.toContain('Failed query');
-    expect(serialised).not.toContain('PL/pgSQL');
-  });
-
-  it('keeps the SQLSTATE and the constraint name, which is what diagnoses it', async () => {
-    const captured = captureLogger();
-    await request(appThrowing(overlap(), captured)).get('/boom');
-
-    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      error: {
-        type: 'PostgresError',
-        code: '23P01',
-        message: expect.stringContaining('promotions_no_overlap'),
-        stack: expect.stringContaining('at '),
-      },
+    const line = captured.lines.find((entry) => entry.level === 50);
+    // The handler's own contract: the `error` key, the whitelist's four
+    // fields, and no `err` for pino to serialise in full. What the whitelist
+    // does with each of them is asserted in serialize-error.test.ts.
+    expect(line).not.toHaveProperty('err');
+    expect(line).toMatchObject({
+      error: { type: 'PostgresError', code: '23P01' },
     });
-  });
-
-  it('keeps a statement out even when the message is longer than the bound', async () => {
-    const captured = captureLogger();
-    const statement =
-      'insert into products (sku, name, base_price_cents, vendor_token) values ($1)';
-    // The check used to run on the already-truncated message, so a statement
-    // quoted past the 200-character bound was compared against a string that
-    // no longer held it, and the prefix went to the log.
-    const err = Object.assign(new Error(`${'x'.repeat(150)} failed query: ${statement}`), {
-      query: statement,
-      params: ['A1'],
-    });
-
-    await request(appThrowing(err, captured)).get('/boom');
-
-    expect(JSON.stringify(captured.lines)).not.toContain('insert into products');
-  });
-
-  it('keeps the constraint name when a bound value is one character', async () => {
-    const captured = captureLogger();
-    // 'a' appears in almost any sentence, so treating every bound value as a
-    // secret to search for blinds the log for the caller who sent a short one.
-    const err = Object.assign(
-      new Error('duplicate key value violates unique constraint "products_sku_key"'),
-      { query: 'insert into products (sku) values ($1)', params: ['a'] },
-    );
-
-    await request(appThrowing(err, captured)).get('/boom');
-
-    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      error: { message: expect.stringContaining('products_sku_key') },
-    });
+    expect(JSON.stringify(line)).not.toContain('ayse@example.com');
   });
 
   it('answers rather than hanging when a cause chain loops', async () => {
@@ -377,46 +311,6 @@ describe('log hygiene for driver errors', () => {
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
-  });
-
-  it('does not let a bound value pose as a stack frame', async () => {
-    const captured = captureLogger();
-    const err = new DrizzleQueryError(
-      'insert into "products" ("name") values ($1)',
-      ['Kazak\n    at secret-bound-value'],
-      undefined,
-    );
-
-    await request(appThrowing(err, captured)).get('/boom');
-
-    expect(JSON.stringify(captured.lines.find((line) => line.level === 50))).not.toContain(
-      'secret-bound-value',
-    );
-  });
-
-  it('drops a driver message from the first quoted value on', async () => {
-    const captured = captureLogger();
-    const err = new DrizzleQueryError(
-      'select * from "products" where "id" = $1',
-      ['not-a-uuid'],
-      Object.assign(
-        new Error('invalid input syntax for type uuid: "not-a-uuid-but-a-customer-secret"'),
-        { code: '22P02' },
-      ),
-    );
-
-    await request(appThrowing(err, captured)).get('/boom');
-
-    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      error: { code: '22P02', message: 'invalid input syntax for type uuid' },
-    });
-  });
-
-  it('omits the code when the error carries none', async () => {
-    const captured = captureLogger();
-    await request(appThrowing(new Error('plain'), captured)).get('/boom');
-
-    expect(captured.lines.find((line) => line.level === 50)?.error).not.toHaveProperty('code');
   });
 });
 

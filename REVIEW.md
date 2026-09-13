@@ -610,7 +610,7 @@ A driver or ORM error carries the failing statement and the bound row on its own
 fields — and composes its message out of them — so an error is reduced to a
 whitelist before it is logged: its type, a message it did not build from the
 statement, the SQLSTATE, and the frames of its stack. One shared implementation
-does this (`serializeError` in `src/shared/logger.ts`), every logging site calls
+does this (`serializeError` in `src/shared/serialize-error.ts`), every logging site calls
 it, and the result is logged under an `error` key. Handing a logger the error
 itself, under `err` or any other key, is a finding, and so is a second copy of
 the whitelist.
