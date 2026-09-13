@@ -10,7 +10,7 @@ import type { PromotionView } from '../domain/promotion-view.js';
  * lookup, and reporting no id beats inventing one.
  */
 export type PromotionWriteOutcome =
-  | { ok: true; promotion: PromotionView }
+  | { ok: true; promotion: PromotionView; now: Date }
   | { ok: false; reason: 'overlap'; conflictingPromotionId: number | null }
   | { ok: false; reason: 'not-assignable' }
   | { ok: false; reason: 'not-found' };

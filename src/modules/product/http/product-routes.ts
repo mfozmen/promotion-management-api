@@ -28,14 +28,15 @@ export function productRoutes(db: Db, enqueue: Enqueue): Router {
         // own, so the ordering here is the `await` above.
         //
         // The enqueue is awaited but its failure is not the caller's: the row is
-        // written, and the reconciler repairs a read model that missed an event
-        // within five minutes (ADR-0007). Losing the write to save the event
-        // would be the worse trade.
+        // written, and losing the write to save the event would be the worse
+        // trade. Nothing repairs the read model automatically yet — ADR-0007's
+        // reconciler is not built — so until it lands, a lost event means this
+        // product is missing from the read model until it changes again.
         await enqueue('product.upserted', { productIds: [result.product.id] }).catch(
           (error: unknown) => {
             req.log.error(
               { error: { message: error instanceof Error ? error.message : 'unknown' } },
-              'product.upserted could not be enqueued; the reconciler will repair',
+              'product.upserted could not be enqueued; this product stays out of the read model until it changes again',
             );
           },
         );

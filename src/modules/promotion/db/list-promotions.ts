@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
 import { promotions } from '../../../shared/db/schema.js';
 import type { PromotionView } from '../domain/promotion-view.js';
@@ -16,11 +16,13 @@ export function listPromotions(db: Db, filters: ListPromotionsQuery): Promise<Pr
     filters.status === undefined ? undefined : eq(promotions.status, filters.status),
     filters.category === undefined ? undefined : eq(promotions.category, filters.category),
     filters.productId === undefined ? undefined : eq(promotions.productId, filters.productId),
+    filters.after === undefined ? undefined : gt(promotions.id, filters.after),
   ].filter((condition) => condition !== undefined);
 
   return db
     .select(promotionColumns)
     .from(promotions)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(promotions.id);
+    .orderBy(promotions.id)
+    .limit(filters.limit);
 }

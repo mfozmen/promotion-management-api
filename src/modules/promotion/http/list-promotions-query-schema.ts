@@ -9,6 +9,11 @@ export const listPromotionsQuerySchema = z.strictObject({
   status: z.enum(['draft', 'active', 'cancelled']).optional(),
   category: z.string().trim().min(1).max(100).optional(),
   productId: z.coerce.number().int().positive().optional(),
+  // Keyset, not offset: the list is ordered by `id`, which never changes, so a
+  // page cannot repeat or skip a row when a promotion is created mid-read
+  // (REVIEW.md 5.5). `after` is the last id of the previous page.
+  after: z.coerce.number().int().positive().optional(),
+  limit: z.coerce.number().int().positive().max(100).default(50),
 });
 
 export type ListPromotionsQuery = z.infer<typeof listPromotionsQuerySchema>;

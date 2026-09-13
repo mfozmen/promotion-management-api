@@ -196,3 +196,66 @@ describe('a rejection that is not an Error still reaches the log', () => {
     expect(lines.some((line) => String(line.msg).includes('could not be announced'))).toBe(true);
   });
 });
+
+describe('a failing boundary call never costs the event', () => {
+  const cancelled = { ...stored, status: 'cancelled' as const, state: 'cancelled' as const };
+  const cancellingDb = {
+    update: () => ({
+      set: () => ({ where: () => ({ returning: () => Promise.resolve([cancelled]) }) }),
+    }),
+  } as unknown as Db;
+
+  it('still emits promotion.changed when the boundary removal rejects', async () => {
+    // The regression this exists for: with `remove` awaited before `enqueue` in
+    // one try, a Redis timeout swallowed the invalidation and left a cancelled
+    // sale priced on the storefront. Asserting the 200 alone did not see it.
+    const emitted: { name: string; payload: unknown }[] = [];
+    const recording: Enqueue = (name, payload) => {
+      emitted.push({ name, payload });
+      return Promise.resolve();
+    };
+
+    const res = await request(
+      createApp({
+        logger: captureLogger().logger,
+        db: cancellingDb,
+        enqueue: recording,
+        boundaries: {
+          schedule: () => Promise.resolve(),
+          remove: () => Promise.reject(new Error('Redis is down')),
+        },
+      }),
+    )
+      .post('/api/promotions/7/cancel')
+      .send();
+
+    expect(res.status).toBe(200);
+    expect(emitted).toEqual([{ name: 'promotion.changed', payload: { promotionId: 7 } }]);
+  });
+
+  it('schedules the expiry even when the activation fails to schedule', async () => {
+    // Losing `expire` gives a discount away past its window; losing `activate`
+    // only delays one. Sequential awaits meant one failure took the other.
+    const scheduled: string[] = [];
+    const res = await request(
+      createApp({
+        logger: captureLogger().logger,
+        db: insertReturning([stored]),
+        enqueue: noopEnqueue,
+        boundaries: {
+          schedule: (_id, boundary) => {
+            if (boundary === 'activate') return Promise.reject(new Error('Redis is down'));
+            scheduled.push(boundary);
+            return Promise.resolve();
+          },
+          remove: () => Promise.resolve(),
+        },
+      }),
+    )
+      .post('/api/promotions')
+      .send(body);
+
+    expect(res.status).toBe(201);
+    expect(scheduled).toEqual(['expire']);
+  });
+});

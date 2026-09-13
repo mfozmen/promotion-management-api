@@ -4,7 +4,11 @@ import type { Db } from '@src/shared/db/client.js';
 
 const selecting = (rows: unknown[]) =>
   ({
-    select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve(rows) }) }) }),
+    select: () => ({
+      from: () => ({
+        where: () => ({ orderBy: () => ({ limit: () => Promise.resolve(rows) }) }),
+      }),
+    }),
   }) as unknown as Db;
 
 const window = { startsAt: new Date(), endsAt: new Date(Date.now() + 3_600_000) };

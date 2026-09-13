@@ -84,7 +84,10 @@ describe('POST /api/promotions', () => {
     expect(rec.events).toEqual([
       { name: 'promotion.changed', payload: { promotionId: res.body.id } },
     ]);
-    expect(rec.scheduled).toEqual([
+    // Both boundaries, order not asserted: they are scheduled concurrently so one
+    // cannot cost the other, which makes their order an accident rather than a
+    // contract.
+    expect([...rec.scheduled].sort((a, b) => a.boundary.localeCompare(b.boundary))).toEqual([
       { promotionId: res.body.id, boundary: 'activate' },
       { promotionId: res.body.id, boundary: 'expire' },
     ]);
@@ -512,5 +515,33 @@ describe('an id in the URL that no promotion could have', () => {
     const res = await request(app()).get('/api/promotions/0x10');
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe('the admin list is bounded and pages by keyset', () => {
+  it('returns at most `limit` rows and continues after the last id', async () => {
+    const category = uniqueCategory();
+    const ids: number[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const created = await request(app())
+        .post('/api/promotions')
+        .send({ ...draftBody(), name: `Sale ${i}`, category, startsAt: future((i + 1) * 10 * hour), endsAt: future((i + 1) * 10 * hour + hour) });
+      ids.push(created.body.id);
+    }
+
+    const first = await request(app()).get('/api/promotions').query({ category, limit: 2 });
+    const next = await request(app())
+      .get('/api/promotions')
+      .query({ category, limit: 2, after: first.body.items[1].id });
+
+    expect(first.body.items.map((row: { id: number }) => row.id)).toEqual(ids.slice(0, 2));
+    expect(next.body.items.map((row: { id: number }) => row.id)).toEqual(ids.slice(2));
+  });
+
+  it('rejects a limit above the cap rather than serving the whole table', async () => {
+    const res = await request(app()).get('/api/promotions').query({ limit: 1000 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 });

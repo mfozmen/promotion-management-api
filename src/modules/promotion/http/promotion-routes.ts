@@ -52,12 +52,9 @@ export function promotionRoutes(
       const outcome = await insertPromotion(db, req.body as never);
       if (!outcome.ok) throw promotionWriteError(outcome);
 
-      if (outcome.promotion.status === 'active' && outcome.now) {
-        await announcePromotion(outcome.promotion, outcome.now, {
-          enqueue,
-          boundaries,
-          log: req.log,
-        });
+      // A draft has no target and no boundaries to schedule; it changes no price.
+      if (outcome.promotion.status === 'active') {
+        await announcePromotion(outcome.promotion, outcome.now, { enqueue, boundaries, log: req.log });
       }
       res.status(201).json(outcome.promotion);
     }),
@@ -70,13 +67,7 @@ export function promotionRoutes(
       const outcome = await assignPromotion(db, idFrom(req.params.id), req.body as never);
       if (!outcome.ok) throw promotionWriteError(outcome);
 
-      if (outcome.now) {
-        await announcePromotion(outcome.promotion, outcome.now, {
-          enqueue,
-          boundaries,
-          log: req.log,
-        });
-      }
+      await announcePromotion(outcome.promotion, outcome.now, { enqueue, boundaries, log: req.log });
       res.status(200).json(outcome.promotion);
     }),
   );
@@ -88,7 +79,9 @@ export function promotionRoutes(
       const outcome = await cancelPromotion(db, id);
       if (!outcome.ok) throw promotionWriteError(outcome);
 
-      await announceCancellation(id, { enqueue, boundaries, log: req.log });
+      // Only when this call is what cancelled it: a repeat is a success the
+      // caller asked for, and re-announcing would fan out over the category again.
+      if (outcome.changed) await announceCancellation(id, { enqueue, boundaries, log: req.log });
       res.status(200).json(outcome.promotion);
     }),
   );
