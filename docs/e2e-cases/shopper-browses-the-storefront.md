@@ -47,7 +47,7 @@ Test cases
 
 ### shopper-7
 
-- Precondition: `GET /api/products`
+- Precondition: `GET /api/products`, a rebuild that publishes `readmodel:ready`
 - Given: a freshly started storefront whose catalogue has not been built yet
 - When: the shopper opens a category list
 - Then: the request is refused with 503 and a `Retry-After` telling the shopper's client when to come back; no empty list and no prices are shown; when the catalogue is ready the same request returns the category's products
@@ -110,7 +110,7 @@ Test cases
 
 ### shopper-10
 
-- Precondition: `GET /api/products/:id`
+- Precondition: `GET /api/products/:id`, a rebuild that publishes `readmodel:ready`
 - Given: a freshly started storefront whose catalogue has not been built yet
 - When: the shopper opens a product straight from a link
 - Then: the request is refused with 503 and a `Retry-After` telling the shopper's client when to come back; no price is shown; when the catalogue is ready the same link shows the product and its effective price
