@@ -48,7 +48,7 @@ describe('every PostgreSQL healthcheck', () => {
   );
 
   it('covers both stores, so neither can be added without one', () => {
-    expect(stores.map(([name]) => name)).toEqual(['postgres', 'postgres-test']);
+    expect(stores.map(([name]) => name).sort()).toEqual(['postgres', 'postgres-test']);
   });
 
   it.each(stores)(
@@ -58,6 +58,10 @@ describe('every PostgreSQL healthcheck', () => {
 
       expect(test).toContain('-d "$$POSTGRES_DB"');
       expect(test).not.toContain('pg_isready');
+      // Over TCP rather than the local socket: during `initdb` the entrypoint runs its own
+      // temporary server with `listen_addresses=''`, so a socket check can report healthy
+      // before the server a consumer connects to exists.
+      expect(test).toContain('-h 127.0.0.1');
     },
   );
 });

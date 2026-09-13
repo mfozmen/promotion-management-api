@@ -7,7 +7,7 @@ import { EventQueue } from '@src/shared/queue/event-queue.js';
 import { logger } from '@src/shared/logger.js';
 import { randomUUID } from 'node:crypto';
 
-// These tests need a real Redis: docker run -d --rm -p 6399:6379 redis:7-alpine
+// These tests need a real Redis: `npm run up` starts one on 6399 (the `test` profile).
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
 
 const READ_MODEL_DB = 0;

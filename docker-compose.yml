@@ -19,7 +19,7 @@ services:
       test:
         [
           'CMD-SHELL',
-          'psql --quiet --no-align --tuples-only -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
+          'psql --quiet --no-align --tuples-only -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
         ]
       interval: 5s
       timeout: 5s
@@ -187,11 +187,12 @@ services:
       test:
         [
           'CMD-SHELL',
-          'psql --quiet --no-align --tuples-only -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
+          'psql --quiet --no-align --tuples-only -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
         ]
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
     networks:
       - promotion
 
