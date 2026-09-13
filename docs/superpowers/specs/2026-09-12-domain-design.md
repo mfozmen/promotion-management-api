@@ -691,7 +691,7 @@ src/
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
     promotion/
-      domain/    effective-price-calculator.ts (EffectivePriceCalculator: discounts injected, the lookup and the input guard its private methods), percentage-discount.ts and fixed-discount.ts (one Discount class each, formula and value check together), candidate-selection.ts (runs the engine over already-loaded rules, pure)
+      domain/    effective-price-calculator.ts (EffectivePriceCalculator: discounts injected, the lookup inline in calculate, the input guard a private method), percentage-discount.ts and fixed-discount.ts (one Discount class each, formula and value check together), candidate-selection.ts (runs the engine over already-loaded rules, pure)
         dto/     promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), discount.ts (the Discount interface: valueError + discountCents) — REVIEW.md 8c.8
       db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts

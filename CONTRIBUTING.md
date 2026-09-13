@@ -88,7 +88,7 @@ An agent definition is in both groups: the agent itself must be exercised, and e
 
 ## Local agents
 
-Four Claude Code agents live in `.claude/agents/`. They are part of the process, not optional:
+Five Claude Code agents live in `.claude/agents/`. They are part of the process, not optional:
 
 | Agent                 | When it runs                                                                                                                                                 | Output                                                                                           |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
