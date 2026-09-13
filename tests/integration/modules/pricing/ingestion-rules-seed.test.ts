@@ -8,11 +8,7 @@ import { useTestDatabase } from '../../db.js';
 
 const db = useTestDatabase();
 
-/** The loader the chunk processor (#16) will hold: one query, newest priority
- *  first, ingestion rules only. Written here because the seeded rows are the
- *  only thing that proves the wrapper and the migration speak one language.
- *  Both predicates are needed to reach `pricing_rules_active_idx`, which is
- *  partial on `active`; `type` alone plans as a sequential scan. */
+// Both predicates, so the partial index pricing_rules_active_idx serves the query.
 const loadSeededRules = (): Promise<PricingRuleRow[]> =>
   db()
     .select()
@@ -78,13 +74,10 @@ describe('the seeded rules through the engine wrapper', () => {
 
     await setActive(false);
     try {
-      // The catalogue would otherwise be stored at raw vendor cost with the
-      // job reporting success, so the whole run stops here instead.
       await expect(BasePriceCalculator.fromRules(await loadSeededRules())).rejects.toThrowError(
         /no active ingestion pricing rules/,
       );
     } finally {
-      // Restored, so the file does not depend on this being its last test.
       await setActive(true);
     }
   });

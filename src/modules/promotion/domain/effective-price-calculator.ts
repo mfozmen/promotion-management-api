@@ -5,9 +5,6 @@ import type { Promotion } from './dto/promotion.js';
 import { FixedDiscount } from './fixed-discount.js';
 import { PercentageDiscount } from './percentage-discount.js';
 
-// Keyed by the union itself, so widening it does not compile until its discount exists.
-// Built once rather than per construction, and frozen because every calculator shares it;
-// the discounts themselves hold no state to protect.
 const DEFAULT_DISCOUNTS: Readonly<Record<DiscountType, Discount>> = Object.freeze({
   percentage: new PercentageDiscount(),
   fixed: new FixedDiscount(),

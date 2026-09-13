@@ -1,7 +1,6 @@
 import type { PricingRuleRow } from './dto/pricing-rule-row.js';
 import { BasePriceCalculator } from './base-price-calculator.js';
 
-/** The in-flight promise is cached: a batch starting cold issues one query, not one per row. */
 export class BasePriceCalculatorCache {
   private cached: { expiresAt: number; rules: Promise<BasePriceCalculator> } | undefined;
   private readonly source: () => Promise<readonly PricingRuleRow[]>;
@@ -22,7 +21,7 @@ export class BasePriceCalculatorCache {
     if (this.cached === undefined || this.now() >= this.cached.expiresAt) {
       const rules = this.source().then((rows) => BasePriceCalculator.fromRules(rows));
       this.cached = { expiresAt: this.now() + this.ttlMs, rules };
-      // A rejection landing after a newer entry clears that too: one extra load, never a wrong price.
+      // A failed load is never served; clearing a newer entry costs one reload.
       rules.catch(() => {
         this.cached = undefined;
       });

@@ -40,8 +40,6 @@ describe('EffectivePriceCalculator', () => {
     expect(priced(Number.MAX_SAFE_INTEGER, { value: 5000 })).toBe(4_503_599_627_370_496);
   });
 
-  // Folded in when the input guard became a private helper: the same cases, asserted
-  // through the only function that can reach it.
   it('rejects a base price that is not a whole, non-negative number of minor units', () => {
     for (const basePriceCents of [1000.5, NaN, Infinity, -Infinity, -500, 2 ** 53]) {
       expect(calculator.calculate(basePriceCents, discount())).toEqual({

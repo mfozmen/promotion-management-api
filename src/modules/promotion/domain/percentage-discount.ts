@@ -10,8 +10,7 @@ export class PercentageDiscount implements Discount {
       : null;
   }
 
-  // Floored on the discount, so rounding goes against the customer by at most
-  // one minor unit rather than in their favour.
+  // Floored, so rounding never favours the customer.
   discountCents(baseCents: bigint, value: number): bigint {
     return (baseCents * BigInt(value)) / BASIS_POINTS_PER_UNIT;
   }
