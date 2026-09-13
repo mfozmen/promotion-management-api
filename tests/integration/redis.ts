@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach } from 'vitest';
 
 /** A logical database of its own, so a run cannot disturb the read model or
  *  the queue a developer is using. */
-const url = process.env.TEST_REDIS_URL ?? 'redis://localhost:6379/9';
+const url = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379/9';
 
 export function useTestRedis(): () => Redis {
   let redis: Redis;

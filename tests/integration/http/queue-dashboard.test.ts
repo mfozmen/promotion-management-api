@@ -6,7 +6,7 @@ import { EventQueue } from '@src/shared/queue/event-queue.js';
 import { eventRegistry } from '@src/events/event-registry.js';
 import { eventRouting } from '@src/events/event-routing.js';
 
-const redisUrl = process.env.TEST_REDIS_URL ?? 'redis://localhost:6379/9';
+const redisUrl = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379/9';
 
 describe('the queue dashboard', () => {
   it('serves BullMQ its own board at /admin/queues, outside the api prefix', async () => {
