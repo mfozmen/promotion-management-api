@@ -131,7 +131,7 @@ describe('POST /api/promotions', () => {
     expect(res.body.state).toBe('live');
   });
 
-  it('rejects an overlap on the same category with the conflicting id', async () => {
+  it('rejects an overlap on the same category without naming the promotion in place', async () => {
     const category = uniqueCategory();
     const first = await request(app())
       .post('/api/promotions')

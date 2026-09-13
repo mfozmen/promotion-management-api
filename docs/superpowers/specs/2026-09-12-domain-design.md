@@ -368,8 +368,8 @@ create table ingestion_chunks (
   applied, so an admin can always tell which of the two won and why.
 - Same-level overlap (two active product promotions on one product, or two on
   one category, overlapping in time) is still rejected with `409` by the
-  exclusion constraints (SQLSTATE 23P01), and the handler selects the
-  overlapping promotion to report `{ conflictingPromotionId }`. The engine
+  exclusion constraints (SQLSTATE 23P01), and the refusal names no promotion:
+  the envelope carries a message and nothing read from a row. The engine
   would pick a winner either way, so this is no longer about correctness: it
   keeps an admin from quietly shadowing a colleague's campaign, and it keeps
   the candidate set small enough that resolution stays a two-row decision.

@@ -598,8 +598,8 @@ refused a promotion "cannot act without knowing which one to cancel". They can â
 the two exclusion constraints are keyed on product and on category, so the filter
 that finds the blocker is one the admin already has. The exception cost a query
 on every conflict whose result was discarded, and it made this rule cite itself
-as its own exception. What it bought was a window comparison across a few rows.
-The honest price of removing it is that comparison, not a blocked task.
+as its own exception. What it bought was skipping a window comparison across a
+few rows. The honest price of removing it is that comparison, not a blocked task.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
 another row's fields, which they never had. The carve-out was removed when the
@@ -1110,6 +1110,21 @@ candidate for deletion.
 is not scope creep (12.3): the preamble already says the design wins and the
 rule gets fixed in the same PR. Quote the amendment in the PR description so
 the change to the shared standard is reviewed, not just the code.
+
+13b.5 **A rule's number is allocated once and never reused, never compacted.**
+A branch appending to a section takes the next free number; if two branches take
+the same one, the loser becomes `13.10a`, not a renumber of everything after it.
+A number that moves is an edit to every file that cites it, in a merge where
+those files did not conflict â€” and a citation that has moved one rule off still
+names a rule that exists, so the citation check passes and a reader is sent to
+the wrong rule.
+
+Evidence: section 13 was renumbered twice in one afternoon on one branch. Both
+times two branches had appended to the same section and both had claimed the
+next number; both times citations were repointed by hand. The second time, the
+check written that morning to catch exactly this stayed green, because the stale
+citation still resolved. The defect is the scheme, not the checker: ids that
+never move make the check that exists sufficient.
 
 ---
 

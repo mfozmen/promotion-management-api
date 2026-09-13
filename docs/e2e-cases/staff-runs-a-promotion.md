@@ -89,6 +89,7 @@ stacked and I never have to untangle an overlap by hand.
 Acceptance criteria
 
 - Two product-level promotions cannot both be active on one product at the same time; the second is refused and the refusal names the first.
+- A refused second promotion changes no price: the product goes on being priced by the promotion already in place. (Case study section 1: "a product can have at most one active promotion at a time".)
 - The same holds for a category: two promotions whose dates overlap cannot both be active on one category, or every product in it would carry two.
 - Two staff assigning at the same moment cannot both win; one assignment succeeds and the other is refused. (Owner decision on issue #11, 2026-09-12.)
 - When a product-level and a category-level promotion are both active, the one that prices the product lower is applied, in the shopper's favour. (Owner decision, 2026-09-12.)
@@ -126,6 +127,14 @@ Test cases
 - Given: the same product, but the category promotion is 5 %
 - When: the shopper opens the product
 - Then: effective price 90.00, and the response names the product's own promotion
+- Measure: none
+
+### promotion-17
+
+- Precondition: `POST /api/promotions/:id/assign`, `GET /api/products/:id`
+- Given: a product at 100.00 carrying an active product-level 10 % promotion, so the shopper sees 90.00
+- When: staff assign a second product-level 50 % promotion whose dates overlap, and a shopper then opens the product
+- Then: the product still shows 90.00 and still names the first promotion — never 50.00, never 45.00, and never two discounts stacked
 - Measure: none
 
 ### promotion-13

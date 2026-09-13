@@ -175,11 +175,15 @@ describe('the documents', () => {
       [...(await readFile('REVIEW.md', 'utf8')).matchAll(RULE_DEFINITION)].map(([, n]) => n),
     );
     const dangling: string[] = [];
+    // The documents are the minority: most citations are in comments, where an
+    // author reaches for the rule that justifies the line they are writing.
+    const sources = [...DOCUMENTS];
+    for await (const file of glob('{src,tests}/**/*.ts')) sources.push(file);
 
-    for (const document of DOCUMENTS) {
-      const text = await readFile(document, 'utf8');
+    for (const source of sources) {
+      const text = await readFile(source, 'utf8');
       for (const [, rule] of text.matchAll(RULE_CITATION)) {
-        if (rule !== undefined && !rules.has(rule)) dangling.push(`${document}: REVIEW.md ${rule}`);
+        if (rule !== undefined && !rules.has(rule)) dangling.push(`${source}: REVIEW.md ${rule}`);
       }
     }
 
