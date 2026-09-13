@@ -116,6 +116,13 @@ describe('ProductWriteRepository', () => {
     });
   });
 
+  it('omits the pricing rules version when the product has none', async () => {
+    await write.write(entry({ pricingRulesVersion: 1_789_238_046 }), EARLY);
+    await write.write(entry(), LATER);
+
+    expect(await read.find(1)).not.toHaveProperty('pricingRulesVersion');
+  });
+
   it('treats an absent token as never written, so the first write applies', async () => {
     expect(await redis().hget(ProductWriteRepository.TOKENS, '1')).toBeNull();
 
