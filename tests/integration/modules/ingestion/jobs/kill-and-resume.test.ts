@@ -14,6 +14,28 @@ import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
 
+/** The processor logs a lost announcement; a test that is not about that ignores it. */
+const silentLog = { error: () => undefined };
+
+/** A seam inside the write transaction: the calculator runs per row, before the write. */
+function calculatorsThatOnRow(hook: (n: number) => Promise<void>) {
+  const real = calculators();
+  let rows = 0;
+  return {
+    current: async () => {
+      const calculator = await real.current();
+      return {
+        pricingRulesVersion: calculator.pricingRulesVersion,
+        ruleIds: calculator.ruleIds,
+        calculate: async (facts: Parameters<typeof calculator.calculate>[0]) => {
+          await hook((rows += 1));
+          return calculator.calculate(facts);
+        },
+      } as unknown as Awaited<ReturnType<typeof real.current>>;
+    },
+  };
+}
+
 let dir: string;
 
 beforeAll(() => {
@@ -86,18 +108,19 @@ describe('a worker killed mid-chunk', () => {
     const { jobId, startOffset, endOffset } = await sixRowFile();
     const announced: number[] = [];
 
-    // The kill lands between the store and the announce of the second batch —
-    // the window the ordering argument is about. A kill between batches would
-    // prove nothing: both orders survive that one.
-    let batches = 0;
+    // The kill lands inside the second batch's write transaction — after the
+    // first batch committed, before the second could. That is the window the
+    // guarantee is about: a kill between batches proves nothing, because every
+    // ordering survives that one.
     const dying = new ChunkProcessor({
       db: db(),
-      calculators: calculators(),
+      calculators: calculatorsThatOnRow((n) =>
+        n === 3 ? Promise.reject(new Error('killed mid-batch')) : Promise.resolve(),
+      ),
       batchSize: BATCH,
       reenqueue: () => Promise.resolve(),
+      log: silentLog,
       publish: (ids) => {
-        batches += 1;
-        if (batches === 2) return Promise.reject(new Error('killed mid-batch'));
         announced.push(...ids);
         return Promise.resolve();
       },
@@ -105,9 +128,10 @@ describe('a worker killed mid-chunk', () => {
 
     await expect(dying.process({ jobId, chunkIndex: 0 })).rejects.toThrow('killed mid-batch');
 
-    // Batch one committed. Batch two stored its rows and never announced them, so
-    // it never checkpointed either — which is what makes the replay correct.
-    expect(await db().select().from(products)).toHaveLength(4);
+    // Batch one committed, rows and checkpoint together. Batch two took neither:
+    // the transaction that would have written its rows is the one that moved the
+    // checkpoint, so the replay redoes exactly the work that was lost.
+    expect(await db().select().from(products)).toHaveLength(BATCH);
     expect((await chunkRow(jobId))?.nextOffset).toBe(
       startOffset + Buffer.byteLength('SKU-0,name 0,Electronics,800.00,150\n') * BATCH,
     );
@@ -119,6 +143,7 @@ describe('a worker killed mid-chunk', () => {
       calculators: calculators(),
       batchSize: BATCH,
       reenqueue: () => Promise.resolve(),
+      log: silentLog,
       publish: () => Promise.reject(new Error('should never be called')),
     });
     expect(await blocked.process({ jobId, chunkIndex: 0 })).toMatchObject({ claimed: false });
@@ -130,6 +155,7 @@ describe('a worker killed mid-chunk', () => {
       calculators: calculators(),
       batchSize: BATCH,
       reenqueue: () => Promise.resolve(),
+      log: silentLog,
       publish: (ids) => {
         announced.push(...ids);
         return Promise.resolve();
@@ -138,7 +164,7 @@ describe('a worker killed mid-chunk', () => {
     const result = await resumed.process({ jobId, chunkIndex: 0 });
 
     // Four rows remained from the checkpoint, and the replayed batch cost nothing:
-    // the upsert is keyed on the vendor's sku, so re-storing two rows is a no-op.
+    // the upsert is keyed on the vendor's sku, so re-storing a row is a no-op.
     expect(result).toMatchObject({ claimed: true, rowsProcessed: 4 });
     const stored = await db().select().from(products);
     expect(stored).toHaveLength(ROWS);

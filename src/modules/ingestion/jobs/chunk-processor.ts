@@ -1,3 +1,5 @@
+import { TransactionRollbackError } from 'drizzle-orm';
+import type { Logger } from 'pino';
 import type { Db } from '../../../shared/db/client.js';
 import { upsertProducts, type ProductUpsert } from '../../product/db/upsert-products.js';
 import type { BasePriceCalculatorCache } from '../../pricing/domain/base-price-calculator-cache.js';
@@ -38,6 +40,8 @@ export class ChunkProcessor {
   /** Only `current` is used, so a test can supply a rule set that fails on purpose. */
   private readonly calculators: Pick<BasePriceCalculatorCache, 'current'>;
   private readonly publish: (productIds: readonly number[]) => Promise<unknown>;
+  /** Only `error` is used: the one line an operator finds a lost announcement by. */
+  private readonly log: Pick<Logger, 'error'>;
   private readonly batchSize: number;
   private readonly leaseMs: number;
   private readonly budgetMs: number;
@@ -48,6 +52,7 @@ export class ChunkProcessor {
     db: Db;
     calculators: Pick<BasePriceCalculatorCache, 'current'>;
     publish: (productIds: readonly number[]) => Promise<unknown>;
+    log: Pick<Logger, 'error'>;
     /**
      * Enqueues the next invocation for a chunk this one ran out of time on.
      * Required rather than defaulted: a processor that cannot hand off is one
@@ -63,6 +68,7 @@ export class ChunkProcessor {
     this.db = options.db;
     this.calculators = options.calculators;
     this.publish = options.publish;
+    this.log = options.log;
     this.reenqueue = options.reenqueue;
     this.batchSize = options.batchSize ?? ChunkProcessor.DEFAULT_BATCH_SIZE;
     this.leaseMs = options.leaseMs ?? ChunkProcessor.DEFAULT_LEASE_MS;
@@ -178,22 +184,57 @@ export class ChunkProcessor {
   /**
    * How many products the batch stored, or null because the compare-and-set was
    * refused and this invocation no longer holds the chunk.
+   *
+   * The write and the checkpoint are one transaction, so an invocation that has
+   * lost the chunk stores nothing: its CAS fails and its rows roll back with it.
+   * Without that, a batch already in flight when the lease expired still landed —
+   * the loop stopped, the batch did not — and its rows would overwrite the
+   * winner's, permanently, if it had been pricing against an older rule set.
+   *
+   * The announcement follows the commit and its failure is not fatal, which is
+   * what every other write path here does. The cost is real and stated in the
+   * pull request: a batch that commits and then fails to publish leaves a stale
+   * read-model entry with nothing to repair it until the rebuild or the
+   * reconciler exists. That is a delay in a derivable projection; the ordering it
+   * replaces risked the store the projection derives from, which replaying
+   * cannot fix.
    */
   private async commit(jobId: number, chunkIndex: number, batch: Batch): Promise<number | null> {
-    const ids = await upsertProducts(this.db, batch.rows);
-    if (ids.length > 0) await this.publish(ids);
-    // `ids.length`, not `batch.rows.length`: a vendor file repeating a SKU inside
-    // one batch stores one product for two lines, and `rows_processed` counts the
-    // products the import produced rather than the lines it read.
-    const moved = await checkpointBatch(this.db, {
-      jobId,
-      chunkIndex,
-      seenOffset: batch.seenOffset,
-      nextOffset: batch.nextOffset,
-      rowsProcessed: ids.length,
-      rowsRejected: batch.rejected,
-    });
+    let ids: readonly number[] = [];
 
-    return moved ? ids.length : null;
+    try {
+      await this.db.transaction(async (tx) => {
+        ids = await upsertProducts(tx, batch.rows);
+        const moved = await checkpointBatch(tx, {
+          jobId,
+          chunkIndex,
+          seenOffset: batch.seenOffset,
+          nextOffset: batch.nextOffset,
+          // `ids.length`, not `batch.rows.length`: a vendor file repeating a SKU
+          // inside one batch stores one product for two lines.
+          rowsProcessed: ids.length,
+          rowsRejected: batch.rejected,
+        });
+        if (!moved) tx.rollback();
+      });
+    } catch (error) {
+      if (error instanceof TransactionRollbackError) return null;
+      throw error;
+    }
+
+    // Swallowed on purpose. The rows are committed; throwing here would fail the
+    // job after the data was safe, and the retry resumes past this batch anyway,
+    // so the announcement is lost either way and the failure is spurious. The log
+    // line is what an operator has to find a stale read-model entry by.
+    if (ids.length > 0) {
+      await this.publish(ids).catch((error: unknown) => {
+        this.log.error(
+          { jobId, chunkIndex, productIds: ids.length, err: error },
+          'product.upserted could not be enqueued; these products stay stale in the read model until a rebuild',
+        );
+      });
+    }
+
+    return ids.length;
   }
 }

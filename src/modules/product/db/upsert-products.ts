@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import type { Db } from '../../../shared/db/client.js';
+import type { Queryable } from '../../../shared/db/client.js';
 import { products } from './schema/products.js';
 
 /** One priced row, ready to store: the vendor's facts plus where they came from. */
@@ -26,7 +26,7 @@ export interface ProductUpsert {
  * after a kill harmless.
  */
 export async function upsertProducts(
-  db: Db,
+  db: Queryable,
   batch: readonly ProductUpsert[],
 ): Promise<readonly number[]> {
   const rows = [...new Map(batch.map((row) => [row.sku, row])).values()];

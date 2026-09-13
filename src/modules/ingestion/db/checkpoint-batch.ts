@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import type { Db } from '../../../shared/db/client.js';
+import type { Queryable } from '../../../shared/db/client.js';
 import type { BatchCheckpoint } from '../domain/dto/batch-checkpoint.js';
 import { ingestionChunks } from './schema/ingestion-chunks.js';
 
@@ -19,7 +19,7 @@ import { ingestionChunks } from './schema/ingestion-chunks.js';
  * The counts are added rather than assigned, so `rows_processed` is exact across
  * a chunk that took several invocations to finish.
  */
-export async function checkpointBatch(db: Db, batch: BatchCheckpoint): Promise<boolean> {
+export async function checkpointBatch(db: Queryable, batch: BatchCheckpoint): Promise<boolean> {
   const moved = await db
     .update(ingestionChunks)
     .set({

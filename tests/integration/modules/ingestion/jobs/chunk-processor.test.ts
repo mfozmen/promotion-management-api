@@ -16,6 +16,33 @@ import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
 
+/** The processor logs a lost announcement; a test that is not about that ignores it. */
+const silentLog = { error: () => undefined };
+
+/**
+ * Wraps the real calculators so a test can interfere per row — which is inside
+ * the write transaction, where a kill or a competing worker actually lands. The
+ * announcement is no longer a usable seam for that: it follows the commit and
+ * its failure is swallowed.
+ */
+function calculatorsThatOnRow(hook: (n: number) => Promise<void>) {
+  const real = calculators();
+  let rows = 0;
+  return {
+    current: async () => {
+      const calculator = await real.current();
+      return {
+        pricingRulesVersion: calculator.pricingRulesVersion,
+        ruleIds: calculator.ruleIds,
+        calculate: async (facts: Parameters<typeof calculator.calculate>[0]) => {
+          await hook((rows += 1));
+          return calculator.calculate(facts);
+        },
+      } as unknown as Awaited<ReturnType<typeof real.current>>;
+    },
+  };
+}
+
 let dir: string;
 let sequence = 0;
 
@@ -109,6 +136,7 @@ const processorWith = (publish: (ids: readonly number[]) => Promise<void>, batch
     publish,
     batchSize,
     reenqueue: () => Promise.resolve(),
+    log: silentLog,
   });
 
 describe('ChunkProcessor', () => {
@@ -161,20 +189,48 @@ describe('ChunkProcessor', () => {
     expect(await storedFor(jobId)).toHaveLength(1);
   });
 
-  it('leaves the checkpoint unmoved when the announcement fails, so the batch replays', async () => {
-    // The announcement leads the checkpoint on purpose. Checkpointing first and
-    // failing to announce loses the batch silently: the rows are stored, the read
-    // model never hears, and nothing replays them. This is the promotion cancel
-    // bug in another costume — the event must not be the step that gets skipped.
-    const { jobId, startOffset } = await jobWithChunk(row(1));
+  it('commits the batch when the announcement fails, and logs what went stale', async () => {
+    // The announcement follows the commit and its failure is swallowed. Throwing
+    // here would fail the job after the rows were already safe, and the retry
+    // resumes past this batch anyway — so the announcement is lost either way and
+    // the failure would be spurious. The cost is a stale read-model entry with
+    // nothing to repair it until a rebuild, and the log line is how it is found.
+    const { jobId, endOffset } = await jobWithChunk(row(1));
+    const logged: unknown[] = [];
+
+    const result = await new ChunkProcessor({
+      db: db(),
+      calculators: calculators(),
+      reenqueue: () => Promise.resolve(),
+      log: { error: (...args: unknown[]) => logged.push(args) },
+      publish: () => Promise.reject(new Error('redis is down')),
+    }).process({ jobId, chunkIndex: 0 });
+
+    expect(result).toMatchObject({ claimed: true, rowsProcessed: 1 });
+    expect(await storedFor(jobId)).toHaveLength(1);
+    expect((await chunkRow(jobId))?.nextOffset).toBe(endOffset);
+    expect(logged).toHaveLength(1);
+  });
+
+  it('stores nothing when the batch fails inside its transaction', async () => {
+    // The write and the checkpoint are one transaction, so a failure between them
+    // takes both. This is the kill the resumability guarantee is about: the batch
+    // is replayed whole because none of it landed.
+    const { jobId, startOffset } = await jobWithChunk(row(1) + row(2));
 
     await expect(
-      processorWith(() => Promise.reject(new Error('redis is down'))).process({
-        jobId,
-        chunkIndex: 0,
-      }),
-    ).rejects.toThrow('redis is down');
+      new ChunkProcessor({
+        db: db(),
+        calculators: calculatorsThatOnRow((n) =>
+          n === 2 ? Promise.reject(new Error('killed mid-batch')) : Promise.resolve(),
+        ),
+        reenqueue: () => Promise.resolve(),
+        log: silentLog,
+        publish: recorder().publish,
+      }).process({ jobId, chunkIndex: 0 }),
+    ).rejects.toThrow('killed mid-batch');
 
+    expect(await storedFor(jobId)).toHaveLength(0);
     expect((await chunkRow(jobId))?.nextOffset).toBe(startOffset);
   });
 
@@ -222,6 +278,7 @@ describe('ChunkProcessor', () => {
         calculators: broken,
         publish: recorder().publish,
         reenqueue: () => Promise.resolve(),
+        log: silentLog,
       }).process({ jobId, chunkIndex: 0 }),
     ).rejects.toThrow('rule set is unusable');
 
@@ -244,6 +301,7 @@ describe('ChunkProcessor', () => {
       calculators: calculators(),
       batchSize: 2,
       reenqueue: () => Promise.resolve(),
+      log: silentLog,
       publish: async (ids) => {
         batches += 1;
         if (batches === 1) {
@@ -272,22 +330,24 @@ describe('ChunkProcessor', () => {
     // which is most chunks, since a file rarely divides evenly.
     const { jobId, startOffset } = await jobWithChunk(row(1));
 
-    const superseded = new ChunkProcessor({
+    const result = await new ChunkProcessor({
       db: db(),
-      calculators: calculators(),
-      batchSize: 100,
-      reenqueue: () => Promise.resolve(),
-      publish: async () => {
+      calculators: calculatorsThatOnRow(async () => {
+        // A second invocation, holding the chunk, commits its own batch first.
         await db()
           .update(ingestionChunks)
           .set({ nextOffset: startOffset + 1 })
           .where(and(eq(ingestionChunks.jobId, jobId), eq(ingestionChunks.chunkIndex, 0)));
-      },
-    });
-
-    const result = await superseded.process({ jobId, chunkIndex: 0 });
+      }),
+      batchSize: 100,
+      reenqueue: () => Promise.resolve(),
+      log: silentLog,
+      publish: recorder().publish,
+    }).process({ jobId, chunkIndex: 0 });
 
     expect(result).toMatchObject({ claimed: true, superseded: true, rowsProcessed: 0 });
+    // The refused checkpoint took its batch's rows with it.
+    expect(await storedFor(jobId)).toHaveLength(0);
     expect((await chunkRow(jobId))?.status).not.toBe('done');
   });
 
@@ -309,6 +369,7 @@ describe('ChunkProcessor', () => {
       // Zero when the invocation starts, past the budget at every later check:
       // the first batch fits and the second would not.
       now: () => (clock++ === 0 ? 0 : 1000),
+      log: silentLog,
       reenqueue: (chunk) => {
         enqueued.push(chunk);
         return Promise.resolve();
@@ -338,6 +399,7 @@ describe('ChunkProcessor', () => {
       batchSize: 2,
       budgetMs: 500,
       now: () => (clock++ === 0 ? 0 : 1000),
+      log: silentLog,
       reenqueue: (chunk) => {
         enqueued.push(chunk);
         return Promise.resolve();
@@ -379,6 +441,24 @@ describe('ChunkProcessor', () => {
     expect((await chunkRow(jobId))?.rowsProcessed).toBe(2);
   });
 
+  it('fails the batch when the write itself is rejected, storing nothing', async () => {
+    // A NUL byte in a vendor field: the parser accepts it as text and PostgreSQL
+    // refuses it, so the failure lands inside the transaction rather than before
+    // it. The batch is not a rejected row — the write was refused, not the row —
+    // so it fails the chunk and the rows roll back with the checkpoint.
+    sequence += 1;
+    const withNul = `SKU-NUL-${sequence},na me,Electronics,800.00,150
+`;
+    const { jobId, startOffset } = await jobWithChunk(row(1) + withNul);
+
+    await expect(
+      processorWith(recorder().publish, 100).process({ jobId, chunkIndex: 0 }),
+    ).rejects.toThrow();
+
+    expect(await storedFor(jobId)).toHaveLength(0);
+    expect((await chunkRow(jobId))?.nextOffset).toBe(startOffset);
+  });
+
   it('marks the chunk done once the checkpoint reaches the end of its range', async () => {
     const { jobId } = await jobWithChunk(row(1));
 
@@ -400,22 +480,27 @@ describe('ChunkProcessor', () => {
   it('checkpoints each batch as it goes, so a kill costs one batch and not the chunk', async () => {
     const body = row(1) + row(2) + row(3) + row(4);
     const { jobId, startOffset } = await jobWithChunk(body);
-    let batches = 0;
 
     await expect(
-      processorWith(() => {
-        batches += 1;
-        return batches === 2 ? Promise.reject(new Error('killed')) : Promise.resolve();
-      }, 2).process({ jobId, chunkIndex: 0 }),
+      new ChunkProcessor({
+        db: db(),
+        // The kill lands on the third row, which is inside the second batch's
+        // transaction: that batch's rows and its checkpoint go together.
+        calculators: calculatorsThatOnRow((n) =>
+          n === 3 ? Promise.reject(new Error('killed')) : Promise.resolve(),
+        ),
+        batchSize: 2,
+        reenqueue: () => Promise.resolve(),
+        log: silentLog,
+        publish: recorder().publish,
+      }).process({ jobId, chunkIndex: 0 }),
     ).rejects.toThrow('killed');
 
-    // The first batch committed. The second stored its rows — the upsert runs before
-    // the announcement — but never announced and so never checkpointed, which is the
-    // safe order: the replay re-stores the same four rows under the same SKUs and
-    // announces them, where the reverse order would have lost the announcement.
+    // The first batch committed and the second never began, so the checkpoint is
+    // exactly one batch in and two rows are stored — a kill costs one batch.
     expect((await chunkRow(jobId))?.nextOffset).toBe(
       startOffset + Buffer.byteLength(row(1) + row(2)),
     );
-    expect(await storedFor(jobId)).toHaveLength(4);
+    expect(await storedFor(jobId)).toHaveLength(2);
   });
 });
