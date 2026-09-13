@@ -1,0 +1,1 @@
+CREATE VIEW "public"."active_promotions" AS (select "id", "name", "discount_type", "value", "starts_at", "ends_at", "product_id", "category", "status", "created_at", "cancelled_at" from "promotions" where "promotions"."status" = 'active' and tstzrange("promotions"."starts_at", "promotions"."ends_at") @> now());

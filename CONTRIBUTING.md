@@ -21,7 +21,7 @@ tests/
   e2e/
 ```
 
-Test files import their subject through the `@src/*` alias — `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'` — wired in `tsconfig.json` `paths` and `vitest.config.ts` `resolve.alias`. Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
+Test files import their subject through the `@src/*` alias — `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'` — wired in `tsconfig.json` `paths` and `vitest.workspace.ts`, which declares the alias once and spreads it into both projects (a workspace project does not inherit the root `vitest.config.ts` `resolve` block). Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
 
 A module opens a directory when it has a file for it, not before. No `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/` anywhere.
 
@@ -52,7 +52,7 @@ No implementation code is written before its failing test exists.
 ## PR checklist
 
 - [ ] Tests written first and passing (`npm test`)
-- [ ] Coverage is 100 % (`npm run test:cov`; the pre-commit hook enforces the threshold, so a commit below 100 % is rejected)
+- [ ] Coverage is 100 % (`npm run test:cov`, both layers, needs `TEST_DATABASE_URL`; the required `ci` check enforces the threshold. The pre-commit hook runs `npm test`, the unit layer only, so committing needs no database)
 - [ ] Lint passes (`npm run lint`)
 - [ ] No open SonarCloud finding on the PR, read from SonarCloud's PR comment (an ignore needs the owner's approval and a reasoned entry in `sonar-project.properties`)
 - [ ] Commits follow Conventional Commits
@@ -64,7 +64,7 @@ No implementation code is written before its failing test exists.
 
 Required on `main`:
 
-- `ci` — lint, typecheck, tests with 100 % coverage thresholds, SonarCloud scan
+- `ci` — lint, typecheck, schema-drift check (`db:generate`, asserted on its success line because it exits 0 on failure, then `git add -AN` and `git diff --exit-code` over `src/shared/db/migrations`), tests with 100 % coverage thresholds, SonarCloud scan
 - `claude-review` — advisory AI review
 
 `local-gates` also runs on every pull request but does not block a merge. It computes the agent labels this diff needs from its changed paths and prints the set: `docs-verified` always, `cases-verified` when the pull request touches `src/`, `impact-verified` for the behaviour or judgement group below, and `architecture-verified` when it touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules or `src/workers/`, or carries the `scenario` label. `e2e-verified` is never required; that run happens when the owner asks for it. Every new push strips all five, so the applicable agents are re-run and their labels re-applied before the pull request goes to the owner.
