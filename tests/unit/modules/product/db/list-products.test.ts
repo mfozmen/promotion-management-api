@@ -70,6 +70,9 @@ describe('listProducts', () => {
     // still came from the query parameter, so an operator would read a
     // product id the caller invented.
     expect((raised as Error).message).not.toContain('product:7');
+    // The branch as well as the absence: a 503 would satisfy the line above
+    // while proving nothing about the one that names keys.
+    expect(raised).toBe(wrongType);
   });
 
   it('leaves a reply error a server fault, because the server answered', async () => {
