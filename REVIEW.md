@@ -754,6 +754,7 @@ stay in `shared/db/`. ADR-0008.
 methods. What a caller can use is at the top; how it is done is below. ESLint
 `@typescript-eslint/member-ordering` holds it from the pull request that lands
 the first classes (#39). ADR-0008.
+
 ---
 
 ## 9. Failure handling and operations
