@@ -12,6 +12,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - zod (request validation at the boundary)
 - pino + pino-http (structured JSON logging)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
+- Redis 7 read model (ioredis), serving the storefront reads
 - Vitest + Supertest (testing)
 - ESLint + Prettier
 - SonarCloud (static analysis / quality gate)
@@ -43,7 +44,7 @@ Tests and checks:
 
 ```bash
 npm test
-npm run test:cov # needs a PostgreSQL, see below
+npm run test:cov # needs a PostgreSQL and a Redis, see below
 npm run lint
 ```
 
@@ -51,13 +52,13 @@ npm run lint
 
 The suite is split into layers, so the one that needs nothing can run anywhere:
 
-| Layer                              | Command                    | Needs           | Runs                        |
-| ---------------------------------- | -------------------------- | --------------- | --------------------------- |
-| unit (`tests/unit/`)               | `npm test`                 | nothing         | pre-commit hook, everywhere |
-| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL | CI, before every push       |
-| both, with coverage                | `npm run test:cov`         | real PostgreSQL | CI (the 100 % gate)         |
+| Layer                              | Command                    | Needs                     | Runs                        |
+| ---------------------------------- | -------------------------- | ------------------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing                   | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL and Redis | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | real PostgreSQL and Redis | CI (the 100 % gate)         |
 
-The integration tests run against a real PostgreSQL, never a mock. Point them at one with
+The integration tests run against a real PostgreSQL and a real Redis, never a mock. Point them at one with
 `TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
 default is not the compose server: `docker-compose.yml` publishes 5432 with the `.env`
 credentials, so either reuse it with
@@ -98,17 +99,18 @@ The compose file holds the two stores, the `api` service built from this reposit
 
 ```
 src/                app.ts (the Express app and the /api router), server.ts (the process entry point)
-src/modules/        one directory per module, with domain/, db/ and http/ as it needs them
+src/modules/        one directory per module, with domain/ (behaviour), domain/dto/ (the shapes
+                    it operates on, zod schemas included), db/ and http/ as it needs them
 src/shared/db/      the Drizzle schema, client and SQL migrations
 src/shared/http/    the HTTP boundary: the error type and its status table, the error handler,
                     the not-found handler, the request validator and the request logger
 src/shared/         config.ts, logger.ts (the root logger and the error whitelist every log site
-                    uses), and http/ above
+                    uses), read-model-client.ts (the storefront's Redis client), and http/ above
 tests/              unit, integration and e2e, each layer mirroring src/
 docs/               design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
 
-Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7). A helper both test layers import sits at `tests/<subject>-<role>.ts` (7.7).
+Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7, ADR-0008). Nothing sits at the `tests/` root: a helper belongs to the layer that uses it, named `<subject>-<role>.ts` — `tests/unit/capture-logger.ts`, `tests/integration/db.ts` and `tests/integration/redis.ts` (7.7).
 
 Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias, the last six having moved off relative specifiers in `ba5c2ca` (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time; PR #50, commit `75130b7`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
 
@@ -118,17 +120,21 @@ The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/mi
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver (#36) and the admin reads will select from it instead of restating the predicate (ADR-0004, commit `1aaaffc`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed (commit `2142664`). It is not an endpoint; no route exposes it.
 
-`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
+The module folders under `src/modules/` are named in the design spec and land with the endpoints that need them; the read model has no DDL of its own, since its keys are built by the event handler and rebuilt from the write store on demand (ADR-0006).
 
 ## API
 
 All endpoints are mounted under the `/api` prefix (ADR-0009).
 
-| Method | Path          | Description                               | Query parameters |
-| ------ | ------------- | ----------------------------------------- | ---------------- |
-| GET    | `/api/health` | Liveness probe, returns `{"status":"ok"}` | none             |
+| Method | Path                | Description                                                    | Query parameters                                                                                                                                                 |
+| ------ | ------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/health`       | Liveness probe, returns `{"status":"ok"}`                      | none                                                                                                                                                             |
+| GET    | `/api/products`     | Storefront listing, returns `{ items, page, pageSize, total }` | `category` (exact match, optional), `sort=effectivePrice` (the only sort), `order=asc\|desc` (default `asc`), `page` (default 1), `pageSize` (1-100, default 20) |
+| GET    | `/api/products/:id` | One product with its applied promotion, or `404 NOT_FOUND`     | none; `id` is digits only                                                                                                                                        |
 
-Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`), and the health route moved from `GET /health` to `GET /api/health` with the boundary (ADR-0009, PR #30, commit `7fd588e`), so the prefix holds for everything that ships today.
+Both product routes are served from the Redis read model and never from PostgreSQL, so they answer `503 READ_MODEL_NOT_READY` with a `Retry-After` until a full rebuild has published `readmodel:ready`, and again whenever Redis is unreachable (ADR-0006). `page` and `pageSize` are bounded together: the resulting offset may not exceed 10 000, and a deeper page is a `400 VALIDATION_ERROR` rather than a scan of the whole category. `sort` accepts only `effectivePrice`, which is the one order the read model holds; naming it is optional and any other value is rejected, so a client learns that its sort is unsupported instead of receiving a silently different order.
+
+The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`), and the health route moved from `GET /health` to `GET /api/health` with the boundary (ADR-0009, PR #30, commit `7fd588e`), so the prefix holds for everything that ships today. Further endpoints are documented as they land.
 
 ### Conventions
 
