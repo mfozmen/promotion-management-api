@@ -1,4 +1,8 @@
 import { Redis } from 'ioredis';
+import { ALL_PRODUCTS } from '@src/modules/product/db/all-products-key.js';
+import { categoryKey } from '@src/modules/product/db/category-key.js';
+import { productKey } from '@src/modules/product/db/product-key.js';
+import { READY_KEY } from '@src/modules/product/db/ready-key.js';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 
 /**
@@ -6,7 +10,7 @@ import { afterAll, beforeAll, beforeEach } from 'vitest';
  * queue a developer is using, and the keys can be cleared between tests by
  * prefix rather than with FLUSHDB (REVIEW.md 5.3).
  */
-const url = process.env.TEST_REDIS_URL ?? 'redis://localhost:6399/9';
+const url = process.env.TEST_REDIS_URL ?? 'redis://localhost:6379/9';
 
 export function useTestRedis(): () => Redis {
   let redis: Redis;
@@ -16,10 +20,16 @@ export function useTestRedis(): () => Redis {
   });
 
   beforeEach(async () => {
-    for (const prefix of ['product:', 'category:', 'products:all', 'readmodel:ready']) {
-      const keys = await redis.keys(`${prefix}*`);
-      if (keys.length > 0) await redis.unlink(...keys);
-    }
+    // SCAN, never KEYS: the rule that forbids KEYS in a code path does not
+    // stop applying because this one is a test (REVIEW.md 5.3).
+    const doomed: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, batch] = await redis.scan(cursor, 'COUNT', 500);
+      cursor = next;
+      doomed.push(...batch);
+    } while (cursor !== '0');
+    if (doomed.length > 0) await redis.unlink(...doomed);
   });
 
   afterAll(async () => {
@@ -45,7 +55,7 @@ export type SeedProduct = {
 export async function seedProducts(redis: Redis, products: readonly SeedProduct[]): Promise<void> {
   const pipeline = redis.pipeline();
   for (const product of products) {
-    pipeline.hset(`product:${product.id}`, {
+    pipeline.hset(productKey(product.id), {
       id: String(product.id),
       sku: product.sku,
       name: product.name,
@@ -56,12 +66,12 @@ export async function seedProducts(redis: Redis, products: readonly SeedProduct[
       ...(product.promotionId === undefined
         ? {}
         : { promotionId: String(product.promotionId), promotionName: product.promotionName ?? '' }),
-      pricingRulesVersion: '1789238046',
+      ingestionRulesVersion: '1789238046',
       updatedAt: '2026-09-12T00:00:00.000Z',
     });
-    pipeline.zadd(`category:${product.category}`, product.effectivePriceCents, String(product.id));
-    pipeline.zadd('products:all', product.effectivePriceCents, String(product.id));
+    pipeline.zadd(categoryKey(product.category), product.effectivePriceCents, String(product.id));
+    pipeline.zadd(ALL_PRODUCTS, product.effectivePriceCents, String(product.id));
   }
-  pipeline.set('readmodel:ready', '1');
+  pipeline.set(READY_KEY, '1');
   await pipeline.exec();
 }

@@ -1,3 +1,4 @@
+import { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
@@ -181,6 +182,71 @@ describe('GET /api/products/:id', () => {
     await seedProducts(redis(), [product({ id: 1 })]);
 
     expect((await request(app()).get('/api/products/abc')).status).toBe(400);
+  });
+});
+
+describe('a rebuild that has removed a product the index still lists', () => {
+  it('serves the rest of the page rather than failing all of it', async () => {
+    await seedProducts(redis(), [
+      product({ id: 1, effectivePriceCents: 1_000 }),
+      product({ id: 2, effectivePriceCents: 2_000 }),
+    ]);
+    // A scoped rebuild unlinks hashes while the sorted set still holds the
+    // ids, so one absent member must not take the other 99 with it.
+    await redis().unlink('product:1');
+
+    const res = await request(app()).get('/api/products');
+
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((item: { id: number }) => item.id)).toEqual([2]);
+  });
+});
+
+describe('when Redis cannot be reached', () => {
+  it('answers 503 with a retry hint rather than a server fault', async () => {
+    const unreachable = new Redis({
+      host: '127.0.0.1',
+      port: 6390,
+      lazyConnect: true,
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+    });
+    unreachable.connect().catch(() => undefined);
+
+    const res = await request(createApp({ redis: unreachable })).get('/api/products');
+    unreachable.disconnect();
+
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('READ_MODEL_NOT_READY');
+  });
+});
+
+describe('paging far past the end', () => {
+  it('refuses an offset that would walk the whole index', async () => {
+    await seedProducts(redis(), [product({ id: 1 })]);
+
+    const res = await request(app()).get('/api/products?page=1000000');
+
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses a page given in exponent notation', async () => {
+    await seedProducts(redis(), [product({ id: 1 })]);
+
+    expect((await request(app()).get('/api/products?page=1e9')).status).toBe(400);
+  });
+});
+
+describe('a product id that is not plainly a number', () => {
+  it.each([
+    ['hexadecimal', '0x2a'],
+    ['exponent notation', '4.2e1'],
+    ['padded with spaces', '%2042%20'],
+  ])('refuses %s rather than serving one product under two URLs', async (_case, id) => {
+    await seedProducts(redis(), [product({ id: 42 })]);
+
+    expect((await request(app()).get(`/api/products/${id}`)).status).toBe(400);
   });
 });
 

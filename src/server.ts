@@ -1,9 +1,12 @@
 import { createApp } from './app.js';
+import { loadConfig } from './shared/config.js';
 import { logger } from './shared/logger.js';
+import { createReadModelClient } from './shared/read-model-client.js';
 
-const port = Number(process.env.PORT) || 3000;
-const app = createApp();
+const config = loadConfig();
+const redis = createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB);
+const app = createApp({ redis });
 
-app.listen(port, () => {
-  logger.info({ port }, 'listening');
+app.listen(config.PORT, () => {
+  logger.info({ port: config.PORT }, 'listening');
 });

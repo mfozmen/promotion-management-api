@@ -31,6 +31,8 @@ docker compose up -d --wait   # PostgreSQL on 5432, Redis on 6379, both healthy
 npm run dev
 ```
 
+The integration tests read Redis on database 9, so `docker compose up -d --wait` has to be running before `npm test`; `TEST_REDIS_URL` overrides the default.
+
 Tests and checks:
 
 ```bash

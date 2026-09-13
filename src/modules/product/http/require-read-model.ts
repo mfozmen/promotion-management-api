@@ -1,7 +1,8 @@
 import type { RequestHandler } from 'express';
 import type { Redis } from 'ioredis';
 import { HttpError } from '../../../shared/http/http-error.js';
-import { READY_KEY } from '../db/read-model-keys.js';
+import { READY_KEY } from '../db/ready-key.js';
+import { readModelUnavailable } from '../db/read-model-unavailable.js';
 
 /** The read model is the only store these routes may touch, so an unbuilt one
  *  is a 503 rather than a fallback query (ADR-0006). */
@@ -17,5 +18,7 @@ export const requireReadModel =
             : new HttpError('READ_MODEL_NOT_READY', 'The read model is still being built'),
         );
       })
-      .catch(next);
+      .catch((error: unknown) => {
+        next(readModelUnavailable(error));
+      });
   };

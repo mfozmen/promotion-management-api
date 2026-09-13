@@ -1,6 +1,9 @@
 import type { Redis } from 'ioredis';
+import { logger } from '../../../shared/logger.js';
 import { toProductView } from '../domain/to-product-view.js';
-import { ALL_PRODUCTS, categoryKey, productKey } from './read-model-keys.js';
+import { ALL_PRODUCTS } from './all-products-key.js';
+import { categoryKey } from './category-key.js';
+import { productKey } from './product-key.js';
 
 interface Page {
   category?: string | undefined;
@@ -24,13 +27,25 @@ export async function listProducts(redis: Redis, { category, order, page, pageSi
   ]);
 
   const pipeline = redis.pipeline();
-  for (const id of ids) pipeline.hgetall(productKey(id));
+  for (const id of ids) pipeline.hgetall(productKey(Number(id)));
   // `exec` is typed nullable: ioredis answers null for a transaction a WATCH
   // aborted, and a pipeline has no WATCH.
   const replies = (await pipeline.exec()) ?? [];
 
-  return {
-    items: replies.map(([, hash]) => toProductView(hash as Record<string, string>)),
-    total,
-  };
+  // A member whose hash is gone is a rebuild in progress, not a bad page: the
+  // ids outlive the hashes while a category is rewritten. One absent product
+  // must not take the other ninety-nine with it, so it is dropped and counted.
+  // A hash that is present but incomplete still throws, because that is a
+  // price the writer got wrong rather than one it has not written yet.
+  const present = replies
+    .map(([, hash]) => hash as Record<string, string>)
+    .filter((hash) => Object.keys(hash).length > 0);
+  if (present.length < replies.length) {
+    logger.warn(
+      { key, missing: replies.length - present.length },
+      'read model lists ids whose hashes are gone',
+    );
+  }
+
+  return { items: present.map(toProductView), total };
 }
