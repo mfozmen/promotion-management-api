@@ -29,38 +29,79 @@ without the compose file, so the system under test is the compose project, not
 a server you launched by hand.
 
 1. `npm ci` only if `node_modules` is missing.
-2. Bring the stack up and wait for it to be healthy:
+2. **Run in your own compose project, and check before you destroy anything.**
+   The compose file fixes the project name to `promotion-management-api`, which
+   is the project the owner's own stack runs under, so a teardown here would
+   take their development database with it. Put `-p pma-e2e` on **every** compose
+   command in the run instead — every `down`, `up`, `run`, `logs`, without
+   exception. Not `export COMPOSE_PROJECT_NAME=...`: you issue each command as a
+   separate shell, so the variable is gone by the next call and compose silently
+   resolves back to the owner's project. The flag travels with the command; an
+   environment variable does not.
+
+   Then satisfy yourself the ports are yours before the first destructive
+   command. The file already forbids reaping a process you did not start, and
+   data deserves the same courtesy:
 
    ```
-   docker compose up -d --wait   # exits non-zero if any service is unhealthy
+   docker ps --filter publish=3100 --filter publish=5432 --filter publish=6379 --format '{{.Names}} {{.Label "com.docker.compose.project"}}'
    ```
+
+   Empty output is the pass, and every line it does print must name `pma-e2e`.
+   A line naming `promotion-management-api` is the owner's stack: stop, ask them
+   to bring it down, and **run the command again once they say they have** —
+   confirm the ports are clear yourself rather than taking the report for it,
+   because the next command destroys volumes. Never bring their stack down for
+   them, and never start a second one beside it: the ports are published on
+   fixed host addresses, so the two cannot coexist. On Windows `netstat` cannot
+   answer this at all — every published container port reports
+   `com.docker.backend` as its owner, which is why the attribution comes from
+   the container label instead.
+
+3. **Start from an empty database every time.**
+
+   ```
+   docker compose -p pma-e2e down -v       # drops this run's volumes, not the owner's
+   docker compose -p pma-e2e up -d --wait  # non-zero if any service is unhealthy
+   ```
+
+   A run that inherits an earlier run's rows measures a state nobody can
+   reproduce: a promotion left live changes the price the shopper reads, a
+   half-ingested SKU set hides a duplicate the fresh run would have caught, and
+   a Redis read model built by older code answers for a schema that no longer
+   exists. Every number and every invariant in this report has to come from the
+   migrations plus the run's own writes, so the volumes go first — not only
+   when a run looks wrong. Pass no `--remove-orphans`: it reaps containers of
+   services the current file does not define, which is how it would have taken
+   the owner's Adminer session before the run had a project of its own.
 
    There is no migration command to run afterwards and you should not look for
    one. The `api` container applies the migrations in its own entrypoint before
    it serves, so `--wait` is waiting on a healthcheck that cannot pass in front
    of an unmigrated schema. Verified by running it: from empty volumes,
-   `up -d --wait` returned 0 with the six tables and `__drizzle_migrations`
-   in place and `/health`
-   answering. Drizzle's migrations table applies only pending rows, so a fresh
+   `up -d --wait` returned 0 with the six tables and `__drizzle_migrations` in
+   place. Drizzle's migrations table applies only pending rows, so a fresh
    volume and a warm one both end `up` current.
 
-3. **The host port is 3100**, published by the compose file. Every health check
+4. **The host port is 3100**, published by the compose file. Every health check
    and every measurement uses it. Only one run can hold it at a time, which is
    deliberate: two runs measuring the same machine at once produce numbers
    neither of them can trust, so runs serialise. If another session holds the
    port, ask that session to finish rather than starting a second stack.
-4. Wait until `curl -sf localhost:3100/health` returns 200, at most 30
+5. Wait until `curl -sf localhost:3100/health` returns 200, at most 30
    seconds. That is the path the application serves today and the one the
    container's own healthcheck calls; it becomes `/api/health` when PR #30
-   lands, and this line moves with it. If it never does, print `docker compose logs --tail 40 api` and
+   lands, and this line moves with it. If it never does, print `docker compose -p pma-e2e logs --tail 40 api` and
    FAIL.
-5. **If something else holds port 3100, stop and say so; never kill it.** The
+6. **If something else holds port 3100, stop and say so; never kill it.** The
    process you did not start may be another run mid-measurement or a server the
    owner is using, and you cannot tell an orphan from a live server. Reaping one
    is a person's decision, not yours.
 
-Teardown is `docker compose down`. Leave the `db` and `redis` volumes alone
-unless you created them.
+Teardown is `docker compose -p pma-e2e down -v`, so the machine is left the way
+you want to find it and the next run pays no cleanup cost. The project flag is
+what makes that safe: the volumes `pma-e2e` owns are yours to drop, and no
+others are.
 
 Windows notes: `jq` may be missing, so use a `node -e` one-liner for JSON
 assertions.
