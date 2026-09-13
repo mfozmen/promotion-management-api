@@ -5,10 +5,13 @@ import { Pool } from 'pg';
 // Relative to the process working directory, which the image fixes at /app.
 export const MIGRATIONS_FOLDER = 'src/shared/db/migrations';
 
-/** Brings a database up to the schema this build carries, then closes what it opened. ADR-0003. */
-export async function runMigrations(connectionString: string): Promise<void> {
-  // Its own pool, not `createPool`, whose 10 s `statement_timeout` would kill a long index
-  // build at the same second on every boot. ADR-0003.
+/**
+ * Not `createPool`, whose 10 s `statement_timeout` would kill a long index build at the same
+ * second on every boot; `lock_timeout` bounds the wait instead, and is set on connect rather
+ * than through `options`, which a `DATABASE_URL` carrying its own would replace silently.
+ * ADR-0003. Exported so a test can watch a real session rather than the line that sets it.
+ */
+export function migrationPool(connectionString: string): Pool {
   const pool = new Pool({
     connectionString,
     max: 1,
@@ -16,10 +19,14 @@ export async function runMigrations(connectionString: string): Promise<void> {
     idle_in_transaction_session_timeout: 0,
   });
 
-  // `statement_timeout` bounds the work, `lock_timeout` the wait to start it. Set here
-  // rather than through `options`, which a `DATABASE_URL` carrying its own would replace
-  // silently. ADR-0003.
   pool.on('connect', (client) => void client.query("set lock_timeout = '10s'"));
+
+  return pool;
+}
+
+/** Brings a database up to the schema this build carries, then closes what it opened. ADR-0003. */
+export async function runMigrations(connectionString: string): Promise<void> {
+  const pool = migrationPool(connectionString);
 
   try {
     await migrate(drizzle(pool), { migrationsFolder: MIGRATIONS_FOLDER });

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MIGRATIONS_FOLDER, runMigrations } from '@src/shared/db/migrate.js';
+import { MIGRATIONS_FOLDER, migrationPool, runMigrations } from '@src/shared/db/migrate.js';
 import { adminUrl, cloneName, urlFor } from '../../env.js';
 
 // Not the cloned template every other file uses: this is the one test that needs an
@@ -78,6 +78,25 @@ describe('runMigrations', () => {
     await runMigrations(urlFor(database));
 
     expect(await tableNames()).toEqual(before);
+  });
+
+  // Against the pool the migrator itself opens, not one this test configured: the point is
+  // whether the `set` on connect reaches the wire before the first statement, and a test
+  // that sets the value itself would pass over a line that does nothing.
+  it('migrates on a session that bounds the wait for a lock and not the work', async () => {
+    const pool = migrationPool(urlFor(database));
+
+    try {
+      const { rows } = await pool.query<{ lock: string; statement: string }>(
+        'select current_setting($1) as lock, current_setting($2) as statement',
+        ['lock_timeout', 'statement_timeout'],
+      );
+
+      expect(rows[0]?.lock).toBe('10s');
+      expect(rows[0]?.statement).toBe('0');
+    } finally {
+      await pool.end();
+    }
   });
 
   it('rejects rather than resolving when the database cannot be reached', async () => {

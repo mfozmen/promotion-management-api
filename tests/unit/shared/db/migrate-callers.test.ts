@@ -24,7 +24,9 @@ describe('runMigrations', () => {
     const importers = await Promise.all(
       files.map(async (file) => ({
         file,
-        imports: /import\s+(?:.*\sfrom\s+)?'[^']*db\/migrate\.js'/.test(
+        // `import(` and `export ... from` reach the module as surely as a plain import, and
+        // a barrel re-export is a live pattern here (`src/shared/db/schema/index.ts`).
+        imports: /(?:import|export)[\s(][^'"]*['"][^'"]*db\/migrate\.js['"]/.test(
           await readFile(file, 'utf8'),
         ),
       })),
