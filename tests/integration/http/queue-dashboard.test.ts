@@ -12,7 +12,7 @@ describe('the queue dashboard', () => {
   it('serves BullMQ its own board at /admin/queues, outside the api prefix', async () => {
     const queue = EventQueue.connect(redisUrl, 15, eventRegistry, eventRouting, 'board-test');
     try {
-      const res = await request(createApp(appDeps({ queues: queue }))).get(
+      const res = await request(createApp(appDeps({ boardQueues: queue.all() }))).get(
         '/admin/queues/api/queues',
       );
 

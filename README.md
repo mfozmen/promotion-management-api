@@ -29,8 +29,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 
 ## Run it
 
-Docker with the Compose plugin, and nothing else — the image installs and builds inside
-itself, so a Node toolchain on the host is not needed to run the system.
+Docker with the Compose plugin, and Node for the two npm scripts below.
 
 ```bash
 cp .env.example .env   # placeholders only; .env is gitignored
@@ -129,7 +128,7 @@ The compose file holds the two stores, the `api` service built from this reposit
 
 Four queues, one per urgency class, and `eventRouting` maps an event to one of
 them — the caller never picks. `promotions` carries `promotion.changed` and the
-delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
+delayed boundary jobs, `products` carries `product.upserted`, `ingestion` carries
 `chunk.process`, and `maintenance` carries `readmodel.rebuild` and
 `reconciler.run`. The partition is what keeps a 500 000-row import's ~500
 announcements, or a full read-model rebuild, from sitting in front of a flash
@@ -211,10 +210,6 @@ http://localhost:3100/admin/queues — the four queues with their counts, the de
 retry, promote or remove a job. It is Bull Board mounted inside the api process, outside the
 `/api` prefix and outside this API's error envelope, and like everything else here it is
 unauthenticated.
-
-No worker consumes any of the four queues yet, so three of the five numbers are structurally fixed and should be read as evidence the reader works rather than as a diagnosis: `active` is zero everywhere, `failed` is zero because nothing runs and so nothing can exhaust its attempts — the dead-letter set this route exists to make visible cannot yet be non-empty — and `oldestWaitingAgeSeconds` grows without bound, because nothing drains `waiting`. A day after seeding, an age near `86400` is the expected reading. The ingestion worker arrives with issue #16, the event-handler and reconciler services with issue #19.
-
-The control surface the design spec lists beside it — pause, resume, drain, and retrying or discarding dead-letter jobs — is not built, and neither is `GET /metrics`, which belongs to the `monitoring` compose profile. Issue #18 stays open for both, and for the reconciler.
 
 `GET /api/products` takes `category` (exact match, optional, 256 characters), `sort=effectivePrice` (the only sort), `order=asc|desc` (default `asc`), `page` (default 1) and `pageSize` (1-100, default 20); the resulting offset may not exceed 10 000. `GET /api/products/:id` takes an id of digits only.
 

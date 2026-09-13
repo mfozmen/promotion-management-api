@@ -31,7 +31,7 @@ const app = createApp({
   products: new ProductReadRepository(
     createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB),
   ),
-  queues: queue,
+  boardQueues: queue.all(),
 });
 
 const server = app.listen(config.PORT, () => {

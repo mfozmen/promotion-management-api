@@ -98,9 +98,6 @@ services:
     networks:
       - promotion
 
-  # The two throwaway stores the integration layer needs, on the ports its defaults
-  # already name. Not in the default set: they hold nothing worth keeping and a
-  # developer running the app does not want them.
   postgres-test:
     image: postgres:16-alpine
     profiles: [test]

@@ -41,7 +41,7 @@ export class EventQueue<R extends Registry> {
     };
     const queues = {
       promotions: new Queue('promotions', options),
-      catalog: new Queue('catalog', options),
+      products: new Queue('products', options),
       ingestion: new Queue('ingestion', options),
       maintenance: new Queue('maintenance', options),
     };
@@ -73,10 +73,6 @@ export class EventQueue<R extends Registry> {
   }
 
   /** The queues this bus holds, so a reader iterates what exists rather than a second list. */
-  names(): QueueName[] {
-    return Object.keys(this.queues) as QueueName[];
-  }
-
   /**
    * Read methods. `getFailedCount` is here because `removeOnFail: false` makes the failed set
    * the dead-letter queue, and a dead-letter queue nothing can count is not one. Not a
@@ -86,21 +82,10 @@ export class EventQueue<R extends Registry> {
    */
   inspect(
     name: QueueName,
-  ): Pick<
-    Queue,
-    | 'getJob'
-    | 'getJobs'
-    | 'getWaitingCount'
-    | 'getActiveCount'
-    | 'getDelayedCount'
-    | 'getFailedCount'
-  > {
+  ): Pick<Queue, 'getJob' | 'getWaitingCount' | 'getDelayedCount' | 'getFailedCount'> {
     return this.queues[name];
   }
 
-  /** The queues themselves, for a dashboard that takes BullMQ's own objects. Handing
-   *  them out is what lets Bull Board serve the control surface; nothing in `src/` uses
-   *  them for anything else. */
   all(): Queue[] {
     return Object.values(this.queues);
   }

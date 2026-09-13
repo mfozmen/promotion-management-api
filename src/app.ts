@@ -31,7 +31,7 @@ export function createApp({
   queue,
   scheduler,
   products,
-  queues,
+  boardQueues,
 }: AppDependencies): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
@@ -43,7 +43,7 @@ export function createApp({
   api.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
   });
-  // Both mount on /products: the read side answers GET, the catalog POST.
+  // Both mount on /products: the read side answers GET, the write side POST.
   api.use(
     '/products',
     productReadRoutes({
@@ -54,11 +54,11 @@ export function createApp({
   );
   // The use cases are built here from the repositories, so a route receives
   // what it calls and nothing it could reach around.
-  const catalog = new ProductRepository(db);
+  const catalogue = new ProductRepository(db);
   const promotions = new PromotionRepository(db);
   const announcer = new PromotionAnnouncer(queue, scheduler, logger);
 
-  api.use('/products', productRoutes(new CreateProductCommand(catalog, queue, logger)));
+  api.use('/products', productRoutes(new CreateProductCommand(catalogue, queue, logger)));
   api.use(
     '/promotions',
     promotionRoutes({
@@ -71,14 +71,12 @@ export function createApp({
   );
   app.use('/api', api);
 
-  // Outside `/api` and outside the error envelope: the board is an operator surface
-  // with its own HTML and its own error pages, not part of this API's contract
-  // (ADR-0009). It is BullMQ's own dashboard, so the counts, the dead-letter set and
-  // the retry/promote controls come from the library rather than from us.
+  // Outside `/api` and outside the envelope: the board serves its own HTML and its own
+  // error pages, so it is not part of this API's contract (ADR-0009).
   const board = new ExpressAdapter();
   board.setBasePath('/admin/queues');
   createBullBoard({
-    queues: queues.all().map((queue) => new BullMQAdapter(queue)),
+    queues: boardQueues.map((queue) => new BullMQAdapter(queue)),
     serverAdapter: board,
   });
   app.use('/admin/queues', board.getRouter());

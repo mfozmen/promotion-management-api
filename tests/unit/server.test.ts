@@ -1,14 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
-/**
- * `src/server.ts` is the one file coverage excludes, so nothing else in the suite can
- * notice a collaborator that is wired only in tests. The type requires each dependency;
- * it cannot require that the one passed is the live object rather than a stub, and both
- * of these have already happened here — a merge took main's `server.ts` whole and dropped
- * the read-model client, and this branch shipped a documented admin endpoint that no
- * deployment served. The guards are textual because the alternative is running the boot.
- */
+/** `src/server.ts` is excluded from coverage, and the type requires a dependency
+ *  without requiring that the one passed is the live object rather than a stub. */
 const live = async (): Promise<string> =>
   (await readFile('src/server.ts', 'utf8'))
     // Comments go first, block and line: a plain match cannot tell a live call from one
@@ -30,6 +24,6 @@ describe('server.ts', () => {
   it('hands createApp the real queues, so the dashboard has something to show', async () => {
     const source = await live();
 
-    expect(source.slice(source.indexOf('createApp('))).toMatch(/queues:\s*queue\b/);
+    expect(source.slice(source.indexOf('createApp('))).toContain('boardQueues: queue.all()');
   });
 });

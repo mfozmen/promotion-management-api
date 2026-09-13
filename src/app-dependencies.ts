@@ -18,7 +18,5 @@ export interface AppDependencies {
   };
   scheduler: PromotionScheduler;
   products: ProductReadRepository;
-  /** The queues themselves, for the dashboard mounted outside `/api`. Separate from
-   *  `queue` above, which is the one publish call a use case makes. */
-  queues: { all(): Queue[] };
+  boardQueues: Queue[];
 }

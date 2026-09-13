@@ -15,7 +15,7 @@ const QUEUE_DB = 1;
 // Every key this file writes sits under a prefix unique to the run, so a count
 // over a queue means this run's jobs and not a sibling worktree's (REVIEW.md 7.6).
 const PREFIX = `bulltest-${randomUUID().slice(0, 8)}`;
-const QUEUE_NAMES = ['promotions', 'catalog', 'ingestion', 'maintenance'] as const;
+const QUEUE_NAMES = ['promotions', 'products', 'ingestion', 'maintenance'] as const;
 
 /** Obliterating a queue is not something a running process should be able to do. */
 async function clearOwnQueues(): Promise<void> {
@@ -61,7 +61,7 @@ describe('EventQueue', () => {
     const received: unknown[] = [];
     workers.push(
       new Worker(
-        'catalog',
+        'products',
         async (job: Job) => {
           received.push({ name: job.name, data: job.data });
         },
@@ -206,13 +206,9 @@ describe('EventQueue', () => {
     expect(failed?.attemptsMade).toBe(3);
     expect(failed?.failedReason).toBe('poisoned job');
     // The count, not just the job: `removeOnFail: false` is only a dead-letter queue if
-    // something can see the set growing, and until now nothing could.
+    // something can see the set growing.
     expect(await bus.inspect('ingestion').getFailedCount()).toBe(1);
   }, 40_000);
-
-  it('names the queues it holds, so a reader needs no second list of them', () => {
-    expect(bus.names()).toEqual(['promotions', 'catalog', 'ingestion', 'maintenance']);
-  });
 
   it('keeps every queue on the queue database and never writes to the read-model database', async () => {
     const readModel = new Redis(redisUrl, { db: READ_MODEL_DB });
@@ -224,7 +220,7 @@ describe('EventQueue', () => {
       await bus.publish('chunk.process', { jobId: 1, chunkIndex: 0 });
 
       expect(await readModel.dbsize()).toBe(0);
-      expect(await queueDb.exists(`${PREFIX}:catalog:meta`)).toBe(1);
+      expect(await queueDb.exists(`${PREFIX}:products:meta`)).toBe(1);
       expect(await queueDb.exists(`${PREFIX}:ingestion:meta`)).toBe(1);
     } finally {
       await Promise.all([readModel.quit(), queueDb.quit()]);

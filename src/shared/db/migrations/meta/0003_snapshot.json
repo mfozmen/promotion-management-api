@@ -93,8 +93,12 @@
           "name": "ingestion_chunks_job_id_ingestion_jobs_id_fk",
           "tableFrom": "ingestion_chunks",
           "tableTo": "ingestion_jobs",
-          "columnsFrom": ["job_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "job_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -102,7 +106,10 @@
       "compositePrimaryKeys": {
         "ingestion_chunks_job_id_chunk_index_pk": {
           "name": "ingestion_chunks_job_id_chunk_index_pk",
-          "columns": ["job_id", "chunk_index"]
+          "columns": [
+            "job_id",
+            "chunk_index"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -235,7 +242,9 @@
         "ingestion_jobs_file_sha256_unique": {
           "name": "ingestion_jobs_file_sha256_unique",
           "nullsNotDistinct": false,
-          "columns": ["file_sha256"]
+          "columns": [
+            "file_sha256"
+          ]
         }
       },
       "policies": {},
@@ -347,7 +356,9 @@
         "pricing_rules_name_unique": {
           "name": "pricing_rules_name_unique",
           "nullsNotDistinct": false,
-          "columns": ["name"]
+          "columns": [
+            "name"
+          ]
         }
       },
       "policies": {},
@@ -467,7 +478,9 @@
         "products_sku_unique": {
           "name": "products_sku_unique",
           "nullsNotDistinct": false,
-          "columns": ["sku"]
+          "columns": [
+            "sku"
+          ]
         }
       },
       "policies": {},
@@ -621,8 +634,12 @@
           "name": "promotions_product_id_products_id_fk",
           "tableFrom": "promotions",
           "tableTo": "products",
-          "columnsFrom": ["product_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "product_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -691,27 +708,48 @@
     "public.chunk_status": {
       "name": "chunk_status",
       "schema": "public",
-      "values": ["pending", "running", "done", "failed"]
+      "values": [
+        "pending",
+        "running",
+        "done",
+        "failed"
+      ]
     },
     "public.ingestion_status": {
       "name": "ingestion_status",
       "schema": "public",
-      "values": ["running", "paused", "completed", "failed", "aborted"]
+      "values": [
+        "running",
+        "paused",
+        "completed",
+        "failed",
+        "aborted"
+      ]
     },
     "public.pricing_rule_type": {
       "name": "pricing_rule_type",
       "schema": "public",
-      "values": ["ingestion", "promotion"]
+      "values": [
+        "ingestion",
+        "promotion"
+      ]
     },
     "public.promotion_discount_type": {
       "name": "promotion_discount_type",
       "schema": "public",
-      "values": ["percentage", "fixed"]
+      "values": [
+        "percentage",
+        "fixed"
+      ]
     },
     "public.promotion_status": {
       "name": "promotion_status",
       "schema": "public",
-      "values": ["draft", "active", "cancelled"]
+      "values": [
+        "draft",
+        "active",
+        "cancelled"
+      ]
     }
   },
   "schemas": {},
