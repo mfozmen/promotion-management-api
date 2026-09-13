@@ -13,13 +13,17 @@ import {
 const redis = useTestRedis();
 const app = () => createApp({ redis: redis() });
 
+/** A product the reader would accept. The base price follows the effective one
+ *  unless a case sets it, because a price below its base with no promotion is a
+ *  discount with no source and the reader refuses it — a fixture that could
+ *  build one would be certifying a product the writer cannot produce. */
 const product = (
   over: Partial<SeedFields> & Pick<SeedFields, 'id'> & SeedPromotion,
 ): SeedProduct => ({
   sku: `SKU-${over.id}`,
   name: `Product ${over.id}`,
   category: 'Accessories',
-  basePriceCents: 10_000,
+  basePriceCents: over.basePriceCents ?? over.effectivePriceCents ?? 10_000,
   effectivePriceCents: 10_000,
   stockQuantity: 5,
   ...over,

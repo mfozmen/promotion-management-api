@@ -2,7 +2,7 @@ import type { RequestHandler } from 'express';
 import type { Redis } from 'ioredis';
 import { HttpError } from '../../../shared/http/http-error.js';
 import { READY_KEY } from '../db/ready-key.js';
-import { readModelUnavailable } from '../db/read-model-unavailable.js';
+import { replyFailure } from '../db/reply-failure.js';
 
 /** The read model is the only store these routes may touch, so an unbuilt one
  *  is a 503 rather than a fallback query (ADR-0006). */
@@ -19,6 +19,9 @@ export const requireReadModel =
         );
       })
       .catch((error: unknown) => {
-        next(readModelUnavailable(error));
+        // The same classifier the four command sites use: the gate runs first
+        // on every request, so an exemption here is the rule holding nowhere
+        // that matters.
+        next(replyFailure(error as Error));
       });
   };

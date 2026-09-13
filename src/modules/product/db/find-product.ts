@@ -25,7 +25,7 @@ export async function findProduct(redis: Redis, id: number) {
     // if both are filed under the index they share.
     reportGhosts(DETAIL_ORPHANS, 1);
 
-    throw new HttpError('READ_MODEL_NOT_READY', 'The read model is still being built');
+    throw new HttpError('READ_MODEL_NOT_READY', 'This product is mid-rebuild or orphaned');
   }
 
   return undefined;

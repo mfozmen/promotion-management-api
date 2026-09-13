@@ -7,7 +7,7 @@ const stored = {
   name: 'Kazak',
   category: 'knitwear',
   basePriceCents: '10000',
-  effectivePriceCents: '9000',
+  effectivePriceCents: '10000',
   stockQuantity: '3',
 };
 
@@ -53,6 +53,27 @@ describe('toProductView', () => {
 
   it('refuses an empty price, which is not the same as an absent promotion', () => {
     expect(() => toProductView({ ...stored, effectivePriceCents: '' })).toThrow();
+  });
+
+  it('refuses a discount with no source, which is what tolerating an empty pair let through', () => {
+    // The strict schema caught this for free: '' failed the digits check, so a
+    // discounted product whose promotion columns were empty was refused. Now
+    // that '' reads as no promotion, nothing but this stops a lower effective
+    // price being served with nothing to attribute it to.
+    expect(() =>
+      toProductView({ ...stored, promotionId: '', promotionName: '', effectivePriceCents: '9000' }),
+    ).toThrow();
+  });
+
+  it('accepts a discount that names its promotion', () => {
+    const view = toProductView({
+      ...stored,
+      effectivePriceCents: '9000',
+      promotionId: '3',
+      promotionName: 'Winter sale',
+    });
+
+    expect(view.promotion).toEqual({ id: 3, name: 'Winter sale' });
   });
 
   it('refuses a name with no id, which would name a discount nothing gave', () => {

@@ -46,4 +46,13 @@ export const storedProduct = z
   // computed one wrong, and a storefront that renders it has sold at it.
   .refine(({ basePriceCents, effectivePriceCents }) => effectivePriceCents <= basePriceCents, {
     message: 'an effective price cannot exceed the base price it came from',
-  });
+  })
+  // The mirror of the rule above it. The recompute derives the promotion and
+  // the price together, so a price below its base with no promotion named is
+  // a discount with no source — and reading '' as absent is what let that
+  // through, because the strict schema used to refuse '' for free.
+  .refine(
+    ({ promotionId, basePriceCents, effectivePriceCents }) =>
+      promotionId !== undefined || effectivePriceCents === basePriceCents,
+    { message: 'a discounted price must name the promotion that made it' },
+  );

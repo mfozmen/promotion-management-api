@@ -49,7 +49,7 @@ describe('findProduct', () => {
           name: 'Kazak',
           category: 'knitwear',
           basePriceCents: '10000',
-          effectivePriceCents: '9000',
+          effectivePriceCents: '10000',
           stockQuantity: '3',
         });
       },
