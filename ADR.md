@@ -318,23 +318,40 @@ Alarms: the API and workers expose Prometheus metrics (`prom-client`); a `monito
 
 ### Context
 
-Two modules landed in a day and the reviews kept finding the same three things: several classes and types in one file, directories named for a kind of syntax (`models/`, `utils/`), and exports whose names read as data when they were behaviour. Each was argued once per pull request. The rules in REVIEW.md 8c say what a reviewer rejects; this record says why.
+The first two modules were reviewed file by file, and the same three findings came back on each: several declarations in one file, directories named for a kind of syntax rather than a job, and exports whose names read as data when they were behaviour. REVIEW.md 8c says what a reviewer rejects; this record says what the layout is and why.
 
 ### Decision
 
-- **Modular monolith, directories by role.** One directory per module under `src/modules/`, inside it `domain/`, `db/`, `http/`, `jobs/`, opened only when a file goes in. Promotion and pricing are separate modules that import nothing from each other (ADR-0004, ADR-0005).
-- **One exported declaration per file, named after it.** A file holds one class, interface, type alias or function, and the file name is that name in kebab-case.
-- **`domain/dto/` is the one syntax-named directory.** `domain/` holds only the functions; the types they operate on sit in `domain/dto/`. This contradicts "directories by role" on purpose: with both at one level a reader could not tell a data shape from the logic over it without opening the file.
-- **An interface is the noun, an implementation is the variant plus the noun.** `Discount` is the interface, `fixedDiscount` and `percentageDiscount` implement it, `discounts` is the record of them. The earlier `DiscountCalculator` name made every implementation either carry `Calculator` too or read as a bare value. A function starts with a verb: `calculateEffectivePrice`, `compileRules`, `priceRow`; one named for the value it returns (`effectivePrice`) reads as a property and is a finding.
+**Layout.** A modular monolith: one directory per module under `src/modules/`, and inside a module the directories are named for a role, opened only when a file goes in:
+
+```
+src/modules/<module>/
+  domain/        the module's rules as functions; imports no store and no framework
+    dto/         the types, interfaces and enum-like aliases those functions operate on
+  db/            queries and repositories (Drizzle)
+  http/          routes, handlers, request schemas (zod)
+  jobs/          BullMQ processors
+src/shared/
+  db/schema/     one file per table
+  http/          error type, error handler, request validator, logger
+tests/
+  unit/          mirrors src/, one test file per source file
+  integration/   real PostgreSQL and Redis
+```
+
+`domain/dto/` is the one directory named for what it holds rather than for a job. With types and functions at one level a reader could not tell a data shape from the logic over it without opening the file; the split is taken for that reason and for nothing else — `http/`, `db/` and `jobs/` are not divided further. Promotion and pricing are separate modules that import nothing from each other (ADR-0004, ADR-0005).
+
+**One exported declaration per file, and the file is named for it.** A file holds one class, interface, type alias or function, plus the private helpers only it uses. The name is the same in the file, the export, the test file, the ADR and the spec.
+
+**Naming.**
+
+- An interface is named for the role it plays, as the noun a reader would use: `Discount`. Each implementation is the variant plus that noun — `fixedDiscount`, `percentageDiscount` — and the record of them is the plural, `discounts`. A suffix on the interface (`DiscountCalculator`) is noise every implementation then has to repeat or drop.
+- A function starts with a verb: `calculateEffectivePrice`, `compileRules`, `priceRow`. A function named for the value it returns (`effectivePrice`) reads as a property.
+- A file carries the whole name: `discount.ts`, `percentage-discount.ts`, `calculate-effective-price.ts`. Never a bare verb with no subject (`validate.ts`).
+- Directories are never `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/`; a concept is what a directory is for, a syntax kind is not.
 
 ### Consequences
 
-- More files, each short; the tree is the index and a file name is a full answer to "what is this".
-- The promotion module was written before the last two rules and does not yet match them: `discount-calculator.ts`, `discount-calculators.ts`, `discount-calculator-for.ts`, `effective-price.ts` and `pricing-input-error.ts` still carry the old names. They are to be renamed (`discount.ts`, `discounts.ts`, `discount-for.ts`, `calculate-effective-price.ts`, with `pricing-input-error.ts` folded into the last as the private `validateBasePriceAndDiscount`, since it serves one caller and 8c.2 allows a file its own helpers) in the pull request that adopts these rules, PR #39, rather than grandfathered, because an exception survives longer than the reason for it. Until that merges, this line is the record of the gap.
-- `REVIEW.md` 8c.2, 8c.7, 8c.8 and 8c.9 carry the enforceable form; a change here changes them in the same pull request.
-
-### Rejected alternatives
-
-- The rest of the NestJS taxonomy beside `dto/` — `entities/`, `interfaces/`, `enums/` in every directory: `dto/` is the one split that helps reading, and it is taken; the others sort by syntax again and would put the `domain/` rule back where it started.
-- `percentageDiscountCalculator` beside a `DiscountCalculator` interface: correct and twice as long; dropping the suffix from the interface gives the same clarity for free.
-- A `Calculator` suffix on functions (`effectivePriceCalculator`): a noun again, and a noun is what a function name should not be.
+- More files, each short; the tree is the index, and a file name answers "what is this" without opening it.
+- The promotion module was written before the naming rules and does not yet match them: `discount-calculator.ts`, `discount-calculators.ts`, `discount-calculator-for.ts`, `effective-price.ts` and `pricing-input-error.ts` still carry the old names. They are renamed in PR #39 (`discount.ts`, `discounts.ts`, `discount-for.ts`, `calculate-effective-price.ts`, with `pricing-input-error.ts` folded into the last as the private `validateBasePriceAndDiscount`, since it serves one caller) rather than grandfathered, because an exception survives longer than the reason for it. Until that merges, this line is the record of the gap.
+- `REVIEW.md` 8c.2, 8c.3, 8c.7, 8c.8 and 8c.9 carry the enforceable form; a change here changes them in the same pull request.
