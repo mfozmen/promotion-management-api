@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { productUpserted } from '@src/modules/catalog/domain/dto/product-upserted.js';
+import { productUpserted } from '@src/modules/catalog/events/product-upserted.js';
 import { loadConfig } from '@src/shared/config.js';
 
 const ids = (count: number): number[] => Array.from({ length: count }, (_, index) => index + 1);

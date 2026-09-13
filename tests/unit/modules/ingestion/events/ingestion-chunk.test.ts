@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ingestionChunk } from '@src/modules/ingestion/domain/dto/ingestion-chunk.js';
+import { ingestionChunk } from '@src/modules/ingestion/events/ingestion-chunk.js';
 
 describe('ingestionChunk', () => {
   it('accepts a valid payload unchanged', () => {

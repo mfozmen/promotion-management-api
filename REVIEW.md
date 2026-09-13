@@ -811,8 +811,10 @@ never for a kind of syntax: `models/`, `types/`, `interfaces/`, `classes/`,
 `utils/`, `helpers/` are findings. The tree is in ADR-0008.
 
 8c.8 The one exception to 8c.7: `domain/dto/` holds every shape — type
-aliases, interfaces, zod schemas, message payloads — and `domain/` holds only
-behaviour, the classes of 8c.9. No other directory is split by syntax. ADR-0008.
+aliases, interfaces, zod schemas — and `domain/` holds only behaviour, the
+classes of 8c.9. An event payload is the exception to the exception: it lives
+in `events/` beside the handlers, not in `dto/`. No other directory is split by
+syntax. ADR-0008.
 
 8c.9 Behaviour is a class named for its role (`EffectivePriceCalculator`),
 its methods start with a verb (`calculate`), its collaborators arrive through

@@ -8,7 +8,7 @@ Modular monolith: one directory per module under `src/modules/`, and inside a mo
 src/
   modules/<module>/
     domain/     behaviour as classes, collaborators through the constructor (REVIEW.md 8c.9); imports no store and no framework
-      dto/      every shape those classes operate on: types, interfaces, enum-like aliases, zod schemas, queue payloads (8c.8)
+      dto/      every shape those classes operate on: types, interfaces, enum-like aliases, zod schemas (8c.8)
     queries/    one class per read use case: collaborators in the constructor, `execute(input)`
     commands/   one class per write use case, same shape
     db/         the store gateway: the keys or SQL, and what a failed call means

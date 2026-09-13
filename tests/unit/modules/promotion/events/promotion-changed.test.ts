@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { promotionChanged } from '@src/modules/promotion/domain/dto/promotion-changed.js';
+import { promotionChanged } from '@src/modules/promotion/events/promotion-changed.js';
 
 describe('promotionChanged', () => {
   it('accepts a valid payload unchanged', () => {

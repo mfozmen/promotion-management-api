@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ingestionChunk } from '@src/modules/ingestion/domain/dto/ingestion-chunk.js';
-import { productUpserted } from '@src/modules/catalog/domain/dto/product-upserted.js';
-import { promotionChanged } from '@src/modules/promotion/domain/dto/promotion-changed.js';
+import { ingestionChunk } from '@src/modules/ingestion/events/ingestion-chunk.js';
+import { productUpserted } from '@src/modules/catalog/events/product-upserted.js';
+import { promotionChanged } from '@src/modules/promotion/events/promotion-changed.js';
 import { eventRegistry } from '@src/events/event-registry.js';
-import { readmodelRebuild } from '@src/modules/product/domain/dto/readmodel-rebuild.js';
+import { readmodelRebuild } from '@src/modules/product/events/readmodel-rebuild.js';
 import { reconcilerRun } from '@src/events/reconciler-run.js';
 
 // The eventRegistry only maps names to schemas; each schema is tested beside its source.

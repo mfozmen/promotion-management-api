@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readmodelRebuild } from '@src/modules/product/domain/dto/readmodel-rebuild.js';
+import { readmodelRebuild } from '@src/modules/product/events/readmodel-rebuild.js';
 
 describe('readmodelRebuild', () => {
   it('accepts a scoped and an unscoped rebuild', () => {
