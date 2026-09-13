@@ -48,13 +48,29 @@ describe('SweepBoundariesCommand', () => {
     expect(boundaries.advanced).toEqual([[SINCE, WINDOW_END]]);
   });
 
-  it('names each job after the window, so a re-swept window enqueues no second recompute', async () => {
+  it('names each job after the watermark, so a re-read of one window recomputes once', async () => {
+    // The window's end is `now()` less the commit lag and moves on every read. Named
+    // after it, a second pass over a window whose watermark never advanced would
+    // enqueue a fresh id per promotion and recompute every category again.
     const { logger } = captureLogger();
     const queue = recordingQueue();
+    const later = {
+      ...boundariesHolding([7]),
+      crossedSince: () =>
+        Promise.resolve({
+          since: SINCE,
+          windowEnd: new Date('2026-09-14T03:05:00.000Z'),
+          promotionIds: [7],
+        }),
+    };
 
     await new SweepBoundariesCommand(boundariesHolding([7]), queue, logger).execute();
+    await new SweepBoundariesCommand(later, queue, logger).execute();
 
-    expect(queue.jobs[0]?.jobId).toBe('sweep:7:2026-09-14T03:00:00.000Z');
+    expect(queue.jobs.map((job) => job.jobId)).toEqual([
+      'sweep:7:2026-09-14T02:50:00.000Z',
+      'sweep:7:2026-09-14T02:50:00.000Z',
+    ]);
   });
 
   it('raises rather than reporting a swept window when an emission fails', async () => {

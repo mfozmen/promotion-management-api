@@ -8,6 +8,10 @@ import { reconcilerState } from './schema/reconciler-state.js';
  *  writer can hold a boundary uncommitted. */
 const COMMIT_LAG_SECONDS = 30;
 
+/** The most one sweep will reach back for after an outage. Unlike a row cap this
+ *  loses nothing: the next run takes the next hour. */
+const MAX_WINDOW_SECONDS = 3600;
+
 export class BoundaryRepository {
   constructor(private readonly db: Db) {}
 
@@ -19,7 +23,10 @@ export class BoundaryRepository {
         since: reconcilerState.lastBoundarySweepAt,
         // `string`, not `Date`: a raw fragment has no column mapper, so it arrives
         // as the driver's text and an annotation of `Date` fails at the first use.
-        windowEnd: sql<string>`now() - make_interval(secs => ${COMMIT_LAG_SECONDS})`,
+        windowEnd: sql<string>`least(
+          now() - make_interval(secs => ${COMMIT_LAG_SECONDS}),
+          ${reconcilerState.lastBoundarySweepAt} + make_interval(secs => ${MAX_WINDOW_SECONDS})
+        )`,
       })
       .from(reconcilerState);
 

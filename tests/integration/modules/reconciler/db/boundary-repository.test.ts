@@ -137,6 +137,27 @@ describe('BoundaryRepository', () => {
     expect(second.promotionIds).toEqual([]);
   });
 
+  it('reaches back an hour at a time after an outage, and takes the rest on the next run', async () => {
+    // A day of downtime otherwise reads every boundary since in one statement and
+    // publishes them in one loop; a run killed at its timeout advances nothing and
+    // the next one repeats it. Time-boxing loses none of them: the mark moves.
+    await watermarkAt(120);
+    const inFirstHour = await promotionWith({ startsAt: minutesAgo(90) });
+    const inSecondHour = await promotionWith({ startsAt: minutesAgo(30) });
+    const repository = new BoundaryRepository(db());
+
+    const first = await repository.crossedSince();
+
+    expect(first.promotionIds).toContain(inFirstHour);
+    expect(first.promotionIds).not.toContain(inSecondHour);
+    expect(first.windowEnd.getTime() - first.since.getTime()).toBe(3_600_000);
+
+    await repository.advance(first.since, first.windowEnd);
+    const second = await repository.crossedSince();
+
+    expect(second.promotionIds).toContain(inSecondHour);
+  });
+
   it('refuses to sweep rather than crash when the watermark row is gone', async () => {
     // A truncate, an operator, or a dump restored without the seed. The cast that
     // reads the row would otherwise destructure `undefined`, and the sweep would

@@ -31,12 +31,13 @@ export class SweepBoundariesCommand {
     const { since, windowEnd, promotionIds } = await this.boundaries.crossedSince();
 
     for (const promotionId of promotionIds) {
-      // The window's end is in the id, so a re-swept window enqueues the same job
-      // rather than a second full recompute of the same category.
+      // Keyed on the watermark, not the window's end: the end moves with the clock
+      // on every re-read, so a second pass over an unadvanced window would enqueue
+      // a different id and recompute every category again.
       await this.queue.publish(
         'promotion.changed',
         { promotionId },
-        { jobId: `sweep:${String(promotionId)}:${windowEnd.toISOString()}` },
+        { jobId: `sweep:${String(promotionId)}:${since.toISOString()}` },
       );
     }
 
