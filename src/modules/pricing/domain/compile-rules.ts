@@ -5,16 +5,10 @@ import type { CompiledRuleSet } from './dto/compiled-rule-set.js';
 import type { PricingRuleRow } from './dto/pricing-rule-row.js';
 import type { VendorRowFacts } from './vendor-row-facts.js';
 
-/** Every rule is compiled against these facts, so a rule naming a fact that is
- *  not a vendor row field fails here rather than on every row. */
 const PROBE_ROW: VendorRowFacts = { category: 'probe', vendorPriceCents: 0, stockQuantity: 0 };
 
-/**
- * The conditions with every `priority` removed, for the compile-time probe
- * only: the engine stops at the first priority set that decides the rule, so a
- * typo’d operator behind an unmatched condition would never be reached. The
- * engine runs the untouched conditions.
- */
+/** Probe only: the engine stops at the first priority set that decides a rule, so a broken
+ *  operator behind an unmatched condition is never reached. */
 const withoutPriorities = (node: unknown): unknown => {
   if (Array.isArray(node)) return node.map(withoutPriorities);
   if (node === null || typeof node !== 'object') return node;
@@ -34,15 +28,10 @@ const hasEmptyGroup = (node: unknown): boolean => {
   return Object.values(node).some(hasEmptyGroup);
 };
 
-/** A malformed row is a descriptive error, never a silently skipped rule. */
 export async function compileRules(rows: readonly PricingRuleRow[]): Promise<CompiledRuleSet> {
-  // Total order: the adjustments do not commute, and two rules sharing a
-  // priority would otherwise evaluate in parallel. The stored id breaks the tie.
   const active = rows
     .filter((row) => row.active && row.type === 'ingestion')
     .sort((a, b) => b.priority - a.priority || a.id - b.id);
-  // An empty set would price the whole catalogue at vendor cost and report the
-  // job completed (ADR-0005).
   if (active.length === 0) {
     throw new Error('no active ingestion pricing rules (none seeded, or every rule deactivated)');
   }
@@ -58,18 +47,15 @@ export async function compileRules(rows: readonly PricingRuleRow[]): Promise<Com
       throw new Error(`${where} has an empty all or any, which matches every row or none`);
     }
     const properties: RuleProperties = {
-      // The engine reports a fired rule by name only, so the id travels inside
-      // the name and reaches `rejectedBy` as the row a reader can look up.
+      // A fired rule is reported by name only, so the id rides in the name to reach
+      // `rejectedBy`; the rank, not the stored priority, gives one rule per priority set.
       name: where,
-      // The rank, not the stored priority: one rule per engine priority set
-      // makes the evaluation order total rather than "highest set first".
       priority: active.length - rank,
       conditions: row.conditions as TopLevelCondition,
       event: event.data,
     };
     try {
       engine.addRule(properties);
-      // The probe run is what makes the failure happen once here rather than per row. ADR-0005.
       await new Engine([
         { ...properties, conditions: withoutPriorities(row.conditions) as TopLevelCondition },
       ]).run(PROBE_ROW);
