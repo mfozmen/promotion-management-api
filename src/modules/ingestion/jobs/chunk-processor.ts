@@ -81,7 +81,9 @@ export class ChunkProcessor {
       else batch.rows.push(priced);
 
       if (batch.rows.length + batch.rejected >= this.batchSize) {
-        await this.commit(jobId, chunkIndex, batch);
+        if (!(await this.commit(jobId, chunkIndex, batch))) {
+          return { claimed: true, superseded: true, rowsProcessed, rowsRejected };
+        }
         rowsProcessed += batch.rows.length;
         rowsRejected += batch.rejected;
         batch = this.emptyBatch(endOffset);
@@ -89,7 +91,9 @@ export class ChunkProcessor {
     }
 
     if (batch.rows.length + batch.rejected > 0) {
-      await this.commit(jobId, chunkIndex, batch);
+      if (!(await this.commit(jobId, chunkIndex, batch))) {
+        return { claimed: true, superseded: true, rowsProcessed, rowsRejected };
+      }
       rowsProcessed += batch.rows.length;
       rowsRejected += batch.rejected;
     }
@@ -139,10 +143,11 @@ export class ChunkProcessor {
     };
   }
 
-  private async commit(jobId: number, chunkIndex: number, batch: Batch): Promise<void> {
+  /** Whether this invocation still holds the chunk: false means it has been superseded. */
+  private async commit(jobId: number, chunkIndex: number, batch: Batch): Promise<boolean> {
     const ids = await upsertProducts(this.db, batch.rows);
     if (ids.length > 0) await this.publish(ids);
-    await checkpointBatch(this.db, {
+    return checkpointBatch(this.db, {
       jobId,
       chunkIndex,
       seenOffset: batch.seenOffset,

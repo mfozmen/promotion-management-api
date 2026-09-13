@@ -222,6 +222,66 @@ describe('ChunkProcessor', () => {
     expect((await chunkRow(jobId))?.nextOffset).toBe(startOffset);
   });
 
+  it('stops when its checkpoint is refused, because another invocation holds the chunk', async () => {
+    // The lease expired while this invocation was still working, so a second one
+    // claimed the chunk and is committing its own batches. The compare-and-set is
+    // what stops the loser corrupting the checkpoint — but only if somebody reads
+    // its answer. `checkpointBatch` returns whether it won and the processor used
+    // to discard it, so a superseded worker went on pricing rows, storing them and
+    // announcing them, with every checkpoint silently refused.
+    const { jobId, startOffset } = await jobWithChunk(row(1) + row(2) + row(3) + row(4));
+    let batches = 0;
+
+    const superseded = new ChunkProcessor({
+      db: db(),
+      calculators: calculators(),
+      batchSize: 2,
+      publish: async (ids) => {
+        batches += 1;
+        if (batches === 1) {
+          // The other invocation commits first: the checkpoint moves under us.
+          await db()
+            .update(ingestionChunks)
+            .set({ nextOffset: startOffset + 1 })
+            .where(and(eq(ingestionChunks.jobId, jobId), eq(ingestionChunks.chunkIndex, 0)));
+        }
+        expect(ids.length).toBeGreaterThan(0);
+      },
+    });
+
+    const result = await superseded.process({ jobId, chunkIndex: 0 });
+
+    expect(result).toMatchObject({ claimed: true, superseded: true });
+    // It returned rather than working through the remaining two batches.
+    expect(batches).toBe(1);
+    // And it did not roll the checkpoint back over the winner's.
+    expect((await chunkRow(jobId))?.nextOffset).toBe(startOffset + 1);
+  });
+
+  it('stops on a refused checkpoint for the last partial batch too', async () => {
+    // The trailing batch commits on a different line from the ones inside the
+    // loop, and a chunk whose rows do not fill a batch takes only that line —
+    // which is most chunks, since a file rarely divides evenly.
+    const { jobId, startOffset } = await jobWithChunk(row(1));
+
+    const superseded = new ChunkProcessor({
+      db: db(),
+      calculators: calculators(),
+      batchSize: 100,
+      publish: async () => {
+        await db()
+          .update(ingestionChunks)
+          .set({ nextOffset: startOffset + 1 })
+          .where(and(eq(ingestionChunks.jobId, jobId), eq(ingestionChunks.chunkIndex, 0)));
+      },
+    });
+
+    const result = await superseded.process({ jobId, chunkIndex: 0 });
+
+    expect(result).toMatchObject({ claimed: true, superseded: true, rowsProcessed: 0 });
+    expect((await chunkRow(jobId))?.status).not.toBe('done');
+  });
+
   it('marks the chunk done once the checkpoint reaches the end of its range', async () => {
     const { jobId } = await jobWithChunk(row(1));
 
