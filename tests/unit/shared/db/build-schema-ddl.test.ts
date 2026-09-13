@@ -70,14 +70,10 @@ describe('buildSchemaDdl', () => {
   });
 
   // The export is only a deliverable while it is the migrations: this is the comparison that
-  // fails when one lands without `npm run db:export-ddl` being run. The committed side is read
-  // as LF so a CRLF worktree reports the drift it has, not a re-export it is not missing.
+  // fails when one lands without `npm run db:export-ddl` being run.
   it('matches the committed docs/schema.sql', async () => {
-    const committed = await readFile(
-      new URL('../../../../docs/schema.sql', import.meta.url),
-      'utf8',
+    expect(await buildSchemaDdl(MIGRATIONS_FOLDER)).toBe(
+      await readFile(new URL('../../../../docs/schema.sql', import.meta.url), 'utf8'),
     );
-
-    expect(await buildSchemaDdl(MIGRATIONS_FOLDER)).toBe(committed.replaceAll('\r\n', '\n'));
   });
 });
