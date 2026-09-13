@@ -136,6 +136,7 @@ Acceptance criteria
 
 - After cancellation the affected products show their base price, or the next promotion that applies to them.
 - A cancelled promotion cannot be assigned again.
+- Cancelling a promotion that is already cancelled is not an error and changes no price. (Issue #11 acceptance criteria, owner: "cancel … is idempotent".)
 
 Test cases
 
@@ -162,6 +163,14 @@ Test cases
 - When: staff cancel the product's own promotion
 - Then: the product shows 90.00 and names the category promotion, not 100.00 and not 75.00
 - Measure: time from the cancel response to 90.00 appearing on the storefront, under 5 seconds
+
+### promotion-15
+
+- Precondition: `POST /api/promotions/:id/cancel`, `GET /api/products/:id`
+- Given: a product at 100.00 discounted by a 20 % promotion that staff have already cancelled once, the product now showing 100.00
+- When: staff cancel the same promotion a second time
+- Then: the call succeeds rather than failing, and the product still shows 100.00
+- Measure: none
 
 ## S8 A promotion applies only between its dates
 

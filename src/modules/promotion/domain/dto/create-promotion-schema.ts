@@ -14,8 +14,8 @@ export const createPromotionSchema = z
     name: z.string().trim().min(1).max(200),
     discountType: z.enum(['percentage', 'fixed']),
     value: z.number().int().positive().max(2_147_483_647),
-    startsAt: z.string().datetime(),
-    endsAt: z.string().datetime(),
+    startsAt: z.iso.datetime(),
+    endsAt: z.iso.datetime(),
     productId: z.number().int().positive().optional(),
     category: z.string().trim().min(1).max(100).optional(),
   })
