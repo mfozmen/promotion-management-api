@@ -116,6 +116,18 @@ describe('ProductWriteRepository', () => {
     });
   });
 
+  it('round-trips a name Lua and cjson have to survive, through the real server', async () => {
+    // The script hands the field list to `cjson.decode` and then `unpack`, and
+    // a product name is the one field a person types: quotes, a backslash, a
+    // colon and a non-Latin script all pass through a parser this test does not
+    // own, so it is proved against the server rather than a double.
+    const name = 'Kazak "kış" 50% \\ 2/3 — çok güzel: bak';
+
+    expect(await write.write(entry({ name }), EARLY)).toBe(true);
+
+    expect((await read.find(1))?.name).toBe(name);
+  });
+
   it('omits the pricing rules version when the product has none', async () => {
     await write.write(entry({ pricingRulesVersion: 1_789_238_046 }), EARLY);
     await write.write(entry(), LATER);
