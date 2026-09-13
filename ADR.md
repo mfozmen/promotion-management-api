@@ -341,7 +341,7 @@ tests/
 
 `domain/dto/` is the one directory named for what it holds rather than for a job. With types and functions at one level a reader could not tell a data shape from the logic over it without opening the file; the split is taken for that reason and for nothing else — `http/`, `db/` and `jobs/` are not divided further. Promotion and pricing are separate modules that import nothing from each other (ADR-0004, ADR-0005).
 
-**One exported declaration per file, and the file is named for it.** A file holds one class, interface, type alias or function, plus the private helpers only it uses. The name is the same in the file, the export, the test file, the ADR and the spec.
+**One exported declaration per file, and the file is named for it.** A file holds one class, interface, type alias or function, plus the private helpers only it uses. The name is the same in the file, the export, the ADR and the spec — and in the test: `tests/` mirrors `src/` one file to one file, `calculate-effective-price.ts` is tested by `calculate-effective-price.test.ts` at the same path under `tests/unit/`, and its top-level `describe` is the export's name.
 
 **Naming.**
 

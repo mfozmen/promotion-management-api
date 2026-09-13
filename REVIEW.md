@@ -519,8 +519,12 @@ a timeout. A flaky test is a finding, not a retry.
 parallel. Shared mutable fixtures across files are a finding.
 
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
-the tree mirrors `src/` and one test file per source file. Nothing at `tests/`
-root, no per-module top-level directories.
+the tree mirrors `src/` and one test file per source file, carrying that file's
+name: `calculate-effective-price.ts` is tested by
+`tests/unit/modules/promotion/domain/calculate-effective-price.test.ts`, and its
+top-level `describe` is the export's name. A rename in `src/` renames the test
+in the same commit (8c.6). Nothing at `tests/` root, no per-module top-level
+directories.
 
 Evidence: `tests/promotion/`, `tests/unit/` and a root-level test file on three
 open branches at once (PRs #29, #39).
