@@ -27,7 +27,9 @@ async function clearOwnQueues(): Promise<void> {
   }
 }
 
-async function waitFor(condition: () => Promise<boolean>, timeoutMs = 20_000): Promise<void> {
+// No default: vitest's own 5 s would fire first, so a 20 s deadline here could never be
+// reached and its message could never appear — the unreachable bound this file just lost.
+async function waitFor(condition: () => Promise<boolean>, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     if (await condition()) return;
@@ -69,7 +71,7 @@ describe('EventQueue', () => {
 
     await bus.publish('product.upserted', { productIds: [11, 22] });
 
-    await waitFor(async () => received.length === 1);
+    await waitFor(async () => received.length === 1, 4_000);
     expect(received[0]).toEqual({ name: 'product.upserted', data: { productIds: [11, 22] } });
   });
 
