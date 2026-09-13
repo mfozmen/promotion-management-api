@@ -110,7 +110,7 @@ rewritten.
     lines; then a trimming pass hit the new ratio on every file and still
     deleted two load-bearing contracts, and twice in one round a fix landed
     in the code while the identical claim stood unchanged in the ADR.
-  - 8c (names match, commit `ef1d8e5`): `src/shared/http-error.ts` exported
+  - 8c (names match, commit `ef1d8e5`; the file and the symbol were both removed later with the http boundary): `src/shared/http-error.ts` exported
     one class, `AppError`; a reader who saw the name in a stack trace grepped
     for `app-error` and found nothing. Renumbering the section after the
     owner's ruling then dropped the "same thing is called the same thing
@@ -144,9 +144,9 @@ rewritten.
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
 - Human refinement: none needed — `impact-analyzer` confirmed no doc or config referenced the removed sections and every named script (`dev`, `test`, `test:cov`, `lint`) still exists in `package.json`.
 
-### 2026-09-12 — SonarCloud issue gate, then two owner-review corrections (PR #56)
+### 2026-09-12 — SonarCloud issue gate, two owner-review corrections, then deleted (PR #56)
 
-- Strategy: the free SonarCloud plan's quality gate conditions are ratings and coverage, so a CRITICAL code smell can pass it; asked for a CI step (`scripts/sonar-issues.mjs`) that queries the Sonar issue-search API directly for the pull request and fails the build on anything unresolved, enforcing REVIEW.md 13.6 in code instead of prose. Wrote the retry loop, then the owner's review found it did not retry a thrown fetch error, and that an issue accepted, won't-fixed or false-positived from the SonarCloud web interface still passed the gate. Both were fixed in commit `737ea88`, with `tests/sonar-issues.test.mjs` (a stubbed rejecting fetch) as the first test for the script — deliberately a `.mjs` file so it stays outside the TypeScript project and the `src/**` coverage scope. **The script was deleted before #56 merged and is in no branch;** the entry of 2026-09-12 titled "A CI gate built, reviewed twice, then deleted" records why, and nothing in the delivered system enforces 13.6 in code.
+- Strategy (**the script described here was deleted before #56 merged and is in no branch** — see "A CI gate built, reviewed twice, then deleted" below; nothing in the delivered system enforces 13.6 in code): the free SonarCloud plan's quality gate conditions are ratings and coverage, so a CRITICAL code smell can pass it; asked for a CI step (`scripts/sonar-issues.mjs`) that queries the Sonar issue-search API directly for the pull request and fails the build on anything unresolved, enforcing REVIEW.md 13.6 in code instead of prose. Wrote the retry loop, then the owner's review found it did not retry a thrown fetch error, and that an issue accepted, won't-fixed or false-positived from the SonarCloud web interface still passed the gate. Both were fixed in commit `737ea88`, with `tests/sonar-issues.test.mjs` (a stubbed rejecting fetch) as the first test for the script — deliberately a `.mjs` file so it stays outside the TypeScript project and the `src/**` coverage scope. **The script was deleted before #56 merged and is in no branch;** the entry of 2026-09-12 titled "A CI gate built, reviewed twice, then deleted" records why, and nothing in the delivered system enforces 13.6 in code.
 - Human refinement: owner asked for `sonar.qualitygate.timeout=300` set explicitly (commit `cae6bc2`) after asking why an open-ended wait was acceptable, and for the false "written by drizzle-kit rather than by hand" evidence clause removed from `REVIEW.md` 13.6 once PR #50 established `0000_write_store.sql` was hand-extended and `0001_seed_pricing_rules.sql` hand-written.
 
 ### 2026-09-12 — Agent rounds required by changed path (PR #46, `021de82`)
