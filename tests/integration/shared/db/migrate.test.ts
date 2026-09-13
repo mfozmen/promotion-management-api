@@ -1,6 +1,7 @@
+import { readFile } from 'node:fs/promises';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runMigrations } from '@src/shared/db/migrate.js';
+import { MIGRATIONS_FOLDER, runMigrations } from '@src/shared/db/migrate.js';
 import { adminUrl, cloneName, urlFor } from '../../env.js';
 
 // Not the cloned template every other file uses: this is the one test that needs an
@@ -47,6 +48,29 @@ describe('runMigrations', () => {
     expect(await tableNames()).toEqual(
       expect.arrayContaining(['products', 'promotions', 'pricing_rules']),
     );
+  });
+
+  // The migrator takes the single most recently applied row and applies every journal entry
+  // with a later timestamp; it never compares the hash it stores. So a migration merged out
+  // of order — generated before a sibling that merged first — is skipped silently, on this
+  // boot and every boot after, while `up --wait` still reports success. Counting is what
+  // catches it: a skipped migration is a missing row.
+  it('applies every migration in the journal, not only those after the newest applied one', async () => {
+    const journal = JSON.parse(
+      await readFile(`${MIGRATIONS_FOLDER}/meta/_journal.json`, 'utf8'),
+    ) as { entries: unknown[] };
+    const client = new Client({ connectionString: urlFor(database) });
+    await client.connect();
+
+    try {
+      const { rows } = await client.query<{ count: string }>(
+        'select count(*)::int as count from drizzle.__drizzle_migrations',
+      );
+
+      expect(Number(rows[0]?.count)).toBe(journal.entries.length);
+    } finally {
+      await client.end();
+    }
   });
 
   it('is a no-op on a database already current, so every boot can call it', async () => {

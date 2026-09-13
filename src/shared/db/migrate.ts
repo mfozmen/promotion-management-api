@@ -25,6 +25,11 @@ export async function runMigrations(connectionString: string): Promise<void> {
     max: 1,
     statement_timeout: 0,
     idle_in_transaction_session_timeout: 0,
+    // `statement_timeout: 0` is for the length of the work, not for the wait to start it.
+    // Without a lock timeout an `ALTER TABLE` behind one idle transaction waits for ever,
+    // holding the locks it already took and queueing every reader behind its request, and
+    // the container never exits so nothing restarts it.
+    options: '-c lock_timeout=10s',
   });
 
   try {

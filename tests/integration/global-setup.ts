@@ -1,7 +1,5 @@
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { Client, Pool } from 'pg';
-import { MIGRATIONS_FOLDER } from '@src/shared/db/migrate.js';
+import { Client } from 'pg';
+import { runMigrations } from '@src/shared/db/migrate.js';
 import { adminUrl, templateDatabase, urlFor } from './env.js';
 
 const STALE_AFTER_MS = 3_600_000;
@@ -51,14 +49,7 @@ export default async function setup(): Promise<void> {
   await admin.query(`create database "${templateDatabase}"`);
   await admin.end();
 
-  // Migrations get no timeouts: an index build aborted halfway leaves __drizzle_migrations
-  // unwritten, so the retry replays the same statement for ever.
-  const pool = new Pool({
-    connectionString: urlFor(templateDatabase),
-    max: 1,
-    statement_timeout: 0,
-    idle_in_transaction_session_timeout: 0,
-  });
-  await migrate(drizzle(pool), { migrationsFolder: MIGRATIONS_FOLDER });
-  await pool.end();
+  // Through the same function the api entrypoint calls, so the harness that proves the
+  // schema cannot drift from what production runs.
+  await runMigrations(urlFor(templateDatabase));
 }
