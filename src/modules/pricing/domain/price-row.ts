@@ -1,8 +1,8 @@
 import type { Engine } from 'json-rules-engine';
 
 import type { AdjustmentEvent } from './adjustment-event.js';
-import type { CompiledRuleSet } from './compiled-rule-set.js';
-import type { PricingOutcome } from './pricing-outcome.js';
+import type { CompiledRuleSet } from './dto/compiled-rule-set.js';
+import type { PricingOutcome } from './dto/pricing-outcome.js';
 import { type VendorRowFacts, vendorRowFacts } from './vendor-row-facts.js';
 
 const BPS = 10_000n;

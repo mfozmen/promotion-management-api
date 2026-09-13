@@ -1,4 +1,4 @@
-import type { DiscountCalculator } from './discount-calculator.js';
+import type { DiscountCalculator } from './dto/discount-calculator.js';
 
 export function pricingInputError(
   basePriceCents: number,

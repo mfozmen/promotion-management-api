@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRuleSetLoader } from '@src/modules/pricing/domain/rule-set-loader.js';
-import type { PricingRuleRow } from '@src/modules/pricing/domain/pricing-rule-row.js';
+import type { PricingRuleRow } from '@src/modules/pricing/domain/dto/pricing-rule-row.js';
 
 const at = (iso: string) => new Date(iso);
 
