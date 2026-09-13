@@ -330,7 +330,7 @@ Two modules landed in a day and the reviews kept finding the same three things: 
 ### Consequences
 
 - More files, each short; the tree is the index and a file name is a full answer to "what is this".
-- The promotion module, written before the last two rules, is renamed to match (`discount.ts`, `discounts.ts`, `discount-for.ts`, `calculate-effective-price.ts`) rather than grandfathered, because an exception survives longer than the reason for it.
+- The promotion module, written before the last two rules, is renamed to match (`discount.ts`, `discounts.ts`, `discount-for.ts`, `calculate-effective-price.ts`) rather than grandfathered, because an exception survives longer than the reason for it. `pricing-input-error.ts` goes away: it checked the base price and the discount value for one caller, so it becomes the private `validateBasePriceAndDiscount` inside `calculate-effective-price.ts` (8c.2 allows a file its own helpers), and its tests fold into that file's.
 - `REVIEW.md` 8c.2, 8c.7, 8c.8 and 8c.9 carry the enforceable form; a change here changes them in the same pull request.
 
 ### Rejected alternatives
