@@ -1,4 +1,5 @@
-import type { EventName, EventPayload } from './events.js';
+import type { EventName } from './event-name.js';
+import type { EventPayload } from './event-payload.js';
 
 /**
  * How a route emits an event, narrowed to the one call it makes.
