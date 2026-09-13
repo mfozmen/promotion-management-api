@@ -5,9 +5,9 @@ import { ReadModelUnavailableError } from '../db/read-model-unavailable-error.js
 /** The read model is the only store these routes may touch, so an unbuilt one
  *  is a 503 rather than a fallback query (ADR-0006). */
 export const requireReadModel =
-  (readModel: ProductReadRepository): RequestHandler =>
+  (products: ProductReadRepository): RequestHandler =>
   (_req, _res, next) => {
-    readModel
+    products
       .isReady()
       .then((ready) => {
         next(

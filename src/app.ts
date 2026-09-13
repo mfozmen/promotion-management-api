@@ -11,7 +11,7 @@ import { httpLogger } from './shared/http/http-logger.js';
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
 
-export function createApp(logger: Logger, readModel: ProductReadRepository): Express {
+export function createApp(logger: Logger, products: ProductReadRepository): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');
@@ -25,9 +25,9 @@ export function createApp(logger: Logger, readModel: ProductReadRepository): Exp
   api.use(
     '/products',
     productReadRoutes({
-      readModel,
-      find: new FindProductQuery(readModel),
-      list: new ListProductsQuery(readModel),
+      products,
+      find: new FindProductQuery(products),
+      list: new ListProductsQuery(products),
     }),
   );
   app.use('/api', api);

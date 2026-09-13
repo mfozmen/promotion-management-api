@@ -8,14 +8,14 @@ import type { ProductReadRepository } from '../db/product-read-repository.js';
 import { requireReadModel } from './require-read-model.js';
 
 interface Queries {
-  readModel: ProductReadRepository;
+  products: ProductReadRepository;
   find: FindProductQuery;
   list: ListProductsQuery;
 }
 
-export function productReadRoutes({ readModel, find, list }: Queries): Router {
+export function productReadRoutes({ products, find, list }: Queries): Router {
   const router = Router();
-  router.use(requireReadModel(readModel));
+  router.use(requireReadModel(products));
 
   router.get('/', validate({ query: listQuery }), (req, res, next) => {
     list

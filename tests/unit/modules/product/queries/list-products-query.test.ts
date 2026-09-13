@@ -14,7 +14,7 @@ const row = (id: string, price = '10000') => ({
 
 const input = { order: 'asc', page: 1, pageSize: 20 } as const;
 
-function readModel(over: Partial<Record<string, unknown>> = {}) {
+function products(over: Partial<Record<string, unknown>> = {}) {
   return {
     page: () => Promise.resolve(['1']),
     count: () => Promise.resolve(1),
@@ -25,7 +25,7 @@ function readModel(over: Partial<Record<string, unknown>> = {}) {
 
 describe('ListProductsQuery', () => {
   it('builds the page a client reads, with the total beside it', async () => {
-    const result = await new ListProductsQuery(readModel()).execute(input);
+    const result = await new ListProductsQuery(products()).execute(input);
 
     expect(result).toMatchObject({ page: 1, pageSize: 20, total: 1 });
     expect(result.items).toHaveLength(1);
@@ -33,7 +33,7 @@ describe('ListProductsQuery', () => {
 
   it('asks for no category when a shopper names none, and composes no key', async () => {
     const asked: unknown[] = [];
-    const model = readModel({
+    const model = products({
       page: (arg: { category?: string }) => {
         asked.push(arg.category);
 
@@ -53,7 +53,7 @@ describe('ListProductsQuery', () => {
 
   it('passes the category a shopper named to both reads', async () => {
     const asked: unknown[] = [];
-    const model = readModel({
+    const model = products({
       page: (arg: { category?: string }) => {
         asked.push(arg.category);
 
@@ -73,7 +73,7 @@ describe('ListProductsQuery', () => {
   });
 
   it('drops a member whose entry is gone rather than failing the page', async () => {
-    const model = readModel({ findAll: () => Promise.resolve([row('1'), {}]) });
+    const model = products({ findAll: () => Promise.resolve([row('1'), {}]) });
 
     const result = await new ListProductsQuery(model).execute(input);
 
@@ -82,7 +82,7 @@ describe('ListProductsQuery', () => {
 
   it('offsets by the page a shopper asked for', async () => {
     let seen = -1;
-    const model = readModel({
+    const model = products({
       page: ({ offset }: { offset: number }) => {
         seen = offset;
 
@@ -99,7 +99,7 @@ describe('ListProductsQuery', () => {
 
   it('lets the store own answer through rather than turning it into a page', async () => {
     const unreachable = new Error('closed');
-    const model = readModel({ page: () => Promise.reject(unreachable) });
+    const model = products({ page: () => Promise.reject(unreachable) });
 
     const raised = await new ListProductsQuery(model)
       .execute(input)

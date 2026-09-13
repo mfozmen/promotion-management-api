@@ -13,18 +13,18 @@ const stored = {
   stockQuantity: '3',
 };
 
-const readModel = (find: () => Promise<Record<string, string>>) =>
+const products = (find: () => Promise<Record<string, string>>) =>
   ({ find }) as unknown as ProductReadRepository;
 
 describe('FindProductQuery', () => {
   it('answers the product a shopper asked for, mapped to the view', async () => {
-    const view = await new FindProductQuery(readModel(() => Promise.resolve(stored))).execute(7);
+    const view = await new FindProductQuery(products(() => Promise.resolve(stored))).execute(7);
 
     expect(view).toMatchObject({ id: 7, sku: 'SKU-7', promotion: null });
   });
 
   it('owns the miss: a product the read model does not hold is its 404', async () => {
-    const raised = await new FindProductQuery(readModel(() => Promise.resolve({})))
+    const raised = await new FindProductQuery(products(() => Promise.resolve({})))
       .execute(7)
       .catch((error: unknown) => error);
 
@@ -35,7 +35,7 @@ describe('FindProductQuery', () => {
 
   it('lets the store own answer through, so an outage is not a 404', async () => {
     const unreachable = new (class extends Error {})('closed');
-    const raised = await new FindProductQuery(readModel(() => Promise.reject(unreachable)))
+    const raised = await new FindProductQuery(products(() => Promise.reject(unreachable)))
       .execute(7)
       .catch((error: unknown) => error);
 
@@ -44,7 +44,7 @@ describe('FindProductQuery', () => {
 
   it('refuses a row the writer got wrong rather than serving it', async () => {
     const raised = await new FindProductQuery(
-      readModel(() => Promise.resolve({ id: '7', name: 'no prices here' })),
+      products(() => Promise.resolve({ id: '7', name: 'no prices here' })),
     )
       .execute(7)
       .catch((error: unknown) => error);
