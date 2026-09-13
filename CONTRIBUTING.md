@@ -24,7 +24,7 @@ tests/
   unit/         mirrors src/, one test file per source file
   integration/  real PostgreSQL and Redis
   e2e/
-scripts/        developer commands the image does not carry: the demo seed, the DDL export
+scripts/        developer commands the image does not carry: the demo seed
 fixtures/       sample input files
 ```
 

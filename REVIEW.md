@@ -1022,8 +1022,8 @@ said, thirty lines from anything either side edited, that the process had none.
 or nothing type-checks it; `eslint .` walks the whole tree and gives the opposite
 impression. `tsc --noEmit --listFiles` answers the question.
 
-Evidence: `scripts/` arrived with two TypeScript files while `include` still read
-`["src", "tests"]`; `--listFiles` counted none of them.
+Evidence: `scripts/` arrived while `include` still read `["src", "tests"]`, so
+`--listFiles` counted nothing in it while `eslint .` walked it clean.
 
 ## 13b. The rulebook learns
 
