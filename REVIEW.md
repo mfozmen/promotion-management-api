@@ -687,9 +687,11 @@ calculation". The alias clause is the owner's reading of 2026-09-13 on PR #29,
 written down here so #30, #37 and #39 are judged against the rulebook rather
 than against a comment thread (13b.1).
 
-8c.3 A file is named for its role as a kebab-case noun, `<subject>-<role>.ts`,
-never for the verb it exports. `request-validator.ts`, not `validate.ts`, beside
-`error-handler.ts`.
+8c.3 A file is named for the one thing it exports (8c.2, 8c.6), in kebab-case:
+a noun with its subject for a type, interface or object (`request-validator.ts`,
+`error-handler.ts`), the whole verb phrase for a function (`compile-rules.ts`,
+`calculate-effective-price.ts`, 8c.9). Never a bare verb with no subject:
+`validate.ts` says neither what is validated nor what the file holds.
 
 Evidence: `src/middleware/validate.ts` exported `validate()` and read as an
 instruction rather than a thing.
