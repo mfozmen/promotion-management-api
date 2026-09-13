@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_CATEGORY } from './max-category.js';
 import { MAX_OFFSET } from './max-offset.js';
 import { MAX_PAGE_SIZE } from './max-page-size.js';
 
@@ -9,7 +10,9 @@ const digits = (max: number) =>
 
 export const listQuery = z
   .strictObject({
-    category: z.string().min(1).optional(),
+    // Bounded because it becomes a Redis key on the busiest path in the system,
+    // and its length is the caller's to choose.
+    category: z.string().min(1).max(MAX_CATEGORY).optional(),
     // One sort exists, and naming it is how a client asks for the default rather
     // than discovering later that the parameter was ignored.
     sort: z.literal('effectivePrice').optional(),

@@ -23,6 +23,7 @@ describe('findProduct', () => {
     const raised = await findProduct(redis, 7).catch((error: unknown) => error);
 
     expect((raised as Error).message).toContain('product:7');
+    expect((raised as Error).name).toBe('ReplyError');
   });
 
   it('calls a product the index still lists a rebuild, not a missing product', async () => {

@@ -179,6 +179,14 @@ describe('GET /api/products', () => {
     });
   });
 
+  it('rejects a category longer than a label, which becomes a key', async () => {
+    await seedProducts(redis(), [product({ id: 1 })]);
+
+    const res = await request(app()).get(`/api/products?category=${'k'.repeat(65)}`);
+
+    expect(res.status).toBe(400);
+  });
+
   it('rejects a page size above the cap', async () => {
     await seedProducts(redis(), [product({ id: 1 })]);
 

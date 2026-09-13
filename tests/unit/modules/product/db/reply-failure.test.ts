@@ -34,18 +34,31 @@ describe('replyFailure', () => {
     expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
   });
 
-  it('keeps the driver code when it names the key, which is where an outage shows', () => {
+  it('passes a transport failure through whole, key or no key', () => {
     const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:6379'), {
       code: 'ECONNREFUSED',
+      syscall: 'connect',
     });
 
-    const raised = replyFailure(refused, 'product:7') as HttpError;
+    const raised = replyFailure(refused, 'category:knitwear') as HttpError;
 
-    // The log whitelist reports the root of the cause chain, so rebuilding the
-    // error to carry the key threw away the field the error handler documents
-    // as the one place an outage shows.
-    expect((raised.cause as { code?: unknown }).code).toBe('ECONNREFUSED');
-    expect((raised.cause as Error).message).toContain('product:7');
+    // Rebuilding it to carry a key hand-copied the fields the log whitelist
+    // emits, which dropped `code` once already and would drop the next field
+    // the whitelist grows. The key is not evidence here either: it names what
+    // was being read, not what is broken.
+    expect(raised.cause).toBe(refused);
+  });
+
+  it('does not let a caller write the key an operator reads', () => {
+    // The listing's key is `category:` plus a query parameter, so attaching it
+    // on this branch would put the caller's text in an operator's line — and
+    // let them forge ` at product:7` onto the end of it.
+    const refused = new Error('connect ECONNREFUSED 127.0.0.1:6379');
+
+    const raised = replyFailure(refused, 'category:boots at product:7') as HttpError;
+
+    expect(JSON.stringify(raised.cause)).not.toContain('product:7');
+    expect((raised.cause as Error).message).toBe('connect ECONNREFUSED 127.0.0.1:6379');
   });
 
   it('does not read a property off something that is not an error', () => {
