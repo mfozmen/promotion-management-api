@@ -1,8 +1,6 @@
 import { readModelUnavailable } from './read-model-unavailable.js';
 
-/** Which Redis failures are permanent, and why only this branch names a key:
- *  ADR-0006. The short of it: the class is shared with `-LOADING` and friends,
- *  so the string decides. */
+/** ADR-0006. */
 export function replyFailure(error: unknown, key?: string): unknown {
   if (!(error instanceof Error) || !error.message.startsWith('WRONGTYPE')) {
     return readModelUnavailable(error);

@@ -19,8 +19,7 @@ interface Page {
  *  product. With REV, Redis expects the maximum first. */
 export async function listProducts(redis: Redis, { category, order, page, pageSize }: Page) {
   const key = category === undefined ? ALL_PRODUCTS : categoryKey(category);
-  // Named to an operator only when we composed it, never when a caller did
-  // (ADR-0006).
+  // ADR-0006.
   const ours = category === undefined ? ALL_PRODUCTS : undefined;
   const offset = (page - 1) * pageSize;
 
