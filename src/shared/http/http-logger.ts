@@ -21,7 +21,7 @@ export function httpLogger(instance: Logger): HttpLogger {
     genReqId: correlationId,
     // Binds the id as `reqId` on `req.log`, so a handler's own lines carry it.
     quietReqLogger: true,
-    // Headers, body and query string never reach a line (ADR-0009).
+    // Headers, body and query string never reach a line (ADR-0010).
     serializers: {
       req: (req: IncomingMessage) => ({
         id: req.id,

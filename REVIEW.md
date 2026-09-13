@@ -532,14 +532,11 @@ a timeout. A flaky test is a finding, not a retry.
 parallel. Shared mutable fixtures across files are a finding.
 
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
-the tree mirrors `src/` and one test file per source file. No test file at
-`tests/` root, no per-module top-level directories. A helper that more than one
-layer imports — a fake, a capture, a builder — is not a test file and lives at
-`tests/<subject>-<role>.ts`, because both layers import it and it belongs to
-neither; `helpers/` and `utils/` are still banned (8c.4).
-
-Evidence: `tests/promotion/`, `tests/unit/` and a root-level test file on three
-open branches at once (PRs #29, #39).
+the tree mirrors `src/`, one test file per source file, with the same name
+(`x.ts` → `x.test.ts`) and the export's name as the top-level `describe`.
+Nothing at `tests/` root, no per-module top-level directories. A test of a
+tree-wide property with no source file (`migration-journal.test.ts`) is named
+for the property, at the path of what it guards. ADR-0008.
 
 7.8 **A test imports its subject through the `@src/*` alias, production code
 never does.** `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'`
@@ -639,6 +636,16 @@ comment, so a violation blocks like any other.
 non-obvious invariant, a unit that is not in the name, a reason the obvious
 approach was rejected, a shortcut's ceiling, a contract a caller must honour.
 
+8b.1a The test is the reader, not the writer. Code a reader understands on
+its own carries no comment. Code a reader cannot understand without help
+carries one comment, simpler than the code it explains — one sentence, plain
+words. A comment that is harder to read than the code, or that a reader has to
+parse twice, is a finding: it adds nothing and costs attention. When the
+explanation needs a paragraph, the code needs a better name or a smaller
+method first, and the paragraph belongs in ADR.md (8b.3). Evidence: PR #39
+went through five comment-trimming rounds; each round's survivors were
+paragraphs that explained the ADR, not the line below them.
+
 Evidence: four source files in flight carried between 34 and 67 per cent
 comment lines, all of them passing the rule this one replaced.
 
@@ -682,7 +689,8 @@ fix changes behaviour, the `ADR.md` sentence and the design-spec paragraph that
 described the old behaviour change in the same commit; leaving the code right
 and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
-rule or a section that lands in another pull request reads as fact and is not.
+rule or a section that lands in another pull request reads as fact and is not. An ADR states the decision and the current state; it carries no pull
+request, commit or issue number — that history is git's.
 
 8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
 properties) carry no explanatory comments; the entry says what it does. At most
@@ -722,12 +730,10 @@ calculation". The alias clause is the owner's reading of 2026-09-13 on PR #29,
 written down here so #30, #37 and #39 are judged against the rulebook rather
 than against a comment thread (13b.1).
 
-8c.3 A file is named for its role as a kebab-case noun, `<subject>-<role>.ts`,
-never for the verb it exports. `request-validator.ts`, not `validate.ts`, beside
-`error-handler.ts`.
-
-Evidence: `src/middleware/validate.ts` exported `validate()` and read as an
-instruction rather than a thing.
+8c.3 A file is named for the one thing it exports, in kebab-case, the whole
+name: the class, interface or type name, or the verb phrase of a free function. A bare
+verb with no subject (`validate.ts`) is a finding. ADR-0008. Evidence:
+`src/middleware/validate.ts` read as an instruction rather than a thing.
 
 8c.4 Names say what a thing is, not how it was built or when it arrived. No
 `utils`, `helpers`, `common`, `misc`, `manager`, `base` or `new` in a file or
@@ -755,10 +761,32 @@ ways in one section: "at most one active promotion per product", "at most one
 applied promotion", and "product level wins". No single name ran through the
 prose, so a rename had nothing to follow.
 
-8c.7 Directories are named for a role, never for a kind of syntax. Inside a
-module: `domain/` (types and pure rules, importing no store and no framework),
-`db/`, `http/`, `jobs/`; in `src/shared/db/schema/` one file per table. No
-`models/`, `types/`, `interfaces/`, `classes/`. The tree is in CONTRIBUTING.md.
+8c.7 Directories are named for a role (`domain/`, `db/`, `http/`, `jobs/`),
+never for a kind of syntax: `models/`, `types/`, `interfaces/`, `classes/`,
+`utils/`, `helpers/` are findings. The tree is in ADR-0008.
+
+8c.8 The one exception to 8c.7: `domain/dto/` holds every shape — type
+aliases, interfaces, zod schemas, message payloads — and `domain/` holds only
+behaviour, the classes of 8c.9. No other directory is split by syntax. ADR-0008.
+
+8c.9 Behaviour is a class named for its role (`EffectivePriceCalculator`),
+its methods start with a verb (`calculate`), its collaborators arrive through
+the constructor. A class with no state, no collaborator and no interface is a
+finding: it is a function. An interface is the noun of its role (`Discount`),
+an implementation the variant plus that noun (`PercentageDiscount`). An
+abstract base with fewer than two subclasses, a static-only class, or a helper
+with one user in its own file instead of a private method, is a finding.
+ADR-0008.
+
+8c.10 `src/shared/` is infrastructure: a file there whose name carries a
+business noun (`promotions.ts`, `pricing-rules.ts`) is a finding; it belongs to
+the module that owns it, under `db/schema/`. Migrations are the exception and
+stay in `shared/db/`. ADR-0008.
+
+8c.11 A class reads top-down: fields, constructor, public methods, then private
+methods. What a caller can use is at the top; how it is done is below. ESLint
+`@typescript-eslint/member-ordering` holds it from the pull request that lands
+the first classes (#39). ADR-0008.
 
 ---
 
