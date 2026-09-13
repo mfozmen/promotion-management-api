@@ -680,7 +680,11 @@ described the old behaviour change in the same commit; leaving the code right
 and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not. An ADR states the decision and the current state; it carries no pull
-request, commit or issue number — that history is git's.
+request, commit or issue number — that history is git's. The check for that is
+a reader, not a pattern: a quoted error message or a sample value carries
+digits and a hexadecimal-looking string without citing anything, and no
+tightening tells the two apart, because the difference is what the number
+refers to. Grep to find candidates, then read them.
 
 8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
 properties) carry no explanatory comments; the entry says what it does. At most
