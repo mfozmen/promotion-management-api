@@ -62,7 +62,7 @@ a server you launched by hand.
 
    ```
    docker compose -p pma-e2e down -v       # drops this run's volumes, not the owner's
-   docker compose -p pma-e2e up -d --wait  # non-zero if any service is unhealthy
+   docker compose -p pma-e2e up -d --wait --wait-timeout 300  # non-zero if any service is unhealthy
    ```
 
    A run that inherits an earlier run's rows measures a state nobody can
