@@ -34,7 +34,11 @@ interface Batch {
  * same prices — the read model is idempotent and silence is not.
  */
 export class ChunkProcessor {
-  static readonly DEFAULT_BATCH_SIZE = 500;
+  /**
+   * The batch the acceptance criteria name, and the number the memory budget was
+   * measured against: 1 000 rows held at once, one statement, one announcement.
+   */
+  static readonly DEFAULT_BATCH_SIZE = 1000;
   static readonly DEFAULT_LEASE_MS = 90_000;
 
   private readonly db: Db;

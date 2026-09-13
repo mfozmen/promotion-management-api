@@ -38,9 +38,16 @@ export default async function setup(): Promise<void> {
   const admin = new Client({ connectionString: adminUrl });
   try {
     await admin.connect();
-  } catch {
+  } catch (error) {
+    // The driver's own words, because this guard cannot tell why the connect
+    // failed and its message used to claim it could. A missing database answers
+    // `3D000` from a server that is running and reachable, and was reported here
+    // as an unreachable server — which sends the reader to the ports, where
+    // nothing is wrong. Say what happened, then what usually causes it.
+    const cause = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `PostgreSQL not reachable at ${adminUrl}; start it with the docker run one-liner in README.md, or point TEST_DATABASE_URL at the compose server`,
+      `cannot use PostgreSQL at ${adminUrl}: ${cause}. The server, the port and the database are three separate failures; start the stores with the command in README.md, or point TEST_DATABASE_URL at a database that exists.`,
+      { cause: error },
     );
   }
   await sweepStaleClones(admin);
