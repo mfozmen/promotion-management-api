@@ -178,12 +178,17 @@ services:
     image: postgres:16-alpine
     profiles: [test]
     environment:
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: promotion
     ports:
       - '127.0.0.1:55432:5432'
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      test:
+        [
+          'CMD-SHELL',
+          'psql --quiet --no-align --tuples-only -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
+        ]
       interval: 5s
       timeout: 3s
       retries: 10

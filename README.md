@@ -25,7 +25,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
-- Docker with the Compose plugin (PostgreSQL 16, Redis 7, and the `api` image built from this repository's `Dockerfile`, which also runs the three worker services, all run locally from `docker-compose.yml`), plus one throwaway Redis on 6399 for the queue integration tests, which use no mocks (REVIEW.md 7.3)
+- Docker with the Compose plugin (PostgreSQL 16, Redis 7, and the `api` image built from this repository's `Dockerfile`, which also runs the three worker services, all run locally from `docker-compose.yml`), plus the `test` profile's two throwaway stores — PostgreSQL on 55432 and Redis on 6399 — for the integration tests, which use no mocks (REVIEW.md 7.3)
 
 ## Run it
 
@@ -38,9 +38,14 @@ npm run up             # PostgreSQL, Redis, the api, three workers and the test 
 
 The API is on http://127.0.0.1:3100 and BullMQ's dashboard on
 http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data; add `-v` to that compose command to
-drop the volumes too. PostgreSQL creates its database on first start only, so a test store
-that predates a change to `POSTGRES_DB` needs `docker compose --profile test rm -sfv
-postgres-test` rather than a restart.
+drop the volumes too.
+
+If `npm run up` stops with `postgres-test` unhealthy, that is the expected failure for a test
+store older than the last change to `POSTGRES_DB`: PostgreSQL creates the database only when it
+initialises its volume, and the healthcheck queries the database by name, so a store holding the
+old name never reports healthy instead of handing the suite a server without it. The fix is
+`docker compose --profile test rm -sfv postgres-test`, which drops the volume; a restart keeps it
+and changes nothing (ADR-0003).
 
 `event-handler`, `ingestion-worker` and `reconciler` run from the same image as `api`, one
 command each. Each waits on all three of `postgres`, `redis` and `api` being healthy; the gate
@@ -53,15 +58,17 @@ mistaken for a drained one; no worker holds a subset of the queues. On `docker c
 closes the queue within `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s) and exits anyway if it has not closed
 by then. `api` is given the same budget but spends it on its HTTP drain and then closes the queue
 and the pool with no bound of their own, so on `api` the grace period is a ceiling rather than a
-bound: exit 137 with no `shutdown complete` line means it hung there. Every service is given
+bound: exit 137 with no `shutdown complete` line means it hung there. Those four services — `api`
+and the three workers, the only ones that close a queue — are given
 `stop_grace_period: 15s` so a worker's bound can be reached and logged: Docker's default grace is
 also 10 s, which would kill the process at the same moment as the warning explaining why the stop
 is slow (ADR-0003). The projection arrives with issue #12, the chunk processor
 with #105, and the reconciler's boundary sweep with #18, in its own pull request under
 `src/workers/reconciler/`. They carry no healthcheck for the same reason: until a worker has
 work, a check could only confirm the process is alive, which `up --wait` already does. All three
-run under `restart: unless-stopped`, like every other service here — a worker that exits is
-restarted, one you stop by hand stays stopped.
+run under `restart: unless-stopped`, as `postgres`, `redis` and `api` do — a worker that exits is
+restarted, one you stop by hand stays stopped. The `tools` browsers and the test stores set no
+restart policy, so Docker's default leaves them stopped once they stop.
 
 `ingestion-worker` is capped at 256 MiB and half a CPU, which is the case study's own
 constraint rather than a setting: Scenario A's claim is that a 500 000-row import survives that
@@ -111,11 +118,11 @@ Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT 
 
 [`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the `ingestion-worker` container runs but registers no consumer, and the upload endpoint and chunk worker arrive with issue #16.
 
-Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one — `npm run up` starts it, along with the throwaway PostgreSQL the integration layer clones from. Both are in the `test` profile and hold nothing worth keeping.
+Tests and checks. The whole integration layer runs against the `test` profile's own PostgreSQL and Redis, never the ones `api` and the workers use: the queue and shutdown tests obliterate the queues they touch, and the layer clones a database per test file. `npm run up` starts both, and neither holds anything worth keeping.
 
 ```bash
 npm test
-npm run test:cov # needs a PostgreSQL and that Redis, see below
+npm run test:cov # needs both test stores, see below
 npm run lint
 ```
 
@@ -123,23 +130,21 @@ npm run lint
 
 The suite is split into layers, so the one that needs nothing can run anywhere:
 
-| Layer                              | Command                    | Needs                                                                                                            | Runs                        |
-| ---------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| unit (`tests/unit/`)               | `npm test`                 | nothing                                                                                                          | pre-commit hook, everywhere |
-| integration (`tests/integration/`) | `npm run test:integration` | PostgreSQL, the compose Redis (database 9) and, for the queue and shutdown tests only, a throwaway Redis on 6399 | CI, before every push       |
-| both, with coverage                | `npm run test:cov`         | the same two                                                                                                     | CI (the 100 % gate)         |
+| Layer                              | Command                    | Needs                                                                                    | Runs                        |
+| ---------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing                                                                                  | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | the `test` profile's PostgreSQL on 55432 and Redis on 6399, both started by `npm run up` | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | the same two                                                                             | CI (the 100 % gate)         |
 
-The integration tests run against a real PostgreSQL and a real Redis, never a mock. Point them at one with
-`TEST_DATABASE_URL` (default `postgres://postgres:postgres@127.0.0.1:55432/promotion`). That
-default is not the compose server: `docker-compose.yml` publishes 5432 with the `.env`
-credentials, so either reuse it with
-`TEST_DATABASE_URL=postgres://promo:promo@localhost:5432/promotion`, or keep the harness's
-template and clone databases out of the compose volume with a throwaway server:
-
-```bash
-docker run -d --rm --name pma-db-test -p 55432:5432 \
-  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promotion postgres:16-alpine
-```
+The integration tests run against a real PostgreSQL and a real Redis, never a mock. The defaults name
+the `test` profile's two stores — `TEST_DATABASE_URL`
+`postgres://postgres:postgres@127.0.0.1:55432/promotion` and `TEST_REDIS_URL`
+`redis://127.0.0.1:6399/9` — so after `npm run up` the suite needs no override; CI sets both
+explicitly against its own services. Each host is `127.0.0.1` rather than `localhost` because Node
+resolves `localhost` to `::1` first and compose publishes IPv4 only. Pointing
+`TEST_DATABASE_URL` at the application's own server
+(`postgres://promo:promo@127.0.0.1:5432/promotion`) works and puts the clones in the
+`postgres-data` volume you are developing against.
 
 The integration project's `globalSetup` applies `src/shared/db/migrations/*.sql` to a template
 database once; each test file then clones that template, so files stay isolated and can run in
