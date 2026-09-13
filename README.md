@@ -133,8 +133,12 @@ src/modules/         one module per directory, each owning its tables under db/s
 src/shared/db/       the client, the migrator and the SQL migrations
 src/shared/http/     the HTTP boundary: the error type and its status table, the error handler,
                      the not-found handler, the request validator and the request logger
+src/shared/queue/    the BullMQ queues (EventQueue) and their names
 src/shared/          config.ts, logger.ts (the root logger), serialize-error.ts (the error
-                     whitelist every log site uses), max-message.ts
+                     whitelist every log site uses), max-message.ts, graceful-shutdown.ts
+src/events/          the event catalogue: event-registry.ts (name to payload schema) and
+                     event-routing.ts (name to queue)
+src/workers/         what is not a module: today the reconciler's own table under db/schema/
 tests/               unit, integration and e2e, each layer mirroring src/
 docs/                design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```

@@ -981,6 +981,25 @@ that passed. The others were a label-strip step that removed no labels,
 could not fail (11.5). The question that separates them is not "did it pass"
 but "what would make it fail, and has anyone seen it do that".
 
+13.9 **After a merge, re-read the prose against the merged tree — a conflict
+marker is not the list of what the merge broke.** A merge keeps both sides'
+text, and the sentences most likely to be wrong afterwards are the ones that
+never conflicted: one side's code makes the other side's claim false while
+touching none of its lines, so git has nothing to ask about and the diff shows
+one clean addition. The check is claim by claim against the tree, not marker by
+marker against the patch, and it is owed by whoever performs the merge rather
+than by whoever wrote either sentence.
+
+Evidence: the queue story added a `SIGTERM` handler that drains in flight
+requests; the HTTP branch's ADR said, thirty lines from anything either side
+edited, that the process had no `SIGTERM` handling and that draining would land
+with the first real endpoint. Both were true when written, neither conflicted,
+and the merged record told a reader the opposite of what the merged code did.
+The union resolution has the same shape from the other direction: keeping both
+sides of a documentation hunk reads as the safe default and is the mirror image
+of taking a side, and on one README it duplicated three sections and let a
+stale copy overwrite a live one.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
