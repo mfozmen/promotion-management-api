@@ -19,11 +19,7 @@ const ROOTS = ['src/', 'tests/', 'docs/', '.claude/', '.github/'];
 
 const BACKTICKED = /`([^`\s]+)`/g;
 
-/**
- * Paths a document names on purpose without claiming they exist. Each needs a reason, and
- * the list staying short is the signal: a long one means the check has stopped meaning
- * anything.
- */
+/** Paths a document names on purpose without claiming they exist; each needs a reason. */
 const NAMED_BUT_ABSENT = new Map([
   ['tests/e2e', 'a layer the layout rule reserves; no such test is written yet'],
   [
@@ -59,7 +55,6 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-// A stale path describes structure rather than behaviour, so nothing else here goes red on it.
 describe('the documents', () => {
   it.each(DOCUMENTS)('name only paths that exist, in %s', async (document) => {
     const missing: string[] = [];
