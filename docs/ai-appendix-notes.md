@@ -734,9 +734,50 @@ Each was written carefully, each was wrong, and none was caught by reading it ag
 - Resolution: pinned repo-wide on `main` rather than inside the branch that found it: one file nobody else edits, so it costs no reconcile, and a zero-blob change affecting 118 checkouts earns its own commit message. The branch that found it pinned only `*.sql` and deliberately left the wide version alone rather than widening as a side effect.
 - Lesson worth keeping beyond the fix, because it says which future check is safe: anything that asks **git** whether two things differ is immune, since git normalises both sides — the schema-drift CI step ends in `git diff --exit-code` and never saw this. Anything that asks **Node** is a coin flip by platform. The repository had exactly one such comparison and it was a day old.
 
+### 2026-09-13 — Line endings, invisible rather than platform-split
+
+- Challenge: a generated CSV fixture and the SQL files carried CRLF on a Windows checkout, and a stray `\r` reached the parsed values.
+- Verification: not a red test. The CSV test was green on the author's machine, whose git has `core.autocrlf=true`, because the stray `\r` landed on `stock_quantity` — a field the assertion does not compare. It was invisible everywhere, on every platform, rather than red for some contributors and green for others. That is the sharper point: a passing test proves the assertion, not the file, and the defect was found by reading the fixture rather than by running anything.
+- Resolution: `.gitattributes` pinned `*.sql` and `*.csv` to `eol=lf`, later superseded repo-wide by `* text=auto eol=lf` (#95), at which point the branch's narrower pins were deleted as redundant; and the DDL builder normalises `\r\n` before comparing, so the drift check is not platform-dependent.
+
+### 2026-09-13 — Provenance half-cleared
+
+- Challenge: a demo seed's upsert cleared `ingest_job_id` and `ingest_source_offset` when it overwrote an ingested row's price, and left `pricing_rules_version` set. The row would then claim a rule set had produced a price the seed had just replaced, and a "reprice everything below the current version" sweep would skip it as current.
+- Verification: reasoning over the column set — every column that explains a price must be cleared with the price — confirmed by an integration test asserting all three are null after a re-seed over an ingested row.
+- Blind spot: the model treated "provenance" as the two columns carrying the constraint's name rather than the three the ADR groups under that heading. The constraint's scope was mistaken for the concept's.
+
+### 2026-09-13 — A documented failure mode that did not exist
+
+- Challenge: the README and a pull request body both stated that of two concurrent demo seeds, the loser aborts on `23P01`. It is a plausible story — there is an exclusion constraint on active category promotions and both runs insert one — and nothing in the code contradicted it. Written by the model, reviewed by a human, and wrong.
+- Verification: REVIEW.md 2.5 requires a concurrency claim to have a test that runs the operations in parallel and asserts the invariant. **Writing that test is what falsified the claim**; neither run ever failed. The mechanism is that both seeds contend on a thousand identical `sku` conflicts, and `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard, so the second seed is still inside the product statement when the first commits. It then deletes the first's promotion by name and inserts its own. An adversarial agent measured this independently against a live server rather than accepting the explanation: the blocked session was released at the other's `COMMIT`, and an `ON CONFLICT DO NOTHING` control returned unblocked in 1.4 ms, which is what proves the lock is doing the work. The `23P01` abort is real, but only for a promotion the seed does not own.
+- Before, verbatim: "Run one seed at a time: a promotion someone else created over `Electronics` is not deleted by name, and neither is the one a second seed running concurrently just wrote, so the loser aborts on `23P01` and rolls the whole file back rather than leaving half a catalogue."
+- After: "Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own."
+- Resolution: two integration tests racing both upsert paths, the mechanism named in a comment on the `ON CONFLICT` clause, the README corrected, and REVIEW.md 2.5 given the evidence plus the generalisation that the rule catches a wrong description as often as a wrong mechanism.
+
+### 2026-09-13 — The correction that needed correcting, twice
+
+- Challenge: the record of the entry above was itself wrong twice. First it defined the corrected README sentence against the claim it replaced ("safe rather than forbidden"), which describes the diff to a reader who never saw the old text. Then a rule's evidence said the test "ran them in parallel ten times", describing a loop the committed test does not contain; it was reworded, and the commit that reworded it changed the test in the same breath, leaving the new wording stale on arrival.
+- Verification: reading each record against the tree at the head under review, not against the change that produced it.
+- Lesson: a record states the current state of the tree. A sentence that only makes sense to someone holding the previous version is a diff, not documentation (REVIEW.md 8b.5).
+
+### 2026-09-13 — A review range a rebase had already invalidated, and a guard that reported itself
+
+- Challenge: a review agent was handed an incremental range whose start commit a rebase had made unreachable. `git log A..B` does not fail on an unreachable `A`; it reports all of `B`, so the agent would re-read the whole branch while reporting a cheap delta pass.
+- Verification: the ancestor check the agent definitions gained that afternoon exists for exactly this, and this was the first time it met a real rebase. Two of three agents handled it well — one re-read the whole branch and said so, one fell back to `git diff A B`, a tree-to-tree comparison that is a complete content delta and needs no ancestry. **The third reported the ancestor check as passing when it demonstrably could not have**, and that was found only because the coordinator verified the hashes afterwards.
+- Resolution: the fallback written into the definitions rather than left to each agent to invent.
+- Lesson, and it is the day's own lesson turned on the day's own fix: a guard whose evidence is the guarded party's report is the failure mode this project spent the day naming. It went unnoticed for several rounds because the agent's finding was correct — which is exactly when nobody checks the provenance. A second, at the process level: a rebase invalidates every agent's saved review point simultaneously and nothing announces it, so each rediscovers it separately on its own next run.
+
+### 2026-09-13 — Deletion sweeps are reliable on names and blind on implications
+
+- Challenge: removing the `details` array from the error envelope was a one-line change in the handler and a four-document change in the record. The sweep that removed the field from the code and from the two obvious documents left the envelope shape intact in the design spec, a deleted file still listed in CONTRIBUTING's source layout, and — the costlier gap — no sentence anywhere saying what a rejection now tells the caller, so the README read as if a field path were still returned.
+- Verification: a grep for the deleted identifiers across the documents, plus the documented-names test that checks backticked paths, `Foo.bar` members and `ADR-00NN` citations. The identifier grep caught the two stale shapes; **the test caught none of them, because an absent sentence has no name to search for**.
+- Lesson: the rule that catches the second class is "name an absence" — when a field disappears, the record has to say what the reader no longer gets, which no mechanical search can propose.
+
 ## Overall reflection
 
-- Estimated ratio: pending.
+- Estimated ratio: for the scripting and documentation work measured so far, the code is roughly 80 % AI-generated and lightly edited; the documentation started AI-generated and is closer to half human, because nearly every correction recorded above came from a human or an agent reading a claim against the tree.
+- The blind spot that repeats: the model's prose describes the mechanism it intended, and its own tests do not check its prose. Three of the five defects in the demo-seed work were in description rather than in behaviour, and the rule that caught the largest of them works by forcing a test to exist for a sentence.
+- A rule earns its place when running it costs less than the habit of not running it. REVIEW.md 13.8 says to parse a merged configuration file rather than read it; on one pull request that was skipped and the required CI check silently never ran — invisible, because an absent check produces no row. On the next merge, parsing all four configuration files took thirty seconds. The rule did not become more important between those two merges; it became cheaper than the alternative, because someone had seen what the alternative costs.
 - Key takeaway: pending.
 
 ### 2026-09-12 — Running estimate after the precedence round (PR #35, `beba163`)
