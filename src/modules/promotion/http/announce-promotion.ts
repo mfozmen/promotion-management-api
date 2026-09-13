@@ -17,18 +17,18 @@ export async function announcePromotion(
   deps: Announcement,
 ): Promise<void> {
   await settleAnnouncement(
-    deps.enqueue('promotion.changed', { promotionId: promotion.id }),
+    deps.publish('promotion.changed', { promotionId: promotion.id }),
     promotion.id,
     deps,
   );
   await Promise.all([
     settleAnnouncement(
-      deps.boundaries.schedule(promotion.id, 'expire', promotion.endsAt, now),
+      deps.scheduler.schedule(promotion.id, 'expire', promotion.endsAt, now),
       promotion.id,
       deps,
     ),
     settleAnnouncement(
-      deps.boundaries.schedule(promotion.id, 'activate', promotion.startsAt, now),
+      deps.scheduler.schedule(promotion.id, 'activate', promotion.startsAt, now),
       promotion.id,
       deps,
     ),

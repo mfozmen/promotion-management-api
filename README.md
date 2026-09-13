@@ -12,7 +12,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - zod (request validation at the boundary)
 - pino + pino-http (structured JSON logging)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
-- BullMQ on Redis 7 (event bus; see [ADR-0003](./ADR.md))
+- BullMQ on Redis 7 (event queue; see [ADR-0003](./ADR.md))
 - zod (payload validation at the queue boundary)
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
@@ -24,7 +24,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
-- Docker with the Compose plugin (PostgreSQL 16, Redis 7 and the `api` image built from this repository's `Dockerfile` all run locally from `docker-compose.yml`)
+- Docker with the Compose plugin (PostgreSQL 16, Redis 7 and the `api` image built from this repository's `Dockerfile` all run locally from `docker-compose.yml`), plus one throwaway Redis on 6399 for the queue integration tests, which use no mocks (REVIEW.md 7.3)
 
 ## Getting started
 
@@ -43,9 +43,9 @@ For a database that is not the compose one, `npm run db:migrate` applies the sam
 Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
 
 ```bash
-docker run -d --rm -p 6399:6379 redis:7-alpine
+docker run -d --rm -p 6399:6379 redis:7-alpine # only the integration layer needs it
 npm test
-npm run test:cov # needs a PostgreSQL, see below
+npm run test:cov # needs a PostgreSQL and that Redis, see below
 npm run lint
 ```
 
@@ -53,11 +53,11 @@ npm run lint
 
 The suite is split into layers, so the one that needs nothing can run anywhere:
 
-| Layer                              | Command                    | Needs                     | Runs                        |
-| ---------------------------------- | -------------------------- | ------------------------- | --------------------------- |
-| unit (`tests/unit/`)               | `npm test`                 | nothing                   | pre-commit hook, everywhere |
-| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL and Redis | CI, before every push       |
-| both, with coverage                | `npm run test:cov`         | real PostgreSQL and Redis | CI (the 100 % gate)         |
+| Layer                              | Command                    | Needs                                 | Runs                        |
+| ---------------------------------- | -------------------------- | ------------------------------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing                               | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL and the Redis on 6399 | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | the same two                          | CI (the 100 % gate)         |
 
 The integration tests run against a real PostgreSQL, never a mock. Point them at one with
 `TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
@@ -98,18 +98,30 @@ The compose file holds the two stores, the `api` service built from this reposit
 
 ### The queue
 
+Four queues, one per urgency class, and `eventRouting` maps an event to one of
+them — the caller never picks. `promotions` carries `promotion.changed` and the
+delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
+`ingestion.chunk`, and `maintenance` carries `readmodel.rebuild` and
+`reconciler.run`. The partition is what keeps a 500 000-row import's ~500
+announcements, or a full read-model rebuild, from sitting in front of a flash
+sale's `promotion.changed`: each queue gets its own worker, so two events that
+need different priority get different consumers rather than a priority number
+inside one queue (ADR-0003).
+
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
 each other (ADR-0007). `src/server.ts` reads both from `src/shared/config.ts` and
-passes the queue one to `EventBus.connect`, which is what makes the configuration
+passes the queue one to `EventQueue.connect`, which is what makes the configuration
 check that they differ mean something.
 
-`npm run dev` opens the queue connections at startup against `REDIS_URL`
-(default `redis://127.0.0.1:6379`), but it starts and serves without a Redis
+`npm run dev` opens the queue connections at startup against `REDIS_URL`, which
+has no default and is required (`.env.example` sets the compose one), but it
+starts and serves without a Redis
 there: connection errors are logged and every publish fails at its 2 s bound
 rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the
-HTTP server first and the queues last, and waits at most `SHUTDOWN_TIMEOUT_MS`
-(default 10 s, `0` exits immediately) for open connections before closing the
+HTTP server first and the queues last, and waits at most `SHUTDOWN_DRAIN_TIMEOUT_MS`
+(default 10 s; digits only, so a blank value is rejected rather than read as the
+`0` that exits immediately) for open connections before closing the
 queues anyway (ADR-0003).
 
 ## Project structure
@@ -214,6 +226,6 @@ The product and promotion endpoints land on PR #75 (`POST /api/products` in comm
 - All changes land through pull requests — no direct pushes to `main`.
 - A PR merges only once the required checks `ci` and `claude-review` are green. `ci` runs the SonarCloud scan and waits for its quality gate; the scan is skipped on a PR that touches nothing SonarCloud reads, which is why SonarCloud's own check is not required. Every SonarCloud finding on the PR is fixed before hand-off (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
 - `local-gates` runs on every PR and computes which local-agent labels apply; it does not block the merge, but its labels are read at hand-off. When the checks are green, the threads are resolved and the labels are on, the PR is labelled `needs-human-check` and the owner is mentioned; merge happens only after the owner's approving comment, as a squash.
-- Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check.
+- Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check, and a Warning is fixed in the pull request that found it rather than filed as an issue.
 
 See [ADR.md](./ADR.md) for architectural decisions, [Form 5 — AI Appendix](./Form%205_AI%20Appendix.docx) for AI usage documentation, and [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution process.

@@ -2,9 +2,9 @@ import { Router } from 'express';
 import { asyncRoute } from '../../../shared/http/async-route.js';
 import { validate } from '../../../shared/http/request-validator.js';
 import type { Db } from '../../../shared/db/client.js';
-import type { Enqueue } from '../../../shared/enqueue.js';
+import type { Publish } from '../../../events/publish.js';
 import { HttpError } from '../../../shared/http/http-error.js';
-import type { PromotionBoundaries } from '../domain/dto/promotion-boundaries.js';
+import type { PromotionScheduler } from '../domain/promotion-scheduler.js';
 import { assignPromotion } from '../db/assign-promotion.js';
 import { cancelPromotion } from '../db/cancel-promotion.js';
 import { findPromotion } from '../db/find-promotion.js';
@@ -35,7 +35,11 @@ const idFrom = (value: unknown): number => {
   return id;
 };
 
-export function promotionRoutes(db: Db, enqueue: Enqueue, boundaries: PromotionBoundaries): Router {
+export function promotionRoutes(
+  db: Db,
+  publish: Publish,
+  scheduler: PromotionScheduler,
+): Router {
   const router = Router();
 
   router.post(
@@ -48,8 +52,8 @@ export function promotionRoutes(db: Db, enqueue: Enqueue, boundaries: PromotionB
       // A draft has no target and no boundaries to schedule; it changes no price.
       if (outcome.promotion.status === 'active') {
         await announcePromotion(outcome.promotion, outcome.now, {
-          enqueue,
-          boundaries,
+          publish,
+          scheduler,
           log: req.log,
         });
       }
@@ -65,8 +69,8 @@ export function promotionRoutes(db: Db, enqueue: Enqueue, boundaries: PromotionB
       if (!outcome.ok) throw promotionWriteError(outcome);
 
       await announcePromotion(outcome.promotion, outcome.now, {
-        enqueue,
-        boundaries,
+        publish,
+        scheduler,
         log: req.log,
       });
       res.status(200).json(outcome.promotion);
@@ -82,7 +86,7 @@ export function promotionRoutes(db: Db, enqueue: Enqueue, boundaries: PromotionB
 
       // Only when this call is what cancelled it: a repeat is a success the
       // caller asked for, and re-announcing would fan out over the category again.
-      if (outcome.changed) await announceCancellation(id, { enqueue, boundaries, log: req.log });
+      if (outcome.changed) await announceCancellation(id, { publish, scheduler, log: req.log });
       res.status(200).json(outcome.promotion);
     }),
   );

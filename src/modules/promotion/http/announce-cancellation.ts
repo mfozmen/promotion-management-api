@@ -15,6 +15,6 @@ export async function announceCancellation(
   promotionId: number,
   deps: Announcement,
 ): Promise<void> {
-  await settleAnnouncement(deps.enqueue('promotion.changed', { promotionId }), promotionId, deps);
-  await settleAnnouncement(deps.boundaries.remove(promotionId), promotionId, deps);
+  await settleAnnouncement(deps.publish('promotion.changed', { promotionId }), promotionId, deps);
+  await settleAnnouncement(deps.scheduler.cancel(promotionId), promotionId, deps);
 }

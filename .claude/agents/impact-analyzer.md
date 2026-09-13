@@ -17,6 +17,28 @@ rule violated is a FAIL.
 The diff range. Default: `git diff main...HEAD`. If the caller names a PR,
 use `gh pr diff <n>`.
 
+## Re-running on a later head
+
+A pull request is reviewed many times. **After the first pass, review the delta,
+not the branch.** The caller names the commit you last reported on; if it does
+not, ask for it rather than re-deriving the whole branch.
+
+- Diff `<last-reviewed>..HEAD`, and read the earlier report's findings beside it.
+- A finding you raised before is closed when the delta closes it, and open
+  otherwise. Do not re-derive it from scratch, and do not re-report a finding
+  the caller has already routed elsewhere.
+- Re-check an untouched conclusion only when the delta gives you a reason to:
+  a renamed symbol, a changed rule, a claim the new commits contradict.
+- Say in the report which range you reviewed and which findings you carried
+  forward. A pass that silently re-reviewed everything costs the same as the
+  first one and hides what actually changed.
+
+**A verdict is about this pull request.** A finding that can only be fixed by
+code in another story is not a blocker here: name it once, say which component
+owns it, and do not raise it again on the next head. The issue number goes in
+your report and the pull request thread, never in the record itself (8b.5). Repeating it makes every round
+red for something this branch cannot close.
+
 ## Method
 
 1. **Inventory the change.** List every changed file and, inside each, every
@@ -29,10 +51,12 @@ use `gh pr diff <n>`.
    error type, units such as cents vs. major currency units).
 3. **Trace async and indirect dependents.** Async paths are invisible to the
    type checker, so look for them explicitly:
-   - queue producers and consumers, workers, cron or serverless handlers. Two
-     BullMQ queues exist on Redis database 1: `events`, carrying
-     `product.upserted`, `promotion.changed`, `readmodel.rebuild` and
-     `reconcile.run`, and `ingestion`, carrying `ingestion.chunk`. A promotion
+   - queue producers and consumers, workers, cron or serverless handlers. Four
+     BullMQ queues exist on the logical database `REDIS_QUEUE_DB` names
+     (default 1), one per urgency class: `promotions` carrying
+     `promotion.changed`, `catalog` carrying `product.upserted`, `ingestion`
+     carrying `ingestion.chunk`, and `maintenance` carrying `readmodel.rebuild`
+     and `reconciler.run`. A promotion
      boundary is a delayed `promotion.changed` under the write-once job id
      `promo:{id}:{activate|expire}`;
    - cache reads, writes and invalidations (key names, TTLs, what triggers a purge);
@@ -43,8 +67,8 @@ use `gh pr diff <n>`.
      `REDIS_QUEUE_DB` (1, BullMQ) kept separate, `PORT`, `UPLOAD_DIR`, and the
      ingestion knobs `INGESTION_CHUNK_BYTES`, `INGESTION_BATCH_SIZE`,
      `INGESTION_BUDGET_MS`, `INGESTION_LEASE_MS`, `INGESTION_MAX_FAILURES`,
-     `INGESTION_MAX_WAITING`, plus `SHUTDOWN_TIMEOUT_MS`, which `src/server.ts`
-     reads directly rather than through the config module. A new or renamed key must appear in
+     `INGESTION_MAX_WAITING` and `SHUTDOWN_DRAIN_TIMEOUT_MS`.
+     A new or renamed key must appear in
      `.env.example`, and in `docker-compose.yml` when a container reads it;
    - anything that recomputes effective prices or promotion state.
      For each, state whether the change alters what they read or produce.

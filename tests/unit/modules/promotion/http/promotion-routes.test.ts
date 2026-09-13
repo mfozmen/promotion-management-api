@@ -2,8 +2,8 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
 import type { Db } from '@src/shared/db/client.js';
-import type { Enqueue } from '@src/shared/enqueue.js';
-import type { PromotionBoundaries } from '@src/modules/promotion/domain/dto/promotion-boundaries.js';
+import type { Publish } from '@src/events/publish.js';
+import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-scheduler.js';
 import { captureLogger } from '../../../capture-logger.js';
 
 const hour = 3_600_000;
@@ -35,26 +35,33 @@ const insertReturning = (rows: unknown[]) =>
     insert: () => ({ values: () => ({ returning: () => Promise.resolve(rows) }) }),
   }) as unknown as Db;
 
-const silentBoundaries: PromotionBoundaries = {
-  schedule: () => Promise.resolve(),
-  remove: () => Promise.resolve(),
-};
+const silentScheduler = new PromotionScheduler({
+  publish: () => Promise.resolve({} as never),
+  remove: () => Promise.resolve(1),
+});
 
-const noopEnqueue: Enqueue = () => Promise.resolve();
+/** A scheduler whose queue refuses, for the paths that must survive one. */
+const failingScheduler = (error: unknown) =>
+  new PromotionScheduler({
+    publish: () => Promise.reject(error),
+    remove: () => Promise.reject(error),
+  });
+
+const noopPublish: Publish = () => Promise.resolve();
 
 describe('POST /api/promotions when the announcement fails', () => {
   it('still answers 201 and logs it for the reconciler', async () => {
     // The row is committed. Refusing the write because Redis is unreachable
     // would lose the admin's promotion to repair a cache that repairs itself.
     const { logger, lines } = captureLogger();
-    const failing: Enqueue = () => Promise.reject(new Error('Redis is down'));
+    const failing: Publish = () => Promise.reject(new Error('Redis is down'));
 
     const res = await request(
       createApp({
         logger,
         db: insertReturning([stored]),
-        enqueue: failing,
-        boundaries: silentBoundaries,
+        publish: failing,
+        scheduler: silentScheduler,
       }),
     )
       .post('/api/promotions')
@@ -66,17 +73,13 @@ describe('POST /api/promotions when the announcement fails', () => {
 
   it('survives a boundary scheduler that throws a non-Error', async () => {
     const { logger, lines } = captureLogger();
-    const throwingBoundaries: PromotionBoundaries = {
-      schedule: () => Promise.reject('Redis is down'),
-      remove: () => Promise.resolve(),
-    };
 
     const res = await request(
       createApp({
         logger,
         db: insertReturning([stored]),
-        enqueue: noopEnqueue,
-        boundaries: throwingBoundaries,
+        publish: noopPublish,
+        scheduler: failingScheduler('Redis is down'),
       }),
     )
       .post('/api/promotions')
@@ -91,8 +94,8 @@ describe('POST /api/promotions when the announcement fails', () => {
       createApp({
         logger: captureLogger().logger,
         db: insertReturning([]),
-        enqueue: noopEnqueue,
-        boundaries: silentBoundaries,
+        publish: noopPublish,
+        scheduler: silentScheduler,
       }),
     )
       .post('/api/promotions')
@@ -117,8 +120,8 @@ describe('POST /api/promotions/:id/cancel when the announcement fails', () => {
       createApp({
         logger,
         db,
-        enqueue: () => Promise.reject(new Error('Redis is down')),
-        boundaries: silentBoundaries,
+        publish: () => Promise.reject(new Error('Redis is down')),
+        scheduler: silentScheduler,
       }),
     )
       .post('/api/promotions/7/cancel')
@@ -132,7 +135,7 @@ describe('POST /api/promotions/:id/cancel when the announcement fails', () => {
 describe('the promotion routes are not mounted without their dependencies', () => {
   it('answers 404 when the app has a database but no boundary scheduler', async () => {
     const res = await request(
-      createApp({ db: insertReturning([stored]), enqueue: noopEnqueue }),
+      createApp({ db: insertReturning([stored]), publish: noopPublish }),
     ).get('/api/promotions');
 
     expect(res.status).toBe(404);
@@ -156,11 +159,11 @@ describe('POST /api/promotions/:id/cancel when the boundaries cannot be dropped'
       createApp({
         logger,
         db,
-        enqueue: noopEnqueue,
-        boundaries: {
-          schedule: () => Promise.resolve(),
+        publish: noopPublish,
+        scheduler: new PromotionScheduler({
+          publish: () => Promise.resolve({} as never),
           remove: () => Promise.reject(new Error('Redis is down')),
-        },
+        }),
       }),
     )
       .post('/api/promotions/7/cancel')
@@ -185,8 +188,8 @@ describe('a rejection that is not an Error still reaches the log', () => {
       createApp({
         logger,
         db,
-        enqueue: noopEnqueue,
-        boundaries: { schedule: () => Promise.resolve(), remove: () => Promise.reject('gone') },
+        publish: noopPublish,
+        scheduler: failingScheduler('gone'),
       }),
     )
       .post('/api/promotions/7/cancel')
@@ -210,7 +213,7 @@ describe('a failing boundary call never costs the event', () => {
     // one try, a Redis timeout swallowed the invalidation and left a cancelled
     // sale priced on the storefront. Asserting the 200 alone did not see it.
     const emitted: { name: string; payload: unknown }[] = [];
-    const recording: Enqueue = (name, payload) => {
+    const recording: Publish = (name, payload) => {
       emitted.push({ name, payload });
       return Promise.resolve();
     };
@@ -219,11 +222,11 @@ describe('a failing boundary call never costs the event', () => {
       createApp({
         logger: captureLogger().logger,
         db: cancellingDb,
-        enqueue: recording,
-        boundaries: {
-          schedule: () => Promise.resolve(),
+        publish: recording,
+        scheduler: new PromotionScheduler({
+          publish: () => Promise.resolve({} as never),
           remove: () => Promise.reject(new Error('Redis is down')),
-        },
+        }),
       }),
     )
       .post('/api/promotions/7/cancel')
@@ -241,15 +244,18 @@ describe('a failing boundary call never costs the event', () => {
       createApp({
         logger: captureLogger().logger,
         db: insertReturning([stored]),
-        enqueue: noopEnqueue,
-        boundaries: {
-          schedule: (_id, boundary) => {
+        publish: noopPublish,
+        scheduler: new PromotionScheduler({
+          publish: (_name, _payload, options) => {
+            const boundary = String(options?.jobId ?? '').endsWith(':activate')
+              ? 'activate'
+              : 'expire';
             if (boundary === 'activate') return Promise.reject(new Error('Redis is down'));
             scheduled.push(boundary);
-            return Promise.resolve();
+            return Promise.resolve({} as never);
           },
-          remove: () => Promise.resolve(),
-        },
+          remove: () => Promise.resolve(1),
+        }),
       }),
     )
       .post('/api/promotions')

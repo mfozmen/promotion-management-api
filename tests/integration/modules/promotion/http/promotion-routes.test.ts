@@ -4,36 +4,46 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
 import { products } from '@src/modules/catalog/db/schema/products.js';
 import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
-import type { Enqueue } from '@src/shared/enqueue.js';
-import type { PromotionBoundaries } from '@src/modules/promotion/domain/dto/promotion-boundaries.js';
+import type { Publish } from '@src/events/publish.js';
+import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-scheduler.js';
 import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
 
 interface Recorded {
   events: { name: string; payload: unknown }[];
-  scheduled: { promotionId: number; boundary: string }[];
+  scheduled: { promotionId: number; boundary: string; delay: number }[];
   removed: number[];
 }
 
-function recorder(): Recorded & { enqueue: Enqueue; boundaries: PromotionBoundaries } {
+function recorder(): Recorded & { publish: Publish; scheduler: PromotionScheduler } {
   const state: Recorded = { events: [], scheduled: [], removed: [] };
+  // The real scheduler over a fake queue, so the deterministic job id and the
+  // delay are exercised rather than stubbed away.
+  const scheduler = new PromotionScheduler({
+    publish: (_name, payload, options) => {
+      const jobId = String(options?.jobId ?? '');
+      const boundary = jobId.endsWith(':activate') ? 'activate' : 'expire';
+      state.scheduled.push({
+        promotionId: (payload as { promotionId: number }).promotionId,
+        boundary,
+        delay: Number(options?.delay ?? 0),
+      });
+      return Promise.resolve({ id: jobId } as never);
+    },
+    remove: (_name, jobId) => {
+      const id = Number(jobId.split(':')[1]);
+      if (!state.removed.includes(id)) state.removed.push(id);
+      return Promise.resolve(1);
+    },
+  });
   return {
     ...state,
-    enqueue: (name, payload) => {
+    publish: (name, payload) => {
       state.events.push({ name, payload });
       return Promise.resolve();
     },
-    boundaries: {
-      schedule: (promotionId, boundary) => {
-        state.scheduled.push({ promotionId, boundary });
-        return Promise.resolve();
-      },
-      remove: (promotionId) => {
-        state.removed.push(promotionId);
-        return Promise.resolve();
-      },
-    },
+    scheduler,
   };
 }
 
@@ -67,7 +77,7 @@ const draftBody = () => ({
 });
 
 let rec: ReturnType<typeof recorder>;
-const app = () => createApp({ db: db(), enqueue: rec.enqueue, boundaries: rec.boundaries });
+const app = () => createApp({ db: db(), publish: rec.publish, scheduler: rec.scheduler });
 
 beforeEach(() => {
   rec = recorder();
@@ -88,10 +98,14 @@ describe('POST /api/promotions', () => {
     // Both boundaries, order not asserted: they are scheduled concurrently so one
     // cannot cost the other, which makes their order an accident rather than a
     // contract.
-    expect([...rec.scheduled].sort((a, b) => a.boundary.localeCompare(b.boundary))).toEqual([
-      { promotionId: res.body.id, boundary: 'activate' },
-      { promotionId: res.body.id, boundary: 'expire' },
-    ]);
+    const sorted = [...rec.scheduled].sort((a, b) => a.boundary.localeCompare(b.boundary));
+    expect(sorted.map((s) => s.boundary)).toEqual(['activate', 'expire']);
+    expect(sorted.every((s) => s.promotionId === res.body.id)).toBe(true);
+    // The delay is the gap from the database's instant to the boundary, and it is
+    // what a stubbed scheduler hid: `now()` comes back as text, so computing it
+    // threw and both jobs were silently lost.
+    expect(sorted[0]?.delay).toBeGreaterThan(0);
+    expect(sorted[1]?.delay).toBeGreaterThan(sorted[0]!.delay);
   });
 
   it('creates a draft with no target, and announces nothing', async () => {

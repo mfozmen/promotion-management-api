@@ -2,7 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
 import type { Db } from '@src/shared/db/client.js';
-import type { Enqueue } from '@src/shared/enqueue.js';
+import type { Publish } from '@src/events/publish.js';
 import { captureLogger } from '../../../capture-logger.js';
 
 /**
@@ -20,7 +20,7 @@ const throwingDb = (error: unknown) =>
     }),
   }) as unknown as Db;
 
-const enqueue: Enqueue = () => Promise.resolve();
+const publish: Publish = () => Promise.resolve();
 
 const validBody = (sku: string) => ({
   sku,
@@ -37,7 +37,7 @@ describe('POST /api/products when the write fails', () => {
       code: '23514',
     });
 
-    const res = await request(createApp({ logger, db: throwingDb(failure), enqueue }))
+    const res = await request(createApp({ logger, db: throwingDb(failure), publish }))
       .post('/api/products')
       .send({
         sku: 'MC-9001',
@@ -59,7 +59,7 @@ describe('POST /api/products when the write fails', () => {
     } as unknown as Db;
 
     const res = await request(
-      createApp({ logger: captureLogger().logger, db: returningNothing, enqueue }),
+      createApp({ logger: captureLogger().logger, db: returningNothing, publish }),
     )
       .post('/api/products')
       .send(validBody('MC-9003'));
@@ -72,7 +72,7 @@ describe('POST /api/products when the write fails', () => {
     // A rejection with a string reaches the same handler, and the log line must
     // still be written rather than throwing inside the error path.
     const { logger, lines } = captureLogger();
-    const rejectsWithString: Enqueue = () => Promise.reject('Redis is down');
+    const rejectsWithString: Publish = () => Promise.reject('Redis is down');
     const db = {
       insert: () => ({
         values: () => ({
@@ -81,7 +81,7 @@ describe('POST /api/products when the write fails', () => {
       }),
     } as unknown as Db;
 
-    const res = await request(createApp({ logger, db, enqueue: rejectsWithString }))
+    const res = await request(createApp({ logger, db, publish: rejectsWithString }))
       .post('/api/products')
       .send(validBody('MC-9004'));
 
@@ -91,7 +91,7 @@ describe('POST /api/products when the write fails', () => {
 
   it('logs the enqueue failure without failing the request', async () => {
     const { logger, lines } = captureLogger();
-    const failing: Enqueue = () => Promise.reject(new Error('Redis is down'));
+    const failing: Publish = () => Promise.reject(new Error('Redis is down'));
     const db = {
       insert: () => ({
         values: () => ({
@@ -110,7 +110,7 @@ describe('POST /api/products when the write fails', () => {
       }),
     } as unknown as Db;
 
-    const res = await request(createApp({ logger, db, enqueue: failing }))
+    const res = await request(createApp({ logger, db, publish: failing }))
       .post('/api/products')
       .send({
         sku: 'MC-9002',

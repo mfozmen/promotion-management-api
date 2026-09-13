@@ -13,8 +13,8 @@ const BODY_LIMIT = '100kb';
 export function createApp({
   logger = rootLogger,
   db,
-  enqueue,
-  boundaries,
+  publish,
+  scheduler,
 }: AppDependencies = {}): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
@@ -26,8 +26,8 @@ export function createApp({
   api.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
   });
-  if (db && enqueue) api.use('/products', productRoutes(db, enqueue));
-  if (db && enqueue && boundaries) api.use('/promotions', promotionRoutes(db, enqueue, boundaries));
+  if (db && publish) api.use('/products', productRoutes(db, publish));
+  if (db && publish && scheduler) api.use('/promotions', promotionRoutes(db, publish, scheduler));
   app.use('/api', api);
 
   app.use(notFoundHandler);

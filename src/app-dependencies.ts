@@ -1,16 +1,16 @@
 import type { Logger } from 'pino';
+import type { Publish } from './events/publish.js';
+import type { PromotionScheduler } from './modules/promotion/domain/promotion-scheduler.js';
 import type { Db } from './shared/db/client.js';
-import type { Enqueue } from './shared/enqueue.js';
-import type { PromotionBoundaries } from './modules/promotion/domain/dto/promotion-boundaries.js';
 
 /**
- * `db` and `enqueue` are optional because the health probe needs neither: a
- * process that cannot reach PostgreSQL still has to answer its liveness check,
- * and the routes that do need them are not mounted without them.
+ * `db`, `publish` and `scheduler` are optional because the health probe needs
+ * none of them: a process that cannot reach PostgreSQL still has to answer its
+ * liveness check, and the routes that do need them are not mounted without them.
  */
 export interface AppDependencies {
   logger?: Logger;
   db?: Db;
-  enqueue?: Enqueue;
-  boundaries?: PromotionBoundaries;
+  publish?: Publish;
+  scheduler?: PromotionScheduler;
 }

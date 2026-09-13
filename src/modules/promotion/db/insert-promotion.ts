@@ -35,11 +35,15 @@ export async function insertPromotion(
         category: input.category ?? null,
         status: hasTarget ? 'active' : 'draft',
       })
-      .returning({ ...promotionColumns, now: sql<Date>`now()` });
+      // `sql<Date>` would be a lie: a raw fragment comes back as the driver's
+      // text, so the conversion is here rather than in the type. Annotating it
+      // `Date` compiled, and every caller that treated it as one threw at
+      // runtime — where the failure was swallowed as a lost announcement.
+      .returning({ ...promotionColumns, now: sql<string>`now()` });
     if (!row) throw new Error('insert returned no row');
 
     const { now, ...promotion } = row;
-    return { ok: true, now, promotion };
+    return { ok: true, now: new Date(now), promotion };
   } catch (error) {
     // A productId naming no product is an admin's typo, not a server fault: the
     // foreign key rejects it and the route answers 404 rather than paging someone.

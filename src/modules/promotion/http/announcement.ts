@@ -1,6 +1,6 @@
 import type { Logger } from 'pino';
-import type { Enqueue } from '../../../shared/enqueue.js';
-import type { PromotionBoundaries } from '../domain/dto/promotion-boundaries.js';
+import type { Publish } from '../../../events/publish.js';
+import type { PromotionScheduler } from '../domain/promotion-scheduler.js';
 
 /**
  * What announcing a promotion change needs, and the contract both announcers
@@ -13,7 +13,7 @@ import type { PromotionBoundaries } from '../domain/dto/promotion-boundaries.js'
  * promotion changes again.
  */
 export interface Announcement {
-  enqueue: Enqueue;
-  boundaries: PromotionBoundaries;
+  publish: Publish;
+  scheduler: PromotionScheduler;
   log: Logger;
 }

@@ -51,7 +51,7 @@ services:
       REDIS_URL: redis://redis:6379
       REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
       REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
-      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
+      SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
     ports:
       - '127.0.0.1:3100:3100'
     depends_on:
@@ -67,7 +67,7 @@ services:
           'CMD',
           'node',
           '-e',
-          "fetch('http://127.0.0.1:3100/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3100/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
         ]
       interval: 5s
       timeout: 5s

@@ -3,7 +3,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
 import { products } from '@src/modules/catalog/db/schema/products.js';
-import type { Enqueue } from '@src/shared/enqueue.js';
+import type { Publish } from '@src/events/publish.js';
 import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
@@ -14,18 +14,18 @@ const db = useTestDatabase();
  * the endpoint enqueues the right event after the commit, and that it survives the
  * enqueue failing — neither of which needs a broker to be true.
  */
-function recordingQueue(): { enqueued: { name: string; payload: unknown }[]; enqueue: Enqueue } {
+function recordingQueue(): { enqueued: { name: string; payload: unknown }[]; publish: Publish } {
   const enqueued: { name: string; payload: unknown }[] = [];
   return {
     enqueued,
-    enqueue: (name, payload) => {
+    publish: (name, payload) => {
       enqueued.push({ name, payload });
       return Promise.resolve();
     },
   };
 }
 
-const failingEnqueue: Enqueue = () => Promise.reject(new Error('Redis is down'));
+const failingPublish: Publish = () => Promise.reject(new Error('Redis is down'));
 
 // One database per test file, so a fixed SKU would make every test after the
 // first collide with the unique index rather than with what it means to assert.
@@ -42,7 +42,7 @@ describe('POST /api/products', () => {
   it('stores the product and answers 201 with it', async () => {
     const body = newBody();
     const queue = recordingQueue();
-    const res = await request(createApp({ db: db(), enqueue: queue.enqueue }))
+    const res = await request(createApp({ db: db(), publish: queue.publish }))
       .post('/api/products')
       .send(body);
 
@@ -63,7 +63,7 @@ describe('POST /api/products', () => {
 
   it('returns only the fields the API owns, never the ingestion columns', async () => {
     const queue = recordingQueue();
-    const res = await request(createApp({ db: db(), enqueue: queue.enqueue }))
+    const res = await request(createApp({ db: db(), publish: queue.publish }))
       .post('/api/products')
       .send(newBody());
 
@@ -79,7 +79,7 @@ describe('POST /api/products', () => {
 
   it('enqueues product.upserted with the new id', async () => {
     const queue = recordingQueue();
-    const res = await request(createApp({ db: db(), enqueue: queue.enqueue }))
+    const res = await request(createApp({ db: db(), publish: queue.publish }))
       .post('/api/products')
       .send(newBody());
 
@@ -94,7 +94,7 @@ describe('POST /api/products', () => {
     // does not exist. Reading the row from the pool at the moment the event is
     // enqueued is how that ordering is visible from outside (REVIEW.md 3.4).
     let visibleWhenEnqueued: number | undefined;
-    const enqueue: Enqueue = async (_name, payload) => {
+    const publish: Publish = async (_name, payload) => {
       const { productIds } = payload as { productIds: number[] };
       const rows = await db()
         .select()
@@ -103,7 +103,7 @@ describe('POST /api/products', () => {
       visibleWhenEnqueued = rows.length;
     };
 
-    await request(createApp({ db: db(), enqueue })).post('/api/products').send(newBody());
+    await request(createApp({ db: db(), publish })).post('/api/products').send(newBody());
 
     expect(visibleWhenEnqueued).toBe(1);
   });
@@ -111,7 +111,7 @@ describe('POST /api/products', () => {
   it('answers 409 SKU_EXISTS for a duplicate sku, and enqueues nothing', async () => {
     const body = newBody();
     const queue = recordingQueue();
-    const app = createApp({ db: db(), enqueue: queue.enqueue });
+    const app = createApp({ db: db(), publish: queue.publish });
     await request(app).post('/api/products').send(body);
     queue.enqueued.length = 0;
 
@@ -128,7 +128,7 @@ describe('POST /api/products', () => {
     // The row is committed; losing the event costs read-model freshness until
     // the reconciler sweeps, which is a smaller failure than losing the write.
     const body = newBody();
-    const res = await request(createApp({ db: db(), enqueue: failingEnqueue }))
+    const res = await request(createApp({ db: db(), publish: failingPublish }))
       .post('/api/products')
       .send(body);
 
@@ -148,7 +148,7 @@ describe('POST /api/products', () => {
     ['an unknown field', { colour: 'red' }],
   ])('answers 400 VALIDATION_ERROR for %s', async (_case, patch) => {
     const queue = recordingQueue();
-    const res = await request(createApp({ db: db(), enqueue: queue.enqueue }))
+    const res = await request(createApp({ db: db(), publish: queue.publish }))
       .post('/api/products')
       .send({ ...newBody(), ...patch });
 
@@ -159,7 +159,7 @@ describe('POST /api/products', () => {
 
   it('does not echo the rejected value back to the caller', async () => {
     // REVIEW.md 8.4: the response names the field, never what the client sent.
-    const res = await request(createApp({ db: db(), enqueue: recordingQueue().enqueue }))
+    const res = await request(createApp({ db: db(), publish: recordingQueue().publish }))
       .post('/api/products')
       .send({ ...newBody(), sku: 'secret-looking-value'.repeat(20) });
 

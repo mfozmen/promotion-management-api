@@ -31,11 +31,15 @@ export async function assignPromotion(
           sql`${promotions.endsAt} > now()`,
         ),
       )
-      .returning({ ...promotionColumns, now: sql<Date>`now()` });
+      // `sql<Date>` would be a lie: a raw fragment comes back as the driver's
+      // text, so the conversion is here rather than in the type. Annotating it
+      // `Date` compiled, and every caller that treated it as one threw at
+      // runtime — where the failure was swallowed as a lost announcement.
+      .returning({ ...promotionColumns, now: sql<string>`now()` });
 
     if (row) {
       const { now, ...promotion } = row;
-      return { ok: true, now, promotion };
+      return { ok: true, now: new Date(now), promotion };
     }
 
     const [existing] = await db
