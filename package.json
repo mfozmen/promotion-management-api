@@ -19,7 +19,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:export-ddl": "tsx scripts/export-ddl.ts",
+    "seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
     "bullmq": "^6.3.4",
