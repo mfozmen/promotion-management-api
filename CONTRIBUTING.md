@@ -30,8 +30,6 @@ fixtures/       sample input files
 
 Test files import their subject through the `@src/*` alias — `import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js'` — wired in `tsconfig.json` `paths` and `vitest.workspace.ts`, which declares the alias once and spreads it into both projects (a workspace project does not inherit the root `vitest.config.ts` `resolve` block). Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
 
-**One store class per module per side.** `db/` holds a class for the read side and a class for the write side, not a file per query: the constructor takes the client, the methods are the operations, and shared key builders or SQL fragments are static or private members of it. Routes and middleware take the instance. `ProductReadModel` is the read-side instance of this rule; the promotion module's write side has the same scatter today and folds the same way in its own pull request, once #75 has merged.
-
 A module opens a directory when it has a file for it, not before. No `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/` anywhere, except `domain/dto/` (REVIEW.md 8c.8).
 
 ## Dependencies
