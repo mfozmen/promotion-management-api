@@ -71,7 +71,7 @@ describe('buildSchemaDdl', () => {
 
   // The export is only a deliverable while it is the migrations: this is the comparison that
   // fails when one lands without `npm run db:export-ddl` being run. Both sides are read as LF
-  // so that a clone predating `*.sql text eol=lf` reports the drift it has rather than a
+  // so that a clone predating `* text=auto eol=lf` reports the drift it has rather than a
   // missing re-export it does not; the test above is what holds the line endings.
   it('matches the committed docs/schema.sql', async () => {
     const committed = await readFile(
