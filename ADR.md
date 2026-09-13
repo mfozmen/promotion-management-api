@@ -426,7 +426,7 @@ Every endpoint in ADR-0003 to ADR-0007 has to agree on where it is mounted, how 
 - **Validation at the boundary.** `validate({ body?, query?, params? })` takes zod object schemas, calls `.strict()` on them once at route construction, and replaces each declared part with the parsed value. An unknown field is a `400`, not a silently ignored client typo. `req.query` is a getter in Express 5, so the parsed value is installed with `Object.defineProperty`.
 - **Errors are `http-errors`, used as its README documents.** `createError(status, message, properties)`; `expose` decides what a client may read, and it is already `false` for a 5xx unless the raiser says otherwise, so operator prose is withheld because the library withholds it rather than because someone remembered to. `headers` carries a `Retry-After`, `details` is the validator's own property. We keep no error classes and no code-to-status table: the status is the taxonomy, and a second one beside it was wrong in three directions across three commits. A class extending the constructor is allowed only where the same raise — status, message and properties — would be rebuilt at several sites; nothing here raises the same error twice, so none is written.
 - **`details` is unbounded, and the amplification is accepted with its number.** Measured on the installed zod: the largest body the 100 kB cap allows, made entirely of failing array items, is 9 998 issues and a response of about 900 kB — nine times the request. Accepted rather than capped, because response size is not a cost this API pays: zod has already built the issues by the time they are read, serialising them is cheap, and the bulk vendor path is multipart and never reaches this validator. `path` is unbounded for the same reason, and a caller's own key reaches it only through a `z.record` nested in a request part, which no route declares (REVIEW.md 12.7).
-- **A foreign error is trusted only when it is marked the http-errors way** — `expose === true` and an integer status in the 4xx range. Anything else is masked as `500 INTERNAL`, message and all.
+- **A foreign error is trusted only when the library itself recognises it** — `createError.isHttpError`, which wants `status` and `statusCode` agreeing and a boolean `expose`. Anything else answers `500` with `Internal server error`, message and all, rather than the handler guessing at a half-shaped error.
 - **`100kb` JSON body cap.** Multipart does not pass through this layer, so the vendor upload brings its own bound.
 
 ### Consequences
@@ -436,8 +436,7 @@ Every endpoint in ADR-0003 to ADR-0007 has to agree on where it is mounted, how 
 
 ### Trade-offs
 
-- `502` and `504` are not expressible, because no code maps to them. Nothing in these specs makes an outbound call.
-- A foreign exposed 4xx loses its original message on both paths, which is the accepted cost of never forwarding a parser's wording.
+- A library's wording reaches the caller wherever that library marks it exposed, so body-parser's and any future middleware's 4xx messages are part of the public surface and are read once when the middleware is mounted.
 - Validation costs one `safeParse` per declared part per request; the read-path story budgets against that rather than against the parse alone.
 
 ## ADR-0010: Structured logging with a validated correlation id
@@ -459,7 +458,7 @@ A request does not end at the HTTP response: it emits an event a worker picks up
 ### Consequences
 
 - A grep on one `reqId` returns the whole request, provided the caller's id is unique, which is the caller's responsibility once it supplies one.
-- A 4xx logs at `warn` with its status; anything else logs at `error` under `err`, which makes real 500s an alertable signal rather than noise.
+- A 4xx logs at `warn` with its status, and so does a 5xx carrying a `Retry-After`, which is an operating condition rather than a fault; every other 5xx logs at `error` under `err`, which makes real 500s an alertable signal rather than noise.
 - The id is the join key the queue boundary will have to carry. It is not implemented: every payload schema is a `z.strictObject`, so an id attached by a producer throws inside `publish`, and adding it is a change to all five contracts.
 
 ### Trade-offs
