@@ -5,7 +5,7 @@ import { errorHandler } from '@src/shared/http/error-handler.js';
 import { httpLogger } from '@src/shared/http/http-logger.js';
 import { HttpError } from '@src/shared/http/http-error.js';
 import { DrizzleQueryError } from 'drizzle-orm';
-import { captureLogger, type CapturedLogger } from '../../../capture-logger.js';
+import { captureLogger, type CapturedLogger } from '../../capture-logger.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
 function appThrowing(error: unknown, captured: CapturedLogger = captureLogger()): Express {

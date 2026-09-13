@@ -64,7 +64,7 @@ const rejectedKeys = (error: ZodError): string[] =>
  *
  * Callers own nested strictness — `.strict()` reaches the top level only, so a
  * nested object declares `z.strictObject(...)` itself or a field misspelled
- * inside it is dropped in silence (ADR-0008).
+ * inside it is dropped in silence (ADR-0009).
  */
 export function validate(schemas: RequestSchemas): RequestHandler {
   const strict = PARTS.flatMap((part) => {

@@ -41,7 +41,7 @@ const SERVER_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = Object.fre
 const isClientStatus = (status: unknown): status is number =>
   typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 499;
 
-/** Every error marked the http-errors way keeps its status, not an enumerated few (ADR-0008). */
+/** Every error marked the http-errors way keeps its status, not an enumerated few (ADR-0009). */
 function clientError(err: unknown): ErrorMapping | undefined {
   const { status, expose } = err as { status?: unknown; expose?: unknown };
   if (expose !== true || !isClientStatus(status)) {

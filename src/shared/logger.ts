@@ -66,7 +66,7 @@ function safeMessage(err: Error, held: readonly string[]): string {
 }
 
 /**
- * Contract for every log site (ADR-0009): errors go through this, under an
+ * Contract for every log site (ADR-0010): errors go through this, under an
  * `error` key, never handed to a logger as an object — a driver error carries
  * the statement and bound row in its fields and its message, and pino-http
  * wraps a custom `err` serializer, so registering it there feeds it two shapes.

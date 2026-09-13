@@ -5,7 +5,7 @@ import { notFoundHandler } from './shared/http/not-found-handler.js';
 import { logger as rootLogger } from './shared/logger.js';
 import { httpLogger } from './shared/http/http-logger.js';
 
-// JSON only: a multipart vendor upload brings its own byte limit (ADR-0008).
+// JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
 
 export function createApp(logger: Logger = rootLogger): Express {
