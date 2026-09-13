@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import express, { type Express } from 'express';
 import request from 'supertest';
-import { errorHandler } from '@src/middleware/error-handler.js';
-import { httpLogger } from '@src/shared/logger.js';
-import { HttpError } from '@src/shared/http-error.js';
-import { DrizzleQueryError } from 'drizzle-orm';
+import { errorHandler } from '@src/shared/http/error-handler.js';
+import { httpLogger } from '@src/shared/http/http-logger.js';
+import { HttpError } from '@src/shared/http/http-error.js';
 import { captureLogger, type CapturedLogger } from '../../capture-logger.js';
+import { overlapError } from '../../overlap-error.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
 function appThrowing(error: unknown, captured: CapturedLogger = captureLogger()): Express {
@@ -18,27 +18,6 @@ function appThrowing(error: unknown, captured: CapturedLogger = captureLogger())
 
   return app;
 }
-
-// The real class, not a hand-built lookalike: drizzle puts the statement and
-// the bound row in `message` and the SQLSTATE on `cause`, and a fixture that
-// guesses that shape certifies the leak it was written to catch.
-const overlap = () => {
-  const pgError = Object.assign(
-    new Error('conflicting key value violates exclusion constraint "promotions_no_overlap"'),
-    {
-      name: 'PostgresError',
-      code: '23P01',
-      detail: 'Key (product_id)=(3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80) conflicts.',
-      where: 'PL/pgSQL function',
-    },
-  );
-
-  return new DrizzleQueryError(
-    'insert into "promotions" ("product_id", "discount_bp", "customer_email") values ($1, $2, $3)',
-    ['3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80', 2000, 'ayse@example.com'],
-    pgError,
-  );
-};
 
 describe('HttpError mapping', () => {
   it.each([
@@ -68,9 +47,9 @@ describe('HttpError mapping', () => {
   it('answers a designed 5xx with our own message, not the operator prose', async () => {
     const res = await request(
       appThrowing(
-        new HttpError('READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', {
-          host: '10.0.0.5',
-        }),
+        new HttpError('READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', [
+          { path: 'host', message: '10.0.0.5' },
+        ]),
       ),
     ).get('/boom');
 
@@ -89,7 +68,11 @@ describe('HttpError mapping', () => {
 
   it('gives a 5xx code with no public wording nothing to say', async () => {
     const res = await request(
-      appThrowing(new HttpError('INTERNAL', 'upstream 10.0.0.5 refused', { sql: 'select 1' })),
+      appThrowing(
+        new HttpError('INTERNAL', 'upstream 10.0.0.5 refused', [
+          { path: 'sql', message: 'select 1' },
+        ]),
+      ),
     ).get('/boom');
 
     expect(res.status).toBe(500);
@@ -107,15 +90,6 @@ describe('HttpError mapping', () => {
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
       error: { message: 'rebuild running' },
     });
-  });
-
-  it('passes details through untouched when they are not a list', async () => {
-    const details = { conflictsWith: 'promotion-1' };
-    const res = await request(appThrowing(new HttpError('CONFLICT', 'Overlap', details))).get(
-      '/boom',
-    );
-
-    expect(res.body.error.details).toEqual(details);
   });
 
   it('cannot be given a status that disagrees with its code', () => {
@@ -181,21 +155,19 @@ describe('unexpected errors', () => {
 
   it('logs which code answered a 5xx, so a log line joins to the response', async () => {
     const captured = captureLogger();
-    await request(
-      appThrowing(
-        new HttpError('READ_MODEL_NOT_READY', 'rebuild running', {
-          cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
-        }),
-        captured,
-      ),
-    ).get('/boom');
+    const raised = new HttpError('READ_MODEL_NOT_READY', 'rebuild running');
+    // The real `Error.cause`, not the third constructor argument, which is
+    // `details`: `serializeError` reads `err.cause` and would never see it there.
+    raised.cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
 
-    // serializeError reports the cause's code, so without these fields the
-    // line names the driver's failure and never the 503 the client read.
-    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      code: 'READ_MODEL_NOT_READY',
-      status: 503,
-    });
+    await request(appThrowing(raised, captured)).get('/boom');
+
+    // The serialized error reports the cause's code, so without the two
+    // top-level fields the line names the driver's failure and never the 503
+    // the client read.
+    const logged = captured.lines.find((line) => line.level === 50);
+    expect(logged).toMatchObject({ code: 'READ_MODEL_NOT_READY', status: 503 });
+    expect((logged as { error: { code: string } }).error.code).toBe('ECONNREFUSED');
   });
 
   it('bounds a 4xx message, so a handler cannot mirror a long id back', async () => {
@@ -213,13 +185,52 @@ describe('unexpected errors', () => {
     );
 
     expect(res.status).toBe(429);
-    expect(res.headers['retry-after']).toBe('5');
+    // A band, not a constant: every client that met the outage retrying in the
+    // same second hands the recovering read model its whole backlog at once.
+    const after = Number(res.headers['retry-after']);
+    expect(after).toBeGreaterThanOrEqual(5);
+    expect(after).toBeLessThanOrEqual(10);
+  });
+
+  it('spreads the retry hint across clients rather than synchronising them', async () => {
+    const hints = new Set<string>();
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const res = await request(appThrowing(new HttpError('BACKPRESSURE', 'queue is full'))).get(
+        '/boom',
+      );
+      hints.add(String(res.headers['retry-after']));
+    }
+
+    expect(hints.size).toBeGreaterThan(1);
   });
 
   it('sends no retry hint on an error retrying cannot fix', async () => {
     const res = await request(appThrowing(new HttpError('NOT_FOUND', 'nope'))).get('/boom');
 
     expect(res.headers['retry-after']).toBeUndefined();
+  });
+
+  it('does not log a statement a wrapper quoted two levels down', async () => {
+    const captured = captureLogger();
+    const driverError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+      query: 'insert into products (sku) values ($1)',
+      params: ['SKU-1'],
+    });
+    // A repository that interpolates the driver's message into its own, then a
+    // handler that wraps that: the statement is two causes down, and a walk
+    // that takes one step reads the wrapper, which has no query field to spot.
+    const wrapped = new Error(
+      `upsert failed: ${driverError.message} [${driverError.query}] [${driverError.params[0]}]`,
+      { cause: driverError },
+    );
+    const raised = new HttpError('READ_MODEL_NOT_READY', 'rebuild running');
+    raised.cause = wrapped;
+
+    await request(appThrowing(raised, captured)).get('/boom');
+
+    const logged = JSON.stringify(captured.lines);
+    expect(logged).not.toContain('insert into products');
+    expect(logged).not.toContain('SKU-1');
   });
 
   it('masks a thrown non-error value and still logs its type', async () => {
@@ -249,7 +260,7 @@ describe('an error after the response has started', () => {
     app.use(httpLogger(captured.logger));
     app.get('/stream', (_req, res, next) => {
       res.status(200).type('json').write('{"items":[');
-      next(overlap());
+      next(overlapError());
     });
     app.use(errorHandler);
 
@@ -270,71 +281,36 @@ describe('an error after the response has started', () => {
 });
 
 describe('log hygiene for driver errors', () => {
-  it('keeps the statement and the bound row out of the log', async () => {
+  it('logs a driver failure through the whitelist rather than the error itself', async () => {
     const captured = captureLogger();
-    await request(appThrowing(overlap(), captured)).get('/boom');
+    await request(appThrowing(overlapError(), captured)).get('/boom');
 
-    const serialised = JSON.stringify(captured.lines.find((line) => line.level === 50));
-    expect(serialised).not.toContain('discount_bp');
-    expect(serialised).not.toContain('3f1d5b8e-5c5f-4f2a-9a3e-2c7b1d4e6f80');
-    expect(serialised).not.toContain('customer_email');
-    expect(serialised).not.toContain('ayse@example.com');
-    expect(serialised).not.toContain('Failed query');
-    expect(serialised).not.toContain('PL/pgSQL');
-  });
-
-  it('keeps the SQLSTATE and the constraint name, which is what diagnoses it', async () => {
-    const captured = captureLogger();
-    await request(appThrowing(overlap(), captured)).get('/boom');
-
-    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      error: {
-        type: 'PostgresError',
-        code: '23P01',
-        message: expect.stringContaining('promotions_no_overlap'),
-        stack: expect.stringContaining('at '),
-      },
+    const line = captured.lines.find((entry) => entry.level === 50);
+    // The handler's own contract: the `error` key, the whitelist's four
+    // fields, and no `err` for pino to serialise in full. What the whitelist
+    // does with each of them is asserted in serialize-error.test.ts.
+    expect(line).not.toHaveProperty('err');
+    expect(line).toMatchObject({
+      error: { type: 'PostgresError', code: '23P01' },
     });
+    expect(JSON.stringify(line)).not.toContain('ayse@example.com');
   });
 
-  it('does not let a bound value pose as a stack frame', async () => {
+  it('answers rather than hanging when a cause chain loops', async () => {
     const captured = captureLogger();
-    const err = new DrizzleQueryError(
-      'insert into "products" ("name") values ($1)',
-      ['Kazak\n    at secret-bound-value'],
-      undefined,
-    );
+    // A retry wrapper that re-attaches the original error makes a cycle. The
+    // walk had no cap, so it allocated until it threw inside the error
+    // handler, which is how the HTML page this layer exists to prevent
+    // reaches a client.
+    const first = new Error('retry exhausted');
+    const second = new Error('connection lost');
+    first.cause = second;
+    second.cause = first;
 
-    await request(appThrowing(err, captured)).get('/boom');
+    const res = await request(appThrowing(first, captured)).get('/boom');
 
-    expect(JSON.stringify(captured.lines.find((line) => line.level === 50))).not.toContain(
-      'secret-bound-value',
-    );
-  });
-
-  it('drops a driver message from the first quoted value on', async () => {
-    const captured = captureLogger();
-    const err = new DrizzleQueryError(
-      'select * from "products" where "id" = $1',
-      ['not-a-uuid'],
-      Object.assign(
-        new Error('invalid input syntax for type uuid: "not-a-uuid-but-a-customer-secret"'),
-        { code: '22P02' },
-      ),
-    );
-
-    await request(appThrowing(err, captured)).get('/boom');
-
-    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      error: { code: '22P02', message: 'invalid input syntax for type uuid' },
-    });
-  });
-
-  it('omits the code when the error carries none', async () => {
-    const captured = captureLogger();
-    await request(appThrowing(new Error('plain'), captured)).get('/boom');
-
-    expect(captured.lines.find((line) => line.level === 50)?.error).not.toHaveProperty('code');
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
   });
 });
 

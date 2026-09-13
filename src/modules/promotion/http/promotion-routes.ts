@@ -1,8 +1,8 @@
 import { Router, type RequestHandler } from 'express';
-import { validate } from '../../../middleware/request-validator.js';
+import { validate } from '../../../shared/http/request-validator.js';
 import type { Db } from '../../../shared/db/client.js';
 import type { Enqueue } from '../../../shared/enqueue.js';
-import { HttpError } from '../../../shared/http-error.js';
+import { HttpError } from '../../../shared/http/http-error.js';
 import type { PromotionBoundaries } from '../../../shared/promotion-boundaries.js';
 import { assignPromotion } from '../db/assign-promotion.js';
 import { cancelPromotion } from '../db/cancel-promotion.js';

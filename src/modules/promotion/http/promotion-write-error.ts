@@ -1,4 +1,4 @@
-import { HttpError } from '../../../shared/http-error.js';
+import { HttpError } from '../../../shared/http/http-error.js';
 import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcome.js';
 
 /** The one place a failed promotion write becomes a status. */

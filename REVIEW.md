@@ -600,7 +600,7 @@ A driver or ORM error carries the failing statement and the bound row on its own
 fields — and composes its message out of them — so an error is reduced to a
 whitelist before it is logged: its type, a message it did not build from the
 statement, the SQLSTATE, and the frames of its stack. One shared implementation
-does this (`serializeError` in `src/shared/logger.ts`), every logging site calls
+does this (`serializeError` in `src/shared/serialize-error.ts`), every logging site calls
 it, and the result is logged under an `error` key. Handing a logger the error
 itself, under `err` or any other key, is a finding, and so is a second copy of
 the whitelist.
@@ -680,7 +680,11 @@ described the old behaviour change in the same commit; leaving the code right
 and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not. An ADR states the decision and the current state; it carries no pull
-request, commit or issue number — that history is git's.
+request, commit or issue number — that history is git's. The check for that is
+a reader, not a pattern: a quoted error message or a sample value carries
+digits and a hexadecimal-looking string without citing anything, and no
+tightening tells the two apart, because the difference is what the number
+refers to. Grep to find candidates, then read them.
 
 A path is checkable and a reference is not. `tests/unit/docs/documented-paths.test.ts` reads every backticked repository path out of the deliverable documents and the agent definitions and fails on one the tree does not hold, with a named exemption for each path a document mentions without claiming it exists; the reference half stays a reader's, because `value "99999999999" is out of range for type integer` is a quoted error rather than a citation and no pattern tells those apart. Evidence: a day of renames left four documents naming a logger file, a schema directory and a calculator that no longer existed, and two careful readings passed over the same four.
 
@@ -951,7 +955,25 @@ replace that matches nothing, reports success, and ships a document saying the
 opposite of what its commit message claims; that one shipped twice before it
 was noticed.
 
-13.8 A cleanliness check is evidence about the tree at the moment it ran, so a
+13.8 **A merged configuration file is checked by parsing it, not by reading
+it.** A merge can leave two blocks under the same key: git is content, because
+each side's lines are kept and neither deleted the other's; the parser is
+content, because a duplicate key is legal in YAML and the last occurrence wins;
+and a reader is content, because each block is individually correct. Load the
+merged file and compare the parsed result against what you meant it to say —
+for a workflow, the service list, the step list, the environment.
+
+Evidence: merging the storefront branch onto the HTTP skeleton put two
+`services:` blocks in `ci.yml`, one bringing up Redis and one PostgreSQL. YAML
+kept the second, so every integration test would have run in CI against no
+Redis at all, and the diff read as two correct additions. This is the fourth of
+a family this week — a gate that cannot fire is indistinguishable from a gate
+that passed. The others were a label-strip step that removed no labels,
+`drizzle-kit` exiting 0 on a failure, and a migration-count assertion that
+could not fail (11.5). The question that separates them is not "did it pass"
+but "what would make it fail, and has anyone seen it do that".
+
+13.9 A cleanliness check is evidence about the tree at the moment it ran, so a
 check run before a merge says nothing about the tree after it. Re-run it on
 what you are about to commit, and do not treat a merge's own list of conflicted
 files as the list of files to resolve: `git add -A` after a conflict turns an

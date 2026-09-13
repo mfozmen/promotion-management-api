@@ -4,7 +4,7 @@ import { createApp } from '@src/app.js';
 import type { Db } from '@src/shared/db/client.js';
 import type { Enqueue } from '@src/shared/enqueue.js';
 import type { PromotionBoundaries } from '@src/shared/promotion-boundaries.js';
-import { captureLogger } from '../../../../capture-logger.js';
+import { captureLogger } from '../../../capture-logger.js';
 
 const hour = 3_600_000;
 const body = {
@@ -61,7 +61,7 @@ describe('POST /api/promotions when the announcement fails', () => {
       .send(body);
 
     expect(res.status).toBe(201);
-    expect(lines.some((line) => String(line.msg).includes('could not be announced'))).toBe(true);
+    expect(lines.some((line: Record<string, unknown>) => String(line.msg).includes('could not be announced'))).toBe(true);
   });
 
   it('survives a boundary scheduler that throws a non-Error', async () => {
@@ -83,7 +83,7 @@ describe('POST /api/promotions when the announcement fails', () => {
       .send(body);
 
     expect(res.status).toBe(201);
-    expect(lines.some((line) => String(line.msg).includes('could not be announced'))).toBe(true);
+    expect(lines.some((line: Record<string, unknown>) => String(line.msg).includes('could not be announced'))).toBe(true);
   });
 
   it('answers 500 rather than a half-built promotion when the insert returns no row', async () => {
@@ -125,7 +125,7 @@ describe('POST /api/promotions/:id/cancel when the announcement fails', () => {
       .send();
 
     expect(res.status).toBe(200);
-    expect(lines.some((line) => String(line.msg).includes('could not be announced'))).toBe(true);
+    expect(lines.some((line: Record<string, unknown>) => String(line.msg).includes('could not be announced'))).toBe(true);
   });
 });
 
@@ -167,7 +167,7 @@ describe('POST /api/promotions/:id/cancel when the boundaries cannot be dropped'
       .send();
 
     expect(res.status).toBe(200);
-    expect(lines.some((line) => String(line.msg).includes('could not be announced'))).toBe(true);
+    expect(lines.some((line: Record<string, unknown>) => String(line.msg).includes('could not be announced'))).toBe(true);
   });
 });
 
@@ -193,7 +193,7 @@ describe('a rejection that is not an Error still reaches the log', () => {
       .send();
 
     expect(res.status).toBe(200);
-    expect(lines.some((line) => String(line.msg).includes('could not be announced'))).toBe(true);
+    expect(lines.some((line: Record<string, unknown>) => String(line.msg).includes('could not be announced'))).toBe(true);
   });
 });
 

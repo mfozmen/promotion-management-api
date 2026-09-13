@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import type { Enqueue } from '../../../shared/enqueue.js';
 import type { Db } from '../../../shared/db/client.js';
-import { validate } from '../../../middleware/request-validator.js';
-import { HttpError } from '../../../shared/http-error.js';
+import { validate } from '../../../shared/http/request-validator.js';
+import { HttpError } from '../../../shared/http/http-error.js';
 import { createProductSchema } from '../domain/dto/create-product-schema.js';
 import { insertProduct } from '../db/insert-product.js';
 

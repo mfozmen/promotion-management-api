@@ -1,19 +1,13 @@
 import type { RequestHandler } from 'express';
-import type { ZodError, ZodObject } from 'zod';
-import { HttpError } from '../shared/http-error.js';
-import { logger } from '../shared/logger.js';
-
-export interface RequestSchemas {
-  body?: ZodObject;
-  query?: ZodObject;
-  params?: ZodObject;
-}
+import type { ZodError } from 'zod';
+import { HttpError } from './http-error.js';
+import { MAX_DETAILS } from './max-details.js';
+import type { RequestSchemas } from './request-schemas.js';
+import { logger } from '../logger.js';
 
 const PARTS = ['body', 'query', 'params'] as const;
 
 const MAX_SHOWN_KEYS = 20;
-/** Matches the envelope's cap in `error-handler.ts`, which bounds the response. */
-const MAX_DETAILS = 20;
 const MAX_KEY_LENGTH = 64;
 
 /**
@@ -32,13 +26,10 @@ const formatPath = (part: string, path: PropertyKey[]): string =>
   );
 
 /**
- * A rejection names where the problem is and which of the caller's own keys it
- * concerns, never a stored value and never a free-form value they sent
- * (REVIEW.md 8.3b). The distinction is that a key they typed is an identifier
- * they can act on — without it they cannot fix the request — while a value
- * handed back is just their own input returned to them. Keys are truncated
- * rather than omitted at 64 characters (8.3c) and the list is capped, because
- * how many they send is their choice and this runs unauthenticated.
+ * Names the caller's own keys and never the values they sent: a key they typed
+ * is what they need to fix the request, a value handed back is their own input
+ * returned. Keys are truncated rather than omitted, and the list capped,
+ * because how many they send is their choice and this runs unauthenticated.
  */
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
   // Cut before the map, not after: a 100 kB body of failing array items is
@@ -73,7 +64,7 @@ const rejectedKeys = (error: ZodError): string[] =>
  *
  * Callers own nested strictness — `.strict()` reaches the top level only, so a
  * nested object declares `z.strictObject(...)` itself or a field misspelled
- * inside it is dropped in silence (ADR-0008).
+ * inside it is dropped in silence (ADR-0009).
  */
 export function validate(schemas: RequestSchemas): RequestHandler {
   const strict = PARTS.flatMap((part) => {

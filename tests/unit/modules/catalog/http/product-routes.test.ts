@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
 import type { Db } from '@src/shared/db/client.js';
 import type { Enqueue } from '@src/shared/enqueue.js';
-import { captureLogger } from '../../../../capture-logger.js';
+import { captureLogger } from '../../../capture-logger.js';
 
 /**
  * What the endpoint does when the write itself fails for a reason that is not a
@@ -86,7 +86,7 @@ describe('POST /api/products when the write fails', () => {
       .send(validBody('MC-9004'));
 
     expect(res.status).toBe(201);
-    expect(lines.some((line) => String(line.msg).includes('could not be enqueued'))).toBe(true);
+    expect(lines.some((line: Record<string, unknown>) => String(line.msg).includes('could not be enqueued'))).toBe(true);
   });
 
   it('logs the enqueue failure without failing the request', async () => {
@@ -121,6 +121,6 @@ describe('POST /api/products when the write fails', () => {
       });
 
     expect(res.status).toBe(201);
-    expect(lines.some((line) => String(line.msg).includes('could not be enqueued'))).toBe(true);
+    expect(lines.some((line: Record<string, unknown>) => String(line.msg).includes('could not be enqueued'))).toBe(true);
   });
 });

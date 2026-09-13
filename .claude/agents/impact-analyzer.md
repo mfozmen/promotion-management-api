@@ -95,7 +95,7 @@ use `gh pr diff <n>`.
    - Scenario A: does the change keep ingestion chunked, resumable and
      idempotent under a timeout and a memory cap? Could it load a whole file
      into memory or lose the checkpoint?
-   - Scenario B: does the change keep `GET /api/products` and `GET /api/products/:id`
+   - Scenario B: does the change keep `GET /products` and `GET /products/:id`
      cheap under a category-wide promotion? Could it invalidate too much,
      too little, or serve stale prices after a cancel?
    - Concurrency: can two requests interleave to give a product two active

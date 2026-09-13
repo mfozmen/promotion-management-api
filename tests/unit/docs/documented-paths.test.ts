@@ -26,6 +26,10 @@ const NAMED_BUT_ABSENT = new Map([
     'src/middleware/validate.ts',
     'evidence of a name that reads as an instruction, never a file here',
   ],
+  [
+    'src/middleware/',
+    'the directory the HTTP boundary was moved out of, named by ADR-0009 as what it replaced',
+  ],
   ['src/shared/db/schema/', 'where the table schemas were before they moved into their modules'],
   ['src/modules/vendor/', 'a module the agent triggers name before it is written'],
 ]);

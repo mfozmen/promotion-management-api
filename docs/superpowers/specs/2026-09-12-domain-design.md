@@ -703,9 +703,10 @@ src/
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
-  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, event-schemas.ts and queue-of-event.ts (the catalogue and its routing), event-bus.ts (the BullMQ queues), shutdown.ts, logger.ts (pino, request ids)
+  shared/        config.ts, event-schemas.ts and queue-of-event.ts (the catalogue and its routing), event-bus.ts (the BullMQ queues), logger.ts (pino root logger and the error whitelist every log site uses), db/ (client, migrator, SQL migrations; each module owns its tables under db/schema/), redis.ts, queue.ts (BullMQ queues)
+    http/        the HTTP boundary: error-code.ts, status-by-code.ts, http-error.ts, client-errors.ts, other-client-error.ts, error-mapping.ts, error-handler.ts, not-found-handler.ts, request-schemas.ts, request-validator.ts, validation-detail.ts, http-logger.ts (correlation id)
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
-  unit/          effective-price-calculator, csv-lines, base-price-calculator, base-price-calculator-cache, schemas
+  unit/          effective-price-calculator, csv-lines, base-price-calculator, base-price-calculator-cache, schemas, the HTTP boundary; capture-logger.ts and any other shared helper live here rather than at the tests/ root, which 7.7 keeps empty
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
   e2e/           the docs/e2e-cases scenarios against the running compose stack
 docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander
