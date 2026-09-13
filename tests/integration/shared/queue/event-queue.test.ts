@@ -73,12 +73,9 @@ describe('EventQueue', () => {
     expect(received[0]).toEqual({ name: 'product.upserted', data: { productIds: [11, 22] } });
   });
 
-  it('gives a promotions consumer the sale first, with 500 import announcements already queued', async () => {
-    // What this proves today: the routing keeps the two apart, so the sale is the first job
-    // a promotions consumer sees even though the import queued first. What it cannot prove
-    // yet: that a catalog consumer does not delay it — `src/` has no Worker, so there is
-    // nothing to be delayed by. It becomes the regression test for that when one exists.
-    for (let batch = 0; batch < 500; batch += 1) {
+  it('gives a promotions consumer the sale first, with import announcements already queued', async () => {
+    // Routing only, until a catalog consumer exists to be delayed by.
+    for (let batch = 0; batch < 50; batch += 1) {
       await bus.publish('product.upserted', { productIds: [batch + 1] });
     }
     await bus.publish('promotion.changed', { promotionId: 4242 });
@@ -93,7 +90,7 @@ describe('EventQueue', () => {
     });
 
     expect(await firstSeen).toEqual({ promotionId: 4242 });
-  }, 30_000);
+  });
 
   it('applies the retry, backoff and dead-letter defaults to every job', async () => {
     const job = await bus.publish('reconciler.run', {});

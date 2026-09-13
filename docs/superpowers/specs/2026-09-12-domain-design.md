@@ -446,7 +446,7 @@ where p.id = any($1);
 - Every read-model write is a **recompute from PostgreSQL** (section 4
   query), never a delta applied to Redis. Handlers are therefore idempotent
   and safe to retry. Ordering is a property of the write, not of the consumer
-  count: each recompute carries the `readAt` of the PostgreSQL query it was
+  count: each recompute carries the `sourceReadAt` of the PostgreSQL query it was
   computed from, and the write is a Lua compare-and-set that applies only when
   that instant is newer than the one stored beside the hash (ADR-0003,
   REVIEW.md 3.9). No consumer exists yet; the first one to write the read model

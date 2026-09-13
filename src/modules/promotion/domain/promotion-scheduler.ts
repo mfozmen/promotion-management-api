@@ -15,11 +15,7 @@ type BoundaryQueue = {
 export class PromotionScheduler {
   constructor(private readonly queue: BoundaryQueue) {}
 
-  /**
-   * `now` is a parameter so one clock decides: PostgreSQL's, never the process's. Write-once
-   * per id: BullMQ ignores an `add` for an id it still holds, and the returned `Job` then
-   * describes the request rather than what is stored. ADR-0007.
-   */
+  /** `now` is a parameter so one clock decides: PostgreSQL's, never the process's. */
   async schedule(
     promotionId: number,
     boundary: PromotionBoundary,
@@ -48,6 +44,8 @@ export class PromotionScheduler {
     return { activate, expire };
   }
 
+  /** Write-once: BullMQ ignores an `add` for an id it still holds, so the returned `Job`
+   *  describes the request rather than what is stored. ADR-0007. */
   private static jobId(promotionId: number, boundary: PromotionBoundary): string {
     return `promo:${promotionId}:${boundary}`;
   }

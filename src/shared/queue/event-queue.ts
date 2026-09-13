@@ -104,11 +104,10 @@ export class EventQueue<R extends Registry> {
       ]);
     } finally {
       clearTimeout(timer);
-      // The loser still settles; an unhandled rejection would take the process down, and
-      // a discarded one leaves the timeout message standing in for the real cause.
-      work.catch((error: Error) =>
-        console.error(`${operation} failed after timing out:`, error.message),
-      );
+      // An unhandled rejection would take the process down, and a discarded one leaves the
+      // timeout message standing in for the real cause. The line says only what it knows:
+      // whether the bound was reached is the caller's error to tell, not this one's.
+      work.catch((error: Error) => console.error(`${operation} failed:`, error.message));
     }
   }
 }
