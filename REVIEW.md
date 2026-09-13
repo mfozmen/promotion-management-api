@@ -773,11 +773,15 @@ never compares the hash it stores, so an entry sorted into the middle of the
 journal is skipped for ever on every database that has already passed that
 timestamp, while the boot reports success. Sorting is the tidy-looking
 resolution and the wrong one: it leaves the file internally ordered, so any
-check that only reads the file passes. `tests/unit/shared/db/migration-journal.test.ts`
-compares against main instead — entries main carries are unchanged, new ones
-are newer than all of them — which is what catches it. Evidence: the first
-version of that guard asserted the applied row count against a freshly migrated
-database, where the timestamps increase by construction, and could not fail.
+check that only reads the file passes. The comparison that catches it is against
+the pull request's base — the entries the base carries are unchanged, and every
+new one is newer than all of them — and it lives in the `ci` workflow, because
+that is where the refs are; a unit test has no business knowing branch names.
+`tests/unit/shared/db/migration-journal.test.ts` keeps only what one file can
+answer: increasing, unique timestamps in file order. Evidence: the first version
+of the guard asserted the applied row count against a freshly migrated database,
+where the timestamps increase by construction, and could not fail; the second
+was defeated by sorting the journal, which left both its assertions true.
 
 ---
 

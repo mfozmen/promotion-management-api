@@ -55,6 +55,28 @@ jobs:
           git add -AN src/shared/db/migrations
           git diff --exit-code src/shared/db/migrations
 
+      # A journal entry sorted into the middle on merge is skipped for ever on every database
+      # that already passed its timestamp, and the file looks perfectly ordered afterwards,
+      # so only a comparison against the base can see it. REVIEW.md 11.5.
+      - name: Migrations are appended, never inserted
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          JOURNAL: src/shared/db/migrations/meta/_journal.json
+        run: |
+          git show "$BASE:$JOURNAL" > "$RUNNER_TEMP/base.json" 2>/dev/null || echo '{"entries":[]}' > "$RUNNER_TEMP/base.json"
+          node -e '
+            const fs = require("fs");
+            const base = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/base.json", "utf8")).entries;
+            const head = JSON.parse(fs.readFileSync(process.env.JOURNAL, "utf8")).entries;
+            const kept = JSON.stringify(head.slice(0, base.length)) === JSON.stringify(base);
+            if (!kept) throw new Error("the entries the base carries were changed; regenerate the new migration instead of reordering the journal (REVIEW.md 11.5)");
+            const highest = Math.max(0, ...base.map((e) => e.when));
+            for (const entry of head.slice(base.length)) {
+              if (entry.when <= highest) throw new Error(`${entry.tag} carries a timestamp the base already passed; regenerate it (REVIEW.md 11.5)`);
+            }
+          '
+
       - name: Test with coverage
         run: npm run test:cov
         env:
