@@ -521,7 +521,9 @@ parallel. Shared mutable fixtures across files are a finding.
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
 the tree mirrors `src/`, one test file per source file, with the same name
 (`x.ts` → `x.test.ts`) and the export's name as the top-level `describe`.
-Nothing at `tests/` root, no per-module top-level directories. ADR-0008.
+Nothing at `tests/` root, no per-module top-level directories. A test of a
+tree-wide property with no source file (`migration-journal.test.ts`) is named
+for the property, at the path of what it guards. ADR-0008.
 
 7.8 **A test imports its subject through the `@src/*` alias, production code
 never does.** `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'`
@@ -686,7 +688,7 @@ written down here so #30, #37 and #39 are judged against the rulebook rather
 than against a comment thread (13b.1).
 
 8c.3 A file is named for the one thing it exports, in kebab-case, the whole
-name: the noun for a type or object, the verb phrase for a function. A bare
+name: the class, interface or type name, or the verb phrase of a free function. A bare
 verb with no subject (`validate.ts`) is a finding. ADR-0008. Evidence:
 `src/middleware/validate.ts` read as an instruction rather than a thing.
 
@@ -720,13 +722,18 @@ prose, so a rename had nothing to follow.
 never for a kind of syntax: `models/`, `types/`, `interfaces/`, `classes/`,
 `utils/`, `helpers/` are findings. The tree is in ADR-0008.
 
-8c.8 The one exception to 8c.7: `domain/dto/` holds the types, `domain/`
-holds only the functions. No other directory is split by syntax. ADR-0008.
+8c.8 The one exception to 8c.7: `domain/dto/` holds every shape — type
+aliases, interfaces, zod schemas, message payloads — and `domain/` holds only
+behaviour, the classes of 8c.9. No other directory is split by syntax. ADR-0008.
 
-8c.9 An interface is the noun of its role (`Discount`), an implementation is
-the variant plus that noun (`fixedDiscount`), the record of them the plural
-(`discounts`). A function starts with a verb (`calculateEffectivePrice`); one
-named for its return value (`effectivePrice`) is a finding. ADR-0008.
+8c.9 Behaviour is a class named for its role (`EffectivePriceCalculator`),
+its methods start with a verb (`calculate`), its collaborators arrive through
+the constructor. A class with no state, no collaborator and no interface is a
+finding: it is a function. An interface is the noun of its role (`Discount`),
+an implementation the variant plus that noun (`PercentageDiscount`). An
+abstract base with fewer than two subclasses, a static-only class, or a helper
+with one user in its own file instead of a private method, is a finding.
+ADR-0008.
 
 8c.10 `src/shared/` is infrastructure: a file there whose name carries a
 business noun (`promotions.ts`, `pricing-rules.ts`) is a finding; it belongs to
