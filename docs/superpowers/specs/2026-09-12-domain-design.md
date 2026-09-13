@@ -699,7 +699,7 @@ src/
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
   shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
-  unit/          effective-price, csv-lines, ingestion-rules, schemas
+  unit/          effective-price, csv-lines, compile-rules, price-row, rule-set-loader, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
   e2e/           the docs/e2e-cases scenarios against the running compose stack
 docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander
