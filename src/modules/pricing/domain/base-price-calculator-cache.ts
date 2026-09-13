@@ -20,7 +20,7 @@ export class BasePriceCalculatorCache {
 
   current(): Promise<BasePriceCalculator> {
     if (this.cached === undefined || this.now() >= this.cached.expiresAt) {
-      const rules = this.source().then((rows) => BasePriceCalculator.compile(rows));
+      const rules = this.source().then((rows) => BasePriceCalculator.fromRules(rows));
       this.cached = { expiresAt: this.now() + this.ttlMs, rules };
       // A rejection landing after a newer entry clears that too: one extra load, never a wrong price.
       rules.catch(() => {

@@ -42,7 +42,7 @@ const cents = (value: number) => ({ type: 'adjustCents', params: { value } });
 
 describe('BasePriceCalculator', () => {
   it('ignores inactive rows and derives the version from the active rows', async () => {
-    const compiled = await BasePriceCalculator.compile([
+    const compiled = await BasePriceCalculator.fromRules([
       ruleRow({
         id: 1,
         name: 'markup',
@@ -64,14 +64,14 @@ describe('BasePriceCalculator', () => {
   });
 
   it('refuses an empty rule set rather than pricing a catalogue at vendor cost', async () => {
-    await expect(BasePriceCalculator.compile([])).rejects.toThrowError(
+    await expect(BasePriceCalculator.fromRules([])).rejects.toThrowError(
       /no active ingestion pricing rules \(none seeded, or every rule deactivated\)/,
     );
   });
 
   it('refuses a rule set whose every row is inactive', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500), active: false }),
       ]),
     ).rejects.toThrowError(
@@ -80,7 +80,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('names the rules it compiled, so a rule the caller expected cannot go missing quietly', async () => {
-    const compiled = await BasePriceCalculator.compile([
+    const compiled = await BasePriceCalculator.fromRules([
       ruleRow({ id: 7, name: 'commission', priority: 10, conditions: always, event: percent(500) }),
       ruleRow({ id: 4, name: 'markup', priority: 30, conditions: always, event: percent(1500) }),
       ruleRow({ id: 9, name: 'retired', conditions: always, event: percent(100), active: false }),
@@ -91,7 +91,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('ignores a promotion-layer rule, which this engine cannot price', async () => {
-    const compiled = await BasePriceCalculator.compile([
+    const compiled = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
       ruleRow({
         id: 2,
@@ -109,7 +109,7 @@ describe('BasePriceCalculator', () => {
 
   it('rejects with a descriptive error for an unknown event type', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({
           id: 7,
           name: 'broken',
@@ -122,7 +122,7 @@ describe('BasePriceCalculator', () => {
 
   it('rejects with a descriptive error for a non-integer adjustment value', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({ id: 8, name: 'fractional', conditions: always, event: percent(1.5) }),
       ]),
     ).rejects.toThrowError(/pricing rule 8 \("fractional"\)/);
@@ -130,7 +130,7 @@ describe('BasePriceCalculator', () => {
 
   it('rejects a percentage adjustment that removes more than the whole price', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({
           id: 13,
           name: 'over-100-percent-off',
@@ -142,7 +142,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('accepts a percentage adjustment that removes exactly the whole price', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({ id: 14, name: 'free', conditions: always, event: percent(-10_000) }),
     ]);
 
@@ -153,7 +153,7 @@ describe('BasePriceCalculator', () => {
 
   it('rejects with a descriptive error for a rule naming a fact no vendor row has', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({
           id: 10,
           name: 'vendor-tier',
@@ -166,7 +166,7 @@ describe('BasePriceCalculator', () => {
 
   it('rejects with a descriptive error for an unknown operator', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({
           id: 11,
           name: 'typo',
@@ -179,7 +179,7 @@ describe('BasePriceCalculator', () => {
 
   it('rejects a typo that hides behind a higher-priority condition', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({
           id: 12,
           name: 'hidden-typo',
@@ -197,7 +197,7 @@ describe('BasePriceCalculator', () => {
 
   it('rejects with a descriptive error for malformed conditions', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({ id: 9, name: 'no-conditions', conditions: { nope: [] }, event: percent(100) }),
       ]),
     ).rejects.toThrowError(/pricing rule 9 \("no-conditions"\)/);
@@ -205,7 +205,7 @@ describe('BasePriceCalculator', () => {
 
   it('rejects an empty all, which fires on every row instead of being rejected', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({ id: 4, name: 'typo-for-always', conditions: { all: [] }, event: percent(-3000) }),
       ]),
     ).rejects.toThrowError(/pricing rule 4 \("typo-for-always"\) has an empty all or any/);
@@ -213,7 +213,7 @@ describe('BasePriceCalculator', () => {
 
   it('rejects an empty any nested under a populated all', async () => {
     await expect(
-      BasePriceCalculator.compile([
+      BasePriceCalculator.fromRules([
         ruleRow({
           id: 5,
           name: 'nested-typo',
@@ -227,7 +227,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('applies markup and stock discount in priority order', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({
         id: 1,
         name: 'electronics-markup',
@@ -252,7 +252,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('passes the vendor price through when no rule matches', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({
         id: 1,
         name: 'electronics-markup',
@@ -271,11 +271,11 @@ describe('BasePriceCalculator', () => {
   it('applies the higher priority rule first, so priority changes the result', async () => {
     const fee = { name: 'handling-fee', conditions: always, event: cents(1000) };
     const double = { name: 'double', conditions: always, event: percent(10_000) };
-    const feeFirst = await BasePriceCalculator.compile([
+    const feeFirst = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, priority: 100, ...fee }),
       ruleRow({ id: 2, priority: 50, ...double }),
     ]);
-    const doubleFirst = await BasePriceCalculator.compile([
+    const doubleFirst = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, priority: 50, ...fee }),
       ruleRow({ id: 2, priority: 100, ...double }),
     ]);
@@ -290,7 +290,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('floors each step rather than rounding it', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, name: 'odd-markup', conditions: always, event: percent(1) }),
     ]);
 
@@ -301,7 +301,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('keeps a zero vendor price at zero', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
     ]);
 
@@ -311,7 +311,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('prices the largest exact price without losing a cent', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, name: 'half-off', conditions: always, event: percent(-5000) }),
     ]);
 
@@ -321,7 +321,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('rejects the row when a rule drives the price past the largest exact cent value', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, name: 'runaway-markup', conditions: always, event: percent(1) }),
     ]);
 
@@ -336,7 +336,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('rejects the row and names the rule when a rule drives the price below zero', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({
         id: 1,
         name: 'electronics-markup',
@@ -367,7 +367,7 @@ describe('BasePriceCalculator', () => {
     ['a price beyond the exact range', Number.MAX_SAFE_INTEGER + 2],
     ['a non-number price', Number.NaN],
   ])('rejects %s instead of throwing', async (_case, vendorPriceCents) => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
     ]);
 
@@ -378,7 +378,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('matches a padded category, rather than pricing it as if it were another one', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({
         id: 1,
         name: 'markup',
@@ -393,7 +393,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('rejects a category of nothing but spaces', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
     ]);
 
@@ -404,7 +404,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('rejects an empty category rather than matching a rule against nothing', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
     ]);
 
@@ -415,7 +415,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it("rejects a row missing a fact as the row's fault, not the rule set's", async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
     ]);
     const partial = { category: 'Electronics', vendorPriceCents: 80_000 };
@@ -427,7 +427,7 @@ describe('BasePriceCalculator', () => {
   });
 
   it('rejects a row whose fact is null instead of silently skipping the rule', async () => {
-    const rules = await BasePriceCalculator.compile([
+    const rules = await BasePriceCalculator.fromRules([
       ruleRow({
         id: 1,
         name: 'markup',
@@ -445,11 +445,11 @@ describe('BasePriceCalculator', () => {
   it('applies equal-priority rules in a total order, whatever the row order', async () => {
     const fee = { name: 'handling-fee', conditions: always, event: cents(1000) };
     const double = { name: 'double', conditions: always, event: percent(10_000) };
-    const feeFirst = await BasePriceCalculator.compile([
+    const feeFirst = await BasePriceCalculator.fromRules([
       ruleRow({ id: 1, priority: 0, ...fee }),
       ruleRow({ id: 2, priority: 0, ...double }),
     ]);
-    const feeFirstReversed = await BasePriceCalculator.compile([
+    const feeFirstReversed = await BasePriceCalculator.fromRules([
       ruleRow({ id: 2, priority: 0, ...double }),
       ruleRow({ id: 1, priority: 0, ...fee }),
     ]);
