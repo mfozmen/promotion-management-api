@@ -19,7 +19,7 @@ export class BasePriceCalculator {
   private queue: Promise<unknown> = Promise.resolve();
   private spentBy: Error | undefined;
 
-  /** `compile` is the way in; this is for a test that needs an engine it prepared itself. */
+  /** `fromRules` is the way in; this is for a test that needs an engine it prepared itself. */
   constructor(
     private readonly engine: Engine,
     readonly ruleIds: readonly number[],
@@ -44,63 +44,6 @@ export class BasePriceCalculator {
       BasePriceCalculator.newestVersion(active),
     );
   }
-
-  private static activeIngestionRules(rows: readonly PricingRuleRow[]): PricingRuleRow[] {
-    return rows
-      .filter((row) => row.active && row.type === 'ingestion')
-      .sort((a, b) => b.priority - a.priority || a.id - b.id);
-  }
-
-  private static async toRule(row: PricingRuleRow, priority: number): Promise<RuleProperties> {
-    const where = `pricing rule ${row.id} ("${row.name}")`;
-    const properties: RuleProperties = {
-      // A fired rule is reported by name only, so the id rides in the name to reach `rejectedBy`.
-      name: where,
-      priority,
-      conditions: row.conditions as TopLevelCondition,
-      event: BasePriceCalculator.parseEvent(row, where),
-    };
-
-    BasePriceCalculator.rejectEmptyGroup(row, where);
-    await BasePriceCalculator.probe(properties, row, where);
-    return properties;
-  }
-
-  private static parseEvent(row: PricingRuleRow, where: string): AdjustmentEvent {
-    const event = adjustmentEvent.safeParse(row.event);
-    if (!event.success) {
-      throw new Error(`${where} has a malformed event: ${event.error.issues[0]?.message}`);
-    }
-    return event.data;
-  }
-
-  private static rejectEmptyGroup(row: PricingRuleRow, where: string): void {
-    if (BasePriceCalculator.hasEmptyGroup(row.conditions)) {
-      throw new Error(`${where} has an empty all or any, which matches every row or none`);
-    }
-  }
-
-  private static async probe(
-    properties: RuleProperties,
-    row: PricingRuleRow,
-    where: string,
-  ): Promise<void> {
-    try {
-      await new Engine([
-        {
-          ...properties,
-          conditions: BasePriceCalculator.withoutPriorities(row.conditions) as TopLevelCondition,
-        },
-      ]).run(PROBE_ROW);
-    } catch (error) {
-      throw new Error(`${where} cannot be compiled: ${(error as Error).message}`);
-    }
-  }
-
-  private static newestVersion(rows: readonly PricingRuleRow[]): number {
-    return rows.reduce((max, row) => Math.max(max, row.updatedAt.getTime()), 0);
-  }
-
   /** A bad row is a returned rejection, never a throw: one row cannot abort the batch. */
   async calculate(row: VendorRowFacts): Promise<PricingOutcome> {
     const facts = vendorRowFacts.safeParse(row);
@@ -136,7 +79,56 @@ export class BasePriceCalculator {
       pricingRulesVersion: this.pricingRulesVersion,
     };
   }
+  private static activeIngestionRules(rows: readonly PricingRuleRow[]): PricingRuleRow[] {
+    return rows
+      .filter((row) => row.active && row.type === 'ingestion')
+      .sort((a, b) => b.priority - a.priority || a.id - b.id);
+  }
+  private static async toRule(row: PricingRuleRow, priority: number): Promise<RuleProperties> {
+    const where = `pricing rule ${row.id} ("${row.name}")`;
+    const properties: RuleProperties = {
+      // A fired rule is reported by name only, so the id rides in the name to reach `rejectedBy`.
+      name: where,
+      priority,
+      conditions: row.conditions as TopLevelCondition,
+      event: BasePriceCalculator.parseEvent(row, where),
+    };
 
+    BasePriceCalculator.rejectEmptyGroup(row, where);
+    await BasePriceCalculator.probe(properties, row, where);
+    return properties;
+  }
+  private static parseEvent(row: PricingRuleRow, where: string): AdjustmentEvent {
+    const event = adjustmentEvent.safeParse(row.event);
+    if (!event.success) {
+      throw new Error(`${where} has a malformed event: ${event.error.issues[0]?.message}`);
+    }
+    return event.data;
+  }
+  private static rejectEmptyGroup(row: PricingRuleRow, where: string): void {
+    if (BasePriceCalculator.hasEmptyGroup(row.conditions)) {
+      throw new Error(`${where} has an empty all or any, which matches every row or none`);
+    }
+  }
+  private static async probe(
+    properties: RuleProperties,
+    row: PricingRuleRow,
+    where: string,
+  ): Promise<void> {
+    try {
+      await new Engine([
+        {
+          ...properties,
+          conditions: BasePriceCalculator.withoutPriorities(row.conditions) as TopLevelCondition,
+        },
+      ]).run(PROBE_ROW);
+    } catch (error) {
+      throw new Error(`${where} cannot be compiled: ${(error as Error).message}`);
+    }
+  }
+  private static newestVersion(rows: readonly PricingRuleRow[]): number {
+    return rows.reduce((max, row) => Math.max(max, row.updatedAt.getTime()), 0);
+  }
   private static outOfRange(cents: bigint, rejectedBy: string): PricingOutcome | undefined {
     if (cents < 0n) {
       return { ok: false, fault: 'row', rejectedBy, reason: `price ${cents} is below zero` };
@@ -151,26 +143,6 @@ export class BasePriceCalculator {
     }
     return undefined;
   }
-
-  private run(facts: VendorRowFacts) {
-    // Checked inside the continuation too: a row queued before the failure lands would
-    // otherwise run on a spent engine.
-    const run = this.queue.then(() =>
-      this.spentBy ? Promise.reject(this.spentBy) : this.engine.run(facts),
-    );
-    this.queue = run.catch((error: unknown) => {
-      this.spentBy = error instanceof Error ? error : new Error(String(error));
-    });
-    return run;
-  }
-
-  private apply(cents: bigint, event: AdjustmentEvent): bigint {
-    return event.type === 'adjustCents'
-      ? cents + BigInt(event.params.value)
-      : // Floored: BigInt division truncates towards zero and `cents` is non-negative here.
-        (cents * (BPS + BigInt(event.params.value))) / BPS;
-  }
-
   /** Probe only: the engine stops at the first priority set that decides a rule, so a broken
    *  operator behind an unmatched condition is never reached. */
   private static withoutPriorities(node: unknown): unknown {
@@ -183,7 +155,6 @@ export class BasePriceCalculator {
         .map(([key, value]) => [key, BasePriceCalculator.withoutPriorities(value)]),
     );
   }
-
   /** Both `{all:[]}` and `{any:[]}` are well-formed and fire on every row. ADR-0005. */
   private static hasEmptyGroup(node: unknown): boolean {
     if (Array.isArray(node)) return node.some((child) => BasePriceCalculator.hasEmptyGroup(child));
@@ -191,5 +162,22 @@ export class BasePriceCalculator {
     const groups = Object.entries(node).filter(([key]) => key === 'all' || key === 'any');
     if (groups.some(([, value]) => Array.isArray(value) && value.length === 0)) return true;
     return Object.values(node).some((value) => BasePriceCalculator.hasEmptyGroup(value));
+  }
+  private run(facts: VendorRowFacts) {
+    // Checked inside the continuation too: a row queued before the failure lands would
+    // otherwise run on a spent engine.
+    const run = this.queue.then(() =>
+      this.spentBy ? Promise.reject(this.spentBy) : this.engine.run(facts),
+    );
+    this.queue = run.catch((error: unknown) => {
+      this.spentBy = error instanceof Error ? error : new Error(String(error));
+    });
+    return run;
+  }
+  private apply(cents: bigint, event: AdjustmentEvent): bigint {
+    return event.type === 'adjustCents'
+      ? cents + BigInt(event.params.value)
+      : // Floored: BigInt division truncates towards zero and `cents` is non-negative here.
+        (cents * (BPS + BigInt(event.params.value))) / BPS;
   }
 }
