@@ -85,7 +85,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(413);
     expect(res.body).toEqual({
-      error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' },
+      error: { code: 'BAD_REQUEST', message: 'Request could not be processed' },
     });
   });
 
@@ -106,7 +106,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
-      error: { code: 'VALIDATION_ERROR', message: 'Request body could not be read' },
+      error: { code: 'BAD_REQUEST', message: 'Request could not be processed' },
     });
   });
 
@@ -118,10 +118,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(415);
     expect(res.body).toEqual({
-      error: {
-        code: 'UNSUPPORTED_MEDIA_TYPE',
-        message: 'Request body encoding is not supported',
-      },
+      error: { code: 'BAD_REQUEST', message: 'Request could not be processed' },
     });
   });
 
@@ -137,7 +134,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
-      error: { code: 'VALIDATION_ERROR', message: 'Request body could not be read' },
+      error: { code: 'BAD_REQUEST', message: 'Request could not be processed' },
     });
   });
 });

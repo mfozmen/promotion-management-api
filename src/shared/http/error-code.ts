@@ -7,8 +7,6 @@ export type ErrorCode =
   | 'BAD_REQUEST'
   | 'NOT_FOUND'
   | 'CONFLICT'
-  | 'PAYLOAD_TOO_LARGE'
-  | 'UNSUPPORTED_MEDIA_TYPE'
   | 'BACKPRESSURE'
   | 'INTERNAL'
   | 'READ_MODEL_NOT_READY';

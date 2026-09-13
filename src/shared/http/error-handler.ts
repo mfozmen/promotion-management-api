@@ -1,12 +1,10 @@
 import { randomInt } from 'node:crypto';
 import type { ErrorRequestHandler } from 'express';
-import { CLIENT_ERRORS } from './client-errors.js';
 import type { ErrorCode } from './error-code.js';
 import { StatusCodes } from 'http-status-codes';
 import { MAX_DETAIL_MESSAGE } from './max-detail-message.js';
 import { MAX_DETAILS } from './max-details.js';
 import { MAX_MESSAGE } from '../max-message.js';
-import { OTHER_CLIENT_ERROR } from './other-client-error.js';
 import type { ErrorMapping } from './error-mapping.js';
 import { HttpError } from './http-error.js';
 import { logger } from '../logger.js';
@@ -23,7 +21,7 @@ const retryAfter = (): string =>
   String(randomInt(RETRY_AFTER_MIN, RETRY_AFTER_MIN + RETRY_AFTER_SPREAD));
 
 /** The two codes that mean come back later, which carry a `Retry-After`. */
-const RETRIABLE: readonly ErrorCode[] = ['BACKPRESSURE', 'READ_MODEL_NOT_READY'];
+const RETRIABLE: ReadonlySet<ErrorCode> = new Set(['BACKPRESSURE', 'READ_MODEL_NOT_READY']);
 
 const SERVER_FAULT = {
   status: StatusCodes.INTERNAL_SERVER_ERROR,
@@ -45,14 +43,19 @@ const isClientStatus = (status: unknown): status is number =>
   status >= StatusCodes.BAD_REQUEST &&
   status < StatusCodes.INTERNAL_SERVER_ERROR;
 
-/** Every error marked the http-errors way keeps its status, not an enumerated few (ADR-0009). */
+/**
+ * Every error marked the http-errors way keeps its status, not an enumerated few
+ * (ADR-0009). One code and one message for all of them: the status already says
+ * which failure it was, and body-parser is the only foreign thrower here. Its own
+ * message quotes the input back, so it never crosses.
+ */
 function clientError(err: unknown): ErrorMapping | undefined {
   const { status, expose } = err as { status?: unknown; expose?: unknown };
   if (expose !== true || !isClientStatus(status)) {
     return undefined;
   }
 
-  return { status, ...(CLIENT_ERRORS[status] ?? OTHER_CLIENT_ERROR) };
+  return { status, code: 'BAD_REQUEST', message: 'Request could not be processed' };
 }
 
 /**
@@ -88,7 +91,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     err instanceof HttpError ? raisedError(err) : clientError(err);
 
   if (known) {
-    if (isClientStatus(known.status)) {
+    // A retriable 5xx is an operating condition, not a fault: a rebuild or an outage
+    // would otherwise write one alertable line per request and bury the real 500s.
+    if (isClientStatus(known.status) || RETRIABLE.has(known.code)) {
       log.warn({ code: known.code, status: known.status }, 'request rejected');
     } else {
       // The code and status the client read, so the line joins to the response.
@@ -100,7 +105,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     const body: { error: Omit<ErrorMapping, 'status'> } = {
       error: { code: known.code, message: known.message.slice(0, MAX_MESSAGE) },
     };
-    if (RETRIABLE.includes(known.code)) {
+    if (RETRIABLE.has(known.code)) {
       res.set('Retry-After', retryAfter());
     }
     if (known.details !== undefined) {

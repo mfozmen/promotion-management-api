@@ -165,7 +165,7 @@ describe('errorHandler: unexpected errors', () => {
     });
   });
 
-  it('logs which code answered a 5xx, so a log line joins to the response', async () => {
+  it('logs a retriable 5xx as a condition, not a fault, and joins it to the response', async () => {
     const captured = captureLogger();
     const raised = new HttpError('READ_MODEL_NOT_READY', 'rebuild running');
     // The real `Error.cause`, not the third constructor argument, which is
@@ -174,11 +174,12 @@ describe('errorHandler: unexpected errors', () => {
 
     await request(appThrowing(raised, captured)).get('/boom');
 
-    // The serialized error reports the cause's code, so without the two
-    // top-level fields the line names the driver's failure and never the 503
-    // the client read.
-    const logged = captured.lines.find((line) => line.level === 50);
+    // At `warn`, not `error`: a retriable 5xx is an operating condition, and a rebuild
+    // would otherwise write one alertable line per request. The two top-level fields are
+    // what join the line to the response the client read.
+    const logged = captured.lines.find((line) => line.level === 40);
     expect(logged).toMatchObject({ code: 'READ_MODEL_NOT_READY', status: 503 });
+    expect(captured.lines.some((line) => line.level === 50)).toBe(false);
   });
 
   it('bounds a 4xx message, so a handler cannot mirror a long id back', async () => {
