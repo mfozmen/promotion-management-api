@@ -7,8 +7,8 @@ Modular monolith: one directory per module under `src/modules/`, and inside a mo
 ```
 src/
   modules/<module>/
-    domain/     the pure rules; imports no store and no framework
-      dto/      types, interfaces, enum-like aliases the rules above operate on (REVIEW.md 8c.8)
+    domain/     behaviour as classes, collaborators through the constructor (REVIEW.md 8c.9); imports no store and no framework
+      dto/      every shape those classes operate on: types, interfaces, enum-like aliases, zod schemas, queue payloads (8c.8)
     db/         queries and repositories (Drizzle)
     http/       routes, handlers, request schemas (zod)
     jobs/       BullMQ processors

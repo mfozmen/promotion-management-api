@@ -724,7 +724,7 @@ never for a kind of syntax: `models/`, `types/`, `interfaces/`, `classes/`,
 
 8c.8 The one exception to 8c.7: `domain/dto/` holds every shape — type
 aliases, interfaces, zod schemas, message payloads — and `domain/` holds only
-the functions. No other directory is split by syntax. ADR-0008.
+behaviour, the classes of 8c.9. No other directory is split by syntax. ADR-0008.
 
 8c.9 Behaviour is a class named for its role (`EffectivePriceCalculator`),
 its methods start with a verb (`calculate`), its collaborators arrive through
