@@ -1,9 +1,6 @@
 import type { Redis } from 'ioredis';
 import { ReadModelUnavailable } from './read-model-unavailable.js';
 
-/** The storefront's gateway to Redis: which keys it reads and what a failed
- *  command means. It holds no opinion about what any of it is for — a miss is
- *  an empty hash here, and a 404 only where the use case says so (ADR-0008). */
 export class ProductReadModel {
   static readonly ALL_PRODUCTS = 'products:all';
   static readonly READY_KEY = 'readmodel:ready';
@@ -58,10 +55,8 @@ export class ProductReadModel {
     });
   }
 
-  /** Only `WRONGTYPE` is the writer's doing; every other reply, and anything
-   *  that is not an error at all, is a reason to come back (REVIEW.md 5.8).
-   *  The key is named only when this class composed it, never when a caller
-   *  handed one in. */
+  /** `WRONGTYPE` is the writer's doing and nothing else is; the key is named
+   *  only when this class composed it, never when a caller handed one in. */
   private static classify(error: unknown, ourKey?: string): unknown {
     if (!(error instanceof Error) || !error.message.startsWith('WRONGTYPE')) {
       return new ReadModelUnavailable('The read model cannot be reached', error);

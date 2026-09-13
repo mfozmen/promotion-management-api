@@ -13,8 +13,6 @@ interface Queries {
   list: ListProductsQuery;
 }
 
-/** Each route validates, calls one `execute` and serialises. Nothing here
- *  branches on what the read model answered (ADR-0008). */
 export function productReadRoutes({ readModel, find, list }: Queries): Router {
   const router = Router();
   router.use(requireReadModel(readModel));

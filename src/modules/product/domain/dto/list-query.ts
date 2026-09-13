@@ -16,8 +16,7 @@ const digits = (max: number) =>
 export const listQuery = z
   .strictObject({
     category: z.string().min(1).max(MAX_CATEGORY).optional(),
-    // One sort exists, and naming it is how a client asks for the default rather
-    // than discovering later that the parameter was ignored.
+    // Naming the one sort is how a client learns the parameter was read.
     sort: z.literal('effectivePrice').optional(),
     order: z.enum(['asc', 'desc']).default('asc'),
     page: digits(Number.MAX_SAFE_INTEGER).default(1),

@@ -26,7 +26,6 @@ export const storedProduct = z
       (promotionId === undefined) === (promotionName === undefined),
     { message: 'a stored promotion needs both an id and a name' },
   )
-  // REVIEW.md 1.5 holds on the way out as well as in.
   .refine(({ basePriceCents, effectivePriceCents }) => effectivePriceCents <= basePriceCents, {
     message: 'an effective price cannot exceed the base price it came from',
   })

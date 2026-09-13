@@ -141,7 +141,7 @@ queues anyway (ADR-0003).
 
 ## Project structure
 
-Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7, ADR-0008). The tree and the naming rules are in [CONTRIBUTING.md](./CONTRIBUTING.md) under "Source layout"; this file does not repeat them. Nothing sits at the `tests/` root: a helper belongs to the layer that uses it, named `<subject>-<role>.ts` — `tests/unit/capture-logger.ts`, `tests/integration/db.ts` and `tests/integration/redis.ts` (REVIEW.md 7.7).
+Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7, ADR-0008). The tree and the naming rules are in [CONTRIBUTING.md](./CONTRIBUTING.md) under "Source layout"; this file does not repeat them. Nothing sits at the `tests/` root: a helper belongs to the layer that uses it, named `<subject>-<role>.ts`, as `tests/unit/capture-logger.ts` is (REVIEW.md 7.7).
 
 Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
 

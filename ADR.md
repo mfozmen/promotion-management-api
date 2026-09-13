@@ -399,7 +399,7 @@ src/shared/
   http/          error type, error handler, request validator, logger
   queue/         the BullMQ queues and their names; generic over a catalogue it is given
   graceful-shutdown.ts
-src/events/      event-registry.ts and event-routing.ts: the application's catalogue, plus the two payloads whose module does not exist yet
+src/events/      event-registry.ts and event-routing.ts: the application's catalogue, plus the one payload whose module does not exist yet
 tests/
   unit/          mirrors src/, one test file per source file
   integration/   real PostgreSQL and Redis

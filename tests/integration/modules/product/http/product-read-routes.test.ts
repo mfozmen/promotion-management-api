@@ -3,7 +3,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
 import { ProductReadModel } from '@src/modules/product/db/product-read-model.js';
-import { logger as rootLogger } from '@src/shared/logger.js';
+import pino from 'pino';
 import {
   seedProducts,
   useTestRedis,
@@ -13,7 +13,9 @@ import {
 } from '../../../redis.js';
 
 const redis = useTestRedis();
-const app = () => createApp(rootLogger, new ProductReadModel(redis()));
+// The 500 and 503 cases log by design; silent keeps that out of the report.
+const testLogger = pino({ level: 'silent' });
+const app = () => createApp(testLogger, new ProductReadModel(redis()));
 
 /** A product the reader would accept. The base price follows the effective one
  *  unless a case sets it, because a price below its base with no promotion is a
@@ -335,7 +337,7 @@ describe('a rebuild that has removed a product the index still lists', () => {
     });
     unreachable.connect().catch(() => undefined);
 
-    const res = await request(createApp(rootLogger, new ProductReadModel(unreachable))).get(
+    const res = await request(createApp(testLogger, new ProductReadModel(unreachable))).get(
       '/api/products',
     );
     unreachable.disconnect();
