@@ -30,7 +30,8 @@ use `gh pr diff <n>`.
 3. **Trace async and indirect dependents.** Async paths are invisible to the
    type checker, so look for them explicitly:
    - queue producers and consumers, workers, cron or serverless handlers. Two
-     BullMQ queues exist on Redis database 1: `events`, carrying
+     BullMQ queues exist on the logical database `REDIS_QUEUE_DB` names
+     (default 1): `events`, carrying
      `product.upserted`, `promotion.changed`, `readmodel.rebuild` and
      `reconcile.run`, and `ingestion`, carrying `ingestion.chunk`. A promotion
      boundary is a delayed `promotion.changed` under the write-once job id
