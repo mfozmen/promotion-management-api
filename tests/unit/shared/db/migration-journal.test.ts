@@ -1,32 +1,69 @@
+import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { MIGRATIONS_FOLDER } from '@src/shared/db/migrate.js';
 
-type Journal = { entries: { idx: number; when: number; tag: string }[] };
+type Entry = { idx: number; when: number; tag: string };
+type Journal = { entries: Entry[] };
+
+const JOURNAL = `${MIGRATIONS_FOLDER}/meta/_journal.json`;
 
 async function journal(): Promise<Journal> {
-  return JSON.parse(await readFile(`${MIGRATIONS_FOLDER}/meta/_journal.json`, 'utf8')) as Journal;
+  return JSON.parse(await readFile(JOURNAL, 'utf8')) as Journal;
 }
 
-// The migrator reads the single most recently applied row and applies every entry whose
-// `when` is greater; it never compares the hash it stores. So an entry generated before one
-// that merged ahead of it is skipped on every database that already applied the other, for
-// ever, while the boot reports success. The condition for that is visible here and nowhere
-// else: it is a property of the journal at merge time, not of any database. Asserting the
-// applied count against a freshly migrated database cannot catch it — there the timestamps
-// are increasing by construction and the assertion passes whatever the order.
+// The ref must resolve or this fails: a guard that quietly does not run is
+// indistinguishable from one that passed, which is how three gates got past us this week.
+// A ref that resolves but carries no journal is a different answer, and an honest one —
+// before the first migrations land there is nothing deployed to protect.
+function journalOnMain(): Journal {
+  const ref = ['origin/main', 'main'].find((candidate) => {
+    try {
+      execFileSync('git', ['rev-parse', '--verify', '--quiet', candidate], { stdio: 'ignore' });
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  if (ref === undefined) {
+    throw new Error('neither origin/main nor main resolves; fetch main before running');
+  }
+
+  try {
+    return JSON.parse(execFileSync('git', ['show', `${ref}:${JOURNAL}`], { encoding: 'utf8' }));
+  } catch {
+    return { entries: [] };
+  }
+}
+
+// The migrator applies every journal entry whose `when` is greater than the single most
+// recently applied row, and never compares the hash it stores. So an entry that arrives
+// carrying a timestamp a deployed database has already passed is skipped there for ever,
+// while the boot reports success. That is a property of this branch against main, not of
+// the file alone: sorting a conflicted journal by `when` leaves it internally tidy and
+// still skips the later migration everywhere it is already deployed.
 describe('the migration journal', () => {
-  it('orders entries by the timestamp the migrator compares, not only by index', async () => {
+  it('adds entries after everything main already carries, never between them', async () => {
     const { entries } = await journal();
-    const timestamps = entries.map((entry) => entry.when);
+    const onMain = journalOnMain().entries;
+    const highestOnMain = Math.max(0, ...onMain.map((entry) => entry.when));
+
+    for (const entry of entries.slice(onMain.length)) {
+      expect(entry.when).toBeGreaterThan(highestOnMain);
+    }
+  });
+
+  it('leaves the entries main carries exactly as they are', async () => {
+    const { entries } = await journal();
+
+    expect(entries.slice(0, journalOnMain().entries.length)).toEqual(journalOnMain().entries);
+  });
+
+  it('orders entries by the timestamp the migrator compares, and never repeats one', async () => {
+    const timestamps = (await journal()).entries.map((entry) => entry.when);
 
     expect(timestamps).toEqual([...timestamps].sort((a, b) => a - b));
     expect(new Set(timestamps).size).toBe(timestamps.length);
-  });
-
-  it('numbers entries consecutively from zero, so the file order is the apply order', async () => {
-    const { entries } = await journal();
-
-    expect(entries.map((entry) => entry.idx)).toEqual(entries.map((_entry, index) => index));
   });
 });

@@ -14,9 +14,12 @@ export async function runMigrations(connectionString: string): Promise<void> {
     max: 1,
     statement_timeout: 0,
     idle_in_transaction_session_timeout: 0,
-    // `statement_timeout` bounds the work, `lock_timeout` the wait to start it. ADR-0003.
-    options: '-c lock_timeout=10s',
   });
+
+  // `statement_timeout` bounds the work, `lock_timeout` the wait to start it. Set here
+  // rather than through `options`, which a `DATABASE_URL` carrying its own would replace
+  // silently. ADR-0003.
+  pool.on('connect', (client) => void client.query("set lock_timeout = '10s'"));
 
   try {
     await migrate(drizzle(pool), { migrationsFolder: MIGRATIONS_FOLDER });

@@ -766,6 +766,19 @@ that adds a query-serving index names the query in its comment.
 11.4 The migration and the ORM schema describe the same thing; drift is a
 finding.
 
+11.5 **A conflict in `meta/_journal.json` is resolved by regenerating the newer
+migration, never by reordering the entries.** Drizzle's migrator applies every
+entry whose `when` is greater than the single most recently applied row and
+never compares the hash it stores, so an entry sorted into the middle of the
+journal is skipped for ever on every database that has already passed that
+timestamp, while the boot reports success. Sorting is the tidy-looking
+resolution and the wrong one: it leaves the file internally ordered, so any
+check that only reads the file passes. `tests/unit/shared/db/migration-journal.test.ts`
+compares against main instead — entries main carries are unchanged, new ones
+are newer than all of them — which is what catches it. Evidence: the first
+version of that guard asserted the applied row count against a freshly migrated
+database, where the timestamps increase by construction, and could not fail.
+
 ---
 
 ## 12. Keep it small

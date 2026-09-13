@@ -26,7 +26,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ```bash
 npm ci
 cp .env.example .env       # placeholders only; .env is gitignored
-docker compose up -d --wait   # PostgreSQL, Redis and the api, all healthy
+docker compose up -d --wait --wait-timeout 300   # PostgreSQL, Redis and the api, all healthy
 ```
 
 That one command is the whole boot. `api` migrates before it listens, so `--wait` returns only once the schema is current and the application is answering on http://127.0.0.1:3100 — there are no tables, constraints, the `active_promotions` view or seeded `ingestion` pricing rules to install by hand, and no `DATABASE_URL` to get right: the service composes it from the same `POSTGRES_*` variables `postgres` reads. Every `up` is safe, because Drizzle's migrations table applies only what it has not already recorded.
