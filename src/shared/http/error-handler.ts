@@ -106,11 +106,15 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       res.set('Retry-After', retryAfter());
     }
     if (known.details !== undefined) {
-      // A list is capped; the single conflict shape has nothing to cap and is
-      // already one field read from one row.
-      body.error.details = Array.isArray(known.details)
-        ? known.details.slice(0, MAX_DETAILS)
-        : known.details;
+      // A list is capped. The conflict shape is rebuilt field by field rather
+      // than passed through, so adding a field to `ConflictDetail` — a name, a
+      // window, an SKU — cannot reach a client without an edit here, where a
+      // reviewer is looking (REVIEW.md 8.3b).
+      const detail = known.details;
+      body.error.details =
+        'conflictingPromotionId' in detail
+          ? { conflictingPromotionId: detail.conflictingPromotionId }
+          : detail.slice(0, MAX_DETAILS);
     }
     res.status(known.status).json(body);
 

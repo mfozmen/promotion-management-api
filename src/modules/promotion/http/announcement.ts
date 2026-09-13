@@ -1,6 +1,6 @@
 import type { Logger } from 'pino';
 import type { Enqueue } from '../../../shared/enqueue.js';
-import type { PromotionBoundaries } from '../../../shared/promotion-boundaries.js';
+import type { PromotionBoundaries } from '../domain/dto/promotion-boundaries.js';
 
 /**
  * What announcing a promotion change needs, and the contract both announcers

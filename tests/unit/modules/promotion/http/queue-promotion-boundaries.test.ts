@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EventBus } from '@src/shared/event-bus.js';
-import { QueuePromotionBoundaries } from '@src/shared/queue-promotion-boundaries.js';
+import { QueuePromotionBoundaries } from '@src/modules/promotion/http/queue-promotion-boundaries.js';
 
 /**
  * This adapter is the gap between a handler and the event bus, and `src/server.ts`

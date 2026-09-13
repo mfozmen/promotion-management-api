@@ -6,7 +6,7 @@ import { EventBus } from './shared/event-bus.js';
 import { GracefulShutdown } from './shared/graceful-shutdown.js';
 import { logger } from './shared/logger.js';
 import { queueEnqueue } from './shared/queue-enqueue.js';
-import { QueuePromotionBoundaries } from './shared/queue-promotion-boundaries.js';
+import { QueuePromotionBoundaries } from './modules/promotion/http/queue-promotion-boundaries.js';
 
 const config = loadConfig();
 const shutdownTimeoutMs = GracefulShutdown.parseTimeout(process.env.SHUTDOWN_TIMEOUT_MS);

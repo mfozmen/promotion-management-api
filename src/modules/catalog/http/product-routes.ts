@@ -4,6 +4,7 @@ import type { Db } from '../../../shared/db/client.js';
 import { asyncRoute } from '../../../shared/http/async-route.js';
 import { validate } from '../../../shared/http/request-validator.js';
 import { HttpError } from '../../../shared/http/http-error.js';
+import type { CreateProduct } from '../domain/dto/create-product-schema.js';
 import { createProductSchema } from '../domain/dto/create-product-schema.js';
 import { insertProduct } from '../db/insert-product.js';
 
@@ -18,7 +19,7 @@ export function productRoutes(db: Db, enqueue: Enqueue): Router {
     '/',
     validate({ body: createProductSchema }),
     asyncRoute(async (req, res) => {
-      const result = await insertProduct(db, req.body as never);
+      const result = await insertProduct(db, req.body as CreateProduct);
       if (!result.ok) throw new HttpError('SKU_EXISTS', 'A product with this SKU already exists');
 
       // After the insert has committed, never inside it: an event carrying an

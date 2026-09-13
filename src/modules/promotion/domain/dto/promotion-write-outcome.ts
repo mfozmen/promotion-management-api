@@ -13,4 +13,5 @@ export type PromotionWriteOutcome =
   | { ok: true; promotion: PromotionView; now: Date }
   | { ok: false; reason: 'overlap'; conflictingPromotionId: number | null }
   | { ok: false; reason: 'not-assignable' }
-  | { ok: false; reason: 'not-found' };
+  | { ok: false; reason: 'not-found' }
+  | { ok: false; reason: 'no-such-product' };

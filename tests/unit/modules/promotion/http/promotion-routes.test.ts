@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
 import type { Db } from '@src/shared/db/client.js';
 import type { Enqueue } from '@src/shared/enqueue.js';
-import type { PromotionBoundaries } from '@src/shared/promotion-boundaries.js';
+import type { PromotionBoundaries } from '@src/modules/promotion/domain/dto/promotion-boundaries.js';
 import { captureLogger } from '../../../capture-logger.js';
 
 const hour = 3_600_000;

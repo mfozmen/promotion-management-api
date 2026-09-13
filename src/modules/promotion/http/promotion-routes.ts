@@ -4,7 +4,7 @@ import { validate } from '../../../shared/http/request-validator.js';
 import type { Db } from '../../../shared/db/client.js';
 import type { Enqueue } from '../../../shared/enqueue.js';
 import { HttpError } from '../../../shared/http/http-error.js';
-import type { PromotionBoundaries } from '../../../shared/promotion-boundaries.js';
+import type { PromotionBoundaries } from '../domain/dto/promotion-boundaries.js';
 import { assignPromotion } from '../db/assign-promotion.js';
 import { cancelPromotion } from '../db/cancel-promotion.js';
 import { findPromotion } from '../db/find-promotion.js';
@@ -12,8 +12,11 @@ import { insertPromotion } from '../db/insert-promotion.js';
 import { listPromotions } from '../db/list-promotions.js';
 import { announceCancellation } from './announce-cancellation.js';
 import { announcePromotion } from './announce-promotion.js';
+import type { AssignPromotion } from '../domain/dto/assign-promotion-schema.js';
 import { assignPromotionSchema } from '../domain/dto/assign-promotion-schema.js';
+import type { CreatePromotion } from '../domain/dto/create-promotion-schema.js';
 import { createPromotionSchema } from '../domain/dto/create-promotion-schema.js';
+import type { ListPromotionsQuery } from '../domain/dto/list-promotions-query-schema.js';
 import { listPromotionsQuerySchema } from '../domain/dto/list-promotions-query-schema.js';
 import { promotionWriteError } from './promotion-write-error.js';
 
@@ -39,7 +42,7 @@ export function promotionRoutes(db: Db, enqueue: Enqueue, boundaries: PromotionB
     '/',
     validate({ body: createPromotionSchema }),
     asyncRoute(async (req, res) => {
-      const outcome = await insertPromotion(db, req.body as never);
+      const outcome = await insertPromotion(db, req.body as CreatePromotion);
       if (!outcome.ok) throw promotionWriteError(outcome);
 
       // A draft has no target and no boundaries to schedule; it changes no price.
@@ -58,7 +61,7 @@ export function promotionRoutes(db: Db, enqueue: Enqueue, boundaries: PromotionB
     '/:id/assign',
     validate({ body: assignPromotionSchema }),
     asyncRoute(async (req, res) => {
-      const outcome = await assignPromotion(db, idFrom(req.params.id), req.body as never);
+      const outcome = await assignPromotion(db, idFrom(req.params.id), req.body as AssignPromotion);
       if (!outcome.ok) throw promotionWriteError(outcome);
 
       await announcePromotion(outcome.promotion, outcome.now, {
@@ -88,7 +91,7 @@ export function promotionRoutes(db: Db, enqueue: Enqueue, boundaries: PromotionB
     '/',
     validate({ query: listPromotionsQuerySchema }),
     asyncRoute(async (req, res) => {
-      res.status(200).json({ items: await listPromotions(db, req.query as never) });
+      res.status(200).json({ items: await listPromotions(db, req.query as unknown as ListPromotionsQuery) });
     }),
   );
 

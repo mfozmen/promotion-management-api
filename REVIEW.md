@@ -572,6 +572,14 @@ never repeats a free-form value the caller sent: a value is not an identifier
 and there is nothing to fix by seeing it again, so a 404 does not echo the path
 and a parser's message is replaced rather than forwarded.
 
+One identifier is carved out, and only one: `409 PROMOTION_OVERLAP` returns
+`details.conflictingPromotionId`, the id of the active promotion whose window the
+caller's request collided with. It is a stored value the caller never held, so it
+is an exception rather than an application of this rule, and it is bounded to that
+single integer — an admin refused a promotion cannot act without knowing which one
+to cancel. Anything more about that row — its name, its window, its discount — is
+the finding this rule already describes.
+
 This binds every message that reaches a response, not only the ones a
 middleware writes. A handler's own 4xx message crosses as written: the envelope
 bounds its length and inspects nothing, so a message naming a row the caller

@@ -5,7 +5,7 @@ import { createApp } from '@src/app.js';
 import { products } from '@src/modules/catalog/db/schema/products.js';
 import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
 import type { Enqueue } from '@src/shared/enqueue.js';
-import type { PromotionBoundaries } from '@src/shared/promotion-boundaries.js';
+import type { PromotionBoundaries } from '@src/modules/promotion/domain/dto/promotion-boundaries.js';
 import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
@@ -544,5 +544,29 @@ describe('the admin list is bounded and pages by keyset', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('a promotion aimed at a product that does not exist', () => {
+  it('answers 404 on create rather than paging someone with a 500', async () => {
+    // The foreign key raises 23503. Before it was caught, an admin's typo in
+    // productId reached the generic handler as INTERNAL.
+    const res = await request(app())
+      .post('/api/promotions')
+      .send({ ...draftBody(), productId: 424242 });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('answers 404 on assign too', async () => {
+    const created = await request(app()).post('/api/promotions').send(draftBody());
+
+    const res = await request(app())
+      .post(`/api/promotions/${created.body.id}/assign`)
+      .send({ productId: 424242 });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
   });
 });

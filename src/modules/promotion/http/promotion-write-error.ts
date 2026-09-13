@@ -3,6 +3,9 @@ import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcom
 
 /** The one place a failed promotion write becomes a status. */
 export function promotionWriteError(outcome: Extract<PromotionWriteOutcome, { ok: false }>): HttpError {
+  if (outcome.reason === 'no-such-product') {
+    return new HttpError('NOT_FOUND', 'No such product');
+  }
   if (outcome.reason === 'not-found') {
     return new HttpError('NOT_FOUND', 'No such promotion');
   }

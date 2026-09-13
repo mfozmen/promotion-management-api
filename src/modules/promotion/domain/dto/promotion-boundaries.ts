@@ -1,4 +1,4 @@
-import type { PromotionBoundary } from '../modules/promotion/domain/dto/promotion-boundary.js';
+import type { PromotionBoundary } from './promotion-boundary.js';
 
 /**
  * Scheduling a promotion's start and end, narrowed to what a handler does with
