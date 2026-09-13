@@ -1,5 +1,6 @@
 import { createApp } from './app.js';
 import { eventRegistry } from './events/event-registry.js';
+import { QueueStatsReporter } from './modules/admin/domain/queue-stats-reporter.js';
 import { eventRouting } from './events/event-routing.js';
 import { loadConfig } from './shared/config.js';
 import { runMigrations } from './shared/db/migrate.js';
@@ -14,15 +15,18 @@ const config = loadConfig();
 // The health check `up --wait` waits on must not answer in front of a missing schema.
 await runMigrations(config.DATABASE_URL);
 
-const app = createApp(
-  logger,
-  new ProductReadRepository(createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB)),
-);
 const queue = EventQueue.connect(
   config.REDIS_URL,
   config.REDIS_QUEUE_DB,
   eventRegistry,
   eventRouting,
+);
+// The queue is built first because the admin route reads it: an app built without the
+// reporter serves no `/api/admin/queues/stats` at all.
+const app = createApp(
+  logger,
+  new ProductReadRepository(createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB)),
+  new QueueStatsReporter(queue, () => new Date(), EventQueue.OPERATION_TIMEOUT_MS),
 );
 
 const server = app.listen(config.PORT, () => {

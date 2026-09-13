@@ -72,7 +72,29 @@ export class EventQueue<R extends Registry> {
     return this.bounded(`remove("${jobId}")`, this.queues[this.routing[name]].remove(jobId));
   }
 
-  inspect(name: QueueName): Pick<Queue, 'getJob' | 'getWaitingCount' | 'getDelayedCount'> {
+  /** The queues this bus holds, so a reader iterates what exists rather than a second list. */
+  names(): QueueName[] {
+    return Object.keys(this.queues) as QueueName[];
+  }
+
+  /**
+   * Read methods. `getFailedCount` is here because `removeOnFail: false` makes the failed set
+   * the dead-letter queue, and a dead-letter queue nothing can count is not one. Not a
+   * read-only seam: `getJob` and `getJobs` hand back live `Job` objects carrying `remove`,
+   * `retry` and `promote`, so a caller narrows to the fields it needs rather than
+   * passing a handle on.
+   */
+  inspect(
+    name: QueueName,
+  ): Pick<
+    Queue,
+    | 'getJob'
+    | 'getJobs'
+    | 'getWaitingCount'
+    | 'getActiveCount'
+    | 'getDelayedCount'
+    | 'getFailedCount'
+  > {
     return this.queues[name];
   }
 

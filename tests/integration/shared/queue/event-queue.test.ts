@@ -205,7 +205,14 @@ describe('EventQueue', () => {
     const failed = await bus.inspect('ingestion').getJob(job.id!);
     expect(failed?.attemptsMade).toBe(3);
     expect(failed?.failedReason).toBe('poisoned job');
+    // The count, not just the job: `removeOnFail: false` is only a dead-letter queue if
+    // something can see the set growing, and until now nothing could.
+    expect(await bus.inspect('ingestion').getFailedCount()).toBe(1);
   }, 40_000);
+
+  it('names the queues it holds, so a reader needs no second list of them', () => {
+    expect(bus.names()).toEqual(['promotions', 'catalog', 'ingestion', 'maintenance']);
+  });
 
   it('keeps every queue on the queue database and never writes to the read-model database', async () => {
     const readModel = new Redis(redisUrl, { db: READ_MODEL_DB });
