@@ -23,7 +23,7 @@ caught and how it was corrected. If not given, reconstruct from
    - Every architectural decision that landed gets an entry with Status,
      Context, Decision, Consequences and explicit Trade-offs (what was given
      up, and why that is acceptable for ModaCo).
-   - The records run to ADR-0010 and carry no placeholders; a new one is written in full or not at all.
+   - The records carry no placeholders; a new one is written in full or not at all.
    - Scenario A and Scenario B entries must name the pattern, the tools, the
      database structures, and the failure modes they defend against.
    - Rejected alternatives get one line each with the reason.
