@@ -69,7 +69,10 @@ describe('listProducts', () => {
 
     const raised = await listProducts(redis, page).catch((error: unknown) => error);
 
-    expect(raised).toBe(replyError);
+    expect((raised as Error).name).toBe('ReplyError');
+    // Which key: the operator otherwise reads "against a key holding the wrong
+    // kind of value" and goes looking through fifty thousand of them.
+    expect((raised as Error).message).toContain('product:1');
   });
 
   it('leaves a malformed row a server fault, because that price is wrong rather than absent', async () => {

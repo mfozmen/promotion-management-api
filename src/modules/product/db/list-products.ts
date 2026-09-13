@@ -35,8 +35,10 @@ export async function listProducts(redis: Redis, { category, order, page, pageSi
   // `exec` is typed nullable: ioredis answers null for a transaction a WATCH
   // aborted, and a pipeline has no WATCH.
   const replies = (await fromReadModel(pipeline.exec())) ?? [];
-  for (const [error] of replies) {
-    if (error !== null) throw replyFailure(error);
+  for (const [index, [error]] of replies.entries()) {
+    // Which product: the reply says only that some key held the wrong kind of
+    // value, and a catalogue has fifty thousand of them.
+    if (error !== null) throw replyFailure(error, productKey(Number(ids[index])));
   }
 
   // A member whose hash is gone is a rebuild in progress, not a bad page: the

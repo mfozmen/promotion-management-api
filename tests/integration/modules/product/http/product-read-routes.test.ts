@@ -45,7 +45,7 @@ describe('GET /api/products', () => {
     expect(res.body).toMatchObject({ page: 1, pageSize: 20, total: 3 });
   });
 
-  it('orders by the price a shopper pays, not the price before the sale', async () => {
+  it('returns the index order, which the seed scores by effective price', async () => {
     await seedProducts(redis(), [
       product({
         id: 1,
@@ -59,10 +59,13 @@ describe('GET /api/products', () => {
 
     const res = await request(app()).get('/api/products?order=asc');
 
-    // Every other ordering case has base equal to effective, so a scorer that
-    // read the base price would pass all of them. Here the two orders
-    // disagree: 1 is the dearer product before its sale and the cheaper one
-    // after it, so scoring by base price returns [2, 1] and fails this.
+    // The route returns ZRANGE order, so what this pins is the index contract
+    // the seed encodes: score = effectivePriceCents. The two prices disagree
+    // here on purpose — 1 is the dearer product before its sale and the
+    // cheaper one after it — so a helper that scored by base price returns
+    // [2, 1] and fails this. What it cannot prove is that the recompute scores
+    // the same way: the story that writes it asserts that against this same
+    // helper, or the contract is only half held.
     expect(res.body.items.map((item: { id: number }) => item.id)).toEqual([1, 2]);
   });
 

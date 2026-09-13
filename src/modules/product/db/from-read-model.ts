@@ -4,10 +4,10 @@ import { replyFailure } from './reply-failure.js';
  *  says why). Every command after the readiness gate opens the same window, and
  *  a direct command rejects with the same shapes a pipeline resolves with, so
  *  both go through one classifier. */
-export async function fromReadModel<T>(reply: Promise<T>): Promise<T> {
+export async function fromReadModel<T>(reply: Promise<T>, key?: string): Promise<T> {
   try {
     return await reply;
   } catch (error) {
-    throw replyFailure(error);
+    throw replyFailure(error, key);
   }
 }

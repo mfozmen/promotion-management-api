@@ -295,8 +295,14 @@ argument with it.
 `-OOM`, `-BUSY`, `-MISCONF` and `-READONLY` all arrive in the same class as
 `-WRONGTYPE`, so a classifier that maps the class to a `500` answers a restart
 with a status nothing retries. Classify on the error string, and let anything
-unrecognised be the retryable answer: guessing "come back" at a permanent fault
-costs one retry, and guessing "permanent" at an outage costs the outage.
+unrecognised be the retryable answer — but know what that costs. A permanent
+fault read as retryable (`-NOAUTH` and `-NOPERM` after a credential rotation,
+`-ERR syntax error` against a server too old for the command) is retried for
+ever and logged at `warn` rather than `error`, so nothing pages and the reply
+string in that line is the only thing that ends it. The tie-break still goes
+that way, because the opposite guess answers an outage with a status nothing
+retries at all — but a prefix list of "permanent" codes is not the fix either:
+`-ERR max number of clients reached` is transient and would poison it.
 
 ---
 

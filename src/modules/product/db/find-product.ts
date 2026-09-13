@@ -13,7 +13,7 @@ import { HttpError } from '../../../shared/http/http-error.js';
  *  listing calls that state a rebuild in progress, and a 404 for it is cached
  *  by every crawler and CDN that sees it. The hit path stays one command. */
 export async function findProduct(redis: Redis, id: number) {
-  const hash = await fromReadModel(redis.hgetall(productKey(id)));
+  const hash = await fromReadModel(redis.hgetall(productKey(id)), productKey(id));
   if (Object.keys(hash).length > 0) return toProductView(hash);
 
   const listed = await fromReadModel(redis.zscore(ALL_PRODUCTS, String(id)));
