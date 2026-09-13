@@ -4,6 +4,7 @@ import { Redis } from 'ioredis';
 import { eventRegistry } from '@src/events/event-registry.js';
 import { eventRouting } from '@src/events/event-routing.js';
 import { EventQueue } from '@src/shared/queue/event-queue.js';
+import { SweepBoundariesCommand } from '@src/modules/reconciler/commands/sweep-boundaries-command.js';
 import { logger } from '@src/shared/logger.js';
 import { randomUUID } from 'node:crypto';
 
@@ -121,6 +122,21 @@ describe('EventQueue', () => {
     expect(first.id).toBe('promo:5:activate');
     expect(second.id).toBe(first.id);
     expect(await bus.inspect('promotions').getDelayedCount()).toBe(1);
+  });
+
+  it('accepts the id the boundary sweep builds, which BullMQ parses rather than stores', async () => {
+    // A custom id containing colons must split in exactly three, so an ISO timestamp
+    // in the third part throws on every publish — a sweep that repairs nothing and
+    // never advances its watermark. The rule is BullMQ's; the shape is ours.
+    const since = new Date('2026-09-14T02:50:00.000Z');
+
+    const job = await bus.publish(
+      'promotion.changed',
+      { promotionId: 5 },
+      { jobId: SweepBoundariesCommand.jobId(5, since) },
+    );
+
+    expect(job.id).toBe(`sweep:5:${String(since.getTime())}`);
   });
 
   it.each([

@@ -27,17 +27,21 @@ export class SweepBoundariesCommand {
     private readonly logger: Logger,
   ) {}
 
+  /** Keyed on the watermark, not the window's end, which moves with the clock on every
+   *  re-read; and milliseconds, not an ISO string, because BullMQ rejects a custom id
+   *  whose colons do not split it in three. */
+  static jobId(promotionId: number, since: Date): string {
+    return `sweep:${String(promotionId)}:${String(since.getTime())}`;
+  }
+
   async execute(): Promise<void> {
     const { since, windowEnd, promotionIds } = await this.boundaries.crossedSince();
 
     for (const promotionId of promotionIds) {
-      // Keyed on the watermark, not the window's end: the end moves with the clock
-      // on every re-read, so a second pass over an unadvanced window would enqueue
-      // a different id and recompute every category again.
       await this.queue.publish(
         'promotion.changed',
         { promotionId },
-        { jobId: `sweep:${String(promotionId)}:${since.toISOString()}` },
+        { jobId: SweepBoundariesCommand.jobId(promotionId, since) },
       );
     }
 

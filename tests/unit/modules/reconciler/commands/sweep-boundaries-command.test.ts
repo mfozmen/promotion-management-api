@@ -67,10 +67,8 @@ describe('SweepBoundariesCommand', () => {
     await new SweepBoundariesCommand(boundariesHolding([7]), queue, logger).execute();
     await new SweepBoundariesCommand(later, queue, logger).execute();
 
-    expect(queue.jobs.map((job) => job.jobId)).toEqual([
-      'sweep:7:2026-09-14T02:50:00.000Z',
-      'sweep:7:2026-09-14T02:50:00.000Z',
-    ]);
+    const expected = `sweep:7:${String(SINCE.getTime())}`;
+    expect(queue.jobs.map((job) => job.jobId)).toEqual([expected, expected]);
   });
 
   it('raises rather than reporting a swept window when an emission fails', async () => {
