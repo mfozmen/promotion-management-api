@@ -52,15 +52,16 @@ The compose file holds the two stores and a browser for each behind the `tools` 
 ## Project structure
 
 ```
-src/               app.ts (the Express app and the /api router), server.ts (the process entry point)
-src/shared/http/   the HTTP boundary: the error type and its status table, the error handler,
-                   the not-found handler, the request validator and the logger
-src/shared/        config.ts, and http/ above. Directories are named for a role, files for
-                   their one exported declaration (REVIEW.md 8c.2, 8c.7)
-tests/unit/        mirrors src/ (tests/unit/shared/config.test.ts, tests/unit/shared/http/);
-                   tests/ itself holds helpers both kinds import (capture-logger.ts)
-docs/              design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
+src/                app.ts (the Express app and the /api router), server.ts (the process entry point)
+src/shared/http/    the HTTP boundary: the error type and its status table, the error handler,
+                    the not-found handler, the request validator and the request logger
+src/shared/         config.ts, logger.ts (the root logger and the error whitelist every log site
+                    uses), and http/ above
+tests/              unit, integration and e2e, each layer mirroring src/
+docs/               design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
+
+Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7). Inside a test layer the tree mirrors `src/`, one test file per source file, and a helper both layers import sits at `tests/<subject>-<role>.ts` (7.7). Tests import their subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.config.ts` `resolve.alias`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
 
 `tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
 

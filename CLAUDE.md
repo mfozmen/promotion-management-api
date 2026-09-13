@@ -19,6 +19,7 @@ Instructions for Claude Code sessions working in this repository. For the stack 
 - Every PR body has a **Case coverage** table (template section): which case-study items (R/A/B/D codes) it delivers, in plain words the owner can verify without reading code.
 
 - `REVIEW.md` is the review rulebook: read it before writing code and before reviewing; blocking rules are fixed before a PR is handed to the owner.
+- Source layout and naming are in `CONTRIBUTING.md` ("Source layout"), enforced by REVIEW.md 8c: directories by role (`domain/`, `db/`, `http/`, `jobs/`), one exported declaration per file, no `models/` or `utils/`. Read it before creating a file.
 - **Feed what you learn back into `REVIEW.md`.** A review finding that would be worth making on someone else's PR next week becomes a rule, in the PR that fixes it, with the failure that produced it stated in one line. A finding that got past review means a rule is missing or its trigger is unreachable; fix the rule too (REVIEW.md 13b).
 
 - See `README.md`, `ADR.md`, `CONTRIBUTING.md` and `Form 5_AI Appendix.docx` for project context and process. Update `Form 5_AI Appendix.docx` as you go, not at the end.

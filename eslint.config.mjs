@@ -14,4 +14,21 @@ export default tseslint.config(
       complexity: ['error', 10],
     },
   },
+  {
+    files: ['src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@src/*'],
+              message:
+                'The @src alias is for tests. tsc does not rewrite it on emit, so an import through it inside src/ builds and then fails at container start.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

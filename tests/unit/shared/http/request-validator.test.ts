@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import express, { type Express, type Request, type RequestHandler, type Response } from 'express';
 import request from 'supertest';
 import { z } from 'zod';
-import { validate } from '../../../../src/shared/http/request-validator.js';
-import { errorHandler } from '../../../../src/shared/http/error-handler.js';
-import { httpLogger } from '../../../../src/shared/http/http-logger.js';
+import { validate } from '@src/shared/http/request-validator.js';
+import { errorHandler } from '@src/shared/http/error-handler.js';
+import { httpLogger } from '@src/shared/http/http-logger.js';
 import { captureLogger, type CapturedLogger } from '../../../capture-logger.js';
 
 /** A one-route app so the helper can be exercised through real HTTP. */
