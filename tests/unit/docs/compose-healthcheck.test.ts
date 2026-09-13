@@ -39,8 +39,11 @@ describe('every PostgreSQL healthcheck', () => {
   // database name changed reports healthy and fails the first query (ADR-0003). The check
   // has to name the database it is certifying.
   const services = (
-    parse(compose) as {
-      services: Record<string, { image?: string; healthcheck?: { test: string[] } }>;
+    parse(compose, { merge: true }) as {
+      services: Record<
+        string,
+        { image?: string; healthcheck?: { test: string[]; start_period?: string } }
+      >;
     }
   ).services;
   const stores = Object.entries(services).filter(([, service]) =>
@@ -58,10 +61,11 @@ describe('every PostgreSQL healthcheck', () => {
 
       expect(test).toContain('-d "$$POSTGRES_DB"');
       expect(test).not.toContain('pg_isready');
-      // Over TCP rather than the local socket: during `initdb` the entrypoint runs its own
-      // temporary server with `listen_addresses=''`, so a socket check can report healthy
-      // before the server a consumer connects to exists.
+      // Over TCP rather than the local socket (ADR-0003).
       expect(test).toContain('-h 127.0.0.1');
+      // A TCP check fails its whole first interval on a cold volume, so without a start
+      // period every boot spends a retry on a store that is merely still initialising.
+      expect(service.healthcheck?.start_period).toBeDefined();
     },
   );
 });

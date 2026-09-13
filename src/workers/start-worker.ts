@@ -8,11 +8,11 @@ import { EventQueue } from '../shared/queue/event-queue.js';
 /** The three services in `docker-compose.yml`; a name that is not one of them is not a worker. */
 type WorkerName = 'event-handler' | 'ingestion-worker' | 'reconciler';
 
-interface Started {
+interface Connected {
   config: ReturnType<typeof loadConfig>;
   queue: EventQueue<typeof eventRegistry>;
-  /** What this process lets go of on `SIGTERM` besides the queue; the caller adds its own. */
-  stopping: (...also: Array<() => Promise<unknown>>) => void;
+  /** What this process lets go of when a stop is signalled, besides the queue. */
+  closeOnSigterm: (...also: Array<() => Promise<unknown>>) => void;
 }
 
 /**
@@ -21,7 +21,7 @@ interface Started {
  * producer handle on all four queues in every process, so the line names what this one drains
  * rather than what it holds, and an empty list is how an idle queue is told from a drained one.
  */
-export function startWorker(name: WorkerName, consuming: string[] = []): Started {
+export function startWorker(name: WorkerName, consuming: string[] = []): Connected {
   const config = loadConfig();
   const queue = EventQueue.connect(
     config.REDIS_URL,
@@ -35,7 +35,7 @@ export function startWorker(name: WorkerName, consuming: string[] = []): Started
   return {
     config,
     queue,
-    stopping: (...also) => {
+    closeOnSigterm: (...also) => {
       process.once('SIGTERM', () => {
         void new GracefulShutdown(queue, config.SHUTDOWN_DRAIN_TIMEOUT_MS)
           .close(...also)

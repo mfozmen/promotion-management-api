@@ -63,7 +63,7 @@ describe('startWorker', () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     const pool = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
-    startWorker('reconciler', ['maintenance']).stopping(pool);
+    startWorker('reconciler', ['maintenance']).closeOnSigterm(pool);
     process.emit('SIGTERM');
     await vi.waitFor(() => {
       expect(exit).toHaveBeenCalledWith(0);
@@ -81,7 +81,7 @@ describe('startWorker', () => {
     const info = vi.spyOn(logger, 'info');
     vi.useFakeTimers();
 
-    startWorker('event-handler').stopping();
+    startWorker('event-handler').closeOnSigterm();
     process.emit('SIGTERM');
     await vi.advanceTimersByTimeAsync(10_000);
     vi.useRealTimers();
@@ -97,7 +97,7 @@ describe('startWorker', () => {
     close.mockRejectedValue(new Error('connection lost'));
     const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
 
-    startWorker('reconciler').stopping();
+    startWorker('reconciler').closeOnSigterm();
     process.emit('SIGTERM');
     await vi.waitFor(() => {
       expect(exit).toHaveBeenCalledWith(1);

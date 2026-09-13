@@ -1,5 +1,18 @@
 name: promotion-management-api
 
+x-app-environment: &app-environment
+  DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
+  REDIS_URL: redis://redis:6379
+  REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
+  REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
+  SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
+
+x-stores-healthy: &stores-healthy
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -48,21 +61,14 @@ services:
     restart: unless-stopped
     stop_grace_period: 15s
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
-      REDIS_URL: redis://redis:6379
-      REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
-      REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
-      SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
+      <<: *app-environment
       UPLOAD_DIR: /app/uploads
     ports:
       - '127.0.0.1:3100:3100'
     volumes:
       - uploads:/app/uploads
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      <<: *stores-healthy
     networks:
       - promotion
     healthcheck:
@@ -84,16 +90,9 @@ services:
     stop_grace_period: 15s
     command: ['node', 'dist/workers/event-handler.js']
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
-      REDIS_URL: redis://redis:6379
-      REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
-      REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
-      SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
+      <<: *app-environment
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      <<: *stores-healthy
       api:
         condition: service_healthy
     networks:
@@ -105,20 +104,13 @@ services:
     stop_grace_period: 15s
     command: ['node', 'dist/workers/ingestion-worker.js']
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
-      REDIS_URL: redis://redis:6379
-      REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
-      REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
-      SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
+      <<: *app-environment
       UPLOAD_DIR: /app/uploads
       NODE_OPTIONS: --max-old-space-size=192
     volumes:
       - uploads:/app/uploads
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      <<: *stores-healthy
       api:
         condition: service_healthy
     networks:
@@ -135,16 +127,9 @@ services:
     stop_grace_period: 15s
     command: ['node', 'dist/workers/reconciler.js']
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
-      REDIS_URL: redis://redis:6379
-      REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
-      REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
-      SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
+      <<: *app-environment
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      <<: *stores-healthy
       api:
         condition: service_healthy
     networks:

@@ -10,7 +10,7 @@ import { startWorker } from './start-worker.js';
  *  latency and not coverage: the next one takes everything since the last success. */
 const SWEEP_EVERY_MS = 5 * 60 * 1000;
 
-const { config, queue, stopping } = startWorker('reconciler', ['maintenance']);
+const { config, queue, closeOnSigterm } = startWorker('reconciler', ['maintenance']);
 const pool = createPool(config.DATABASE_URL);
 const handler = new ReconcilerRunHandler(
   new SweepBoundariesCommand(new BoundaryRepository(createDb(pool)), queue, logger),
@@ -31,7 +31,7 @@ const worker = new Worker(
 await queue.schedule('reconciler.run', SWEEP_EVERY_MS, {});
 
 // The consumer stops before the pool it reads through and the producer handle it publishes on.
-stopping(
+closeOnSigterm(
   () => worker.close(),
   () => pool.end(),
 );

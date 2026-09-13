@@ -817,12 +817,8 @@ Evidence: a status argument sat beside an error code, and the pairing between
 them was wrong in three different directions across three commits before the
 argument itself was deleted and the status derived from the code.
 
-This reaches the data a line logs, not only the arguments a function takes: a
-worker logged `queues: ['promotions', 'catalog']` where no `catalog` queue
-exists. The array was a bare string literal, so only a reader could catch it —
-and it was also a claim the code did not make, since the queue is opened on all
-four. Both went away with the array: the line says what the process does, and
-the one name it still carries is typed to the three services that exist.
+It reaches logged data too: a worker logged a `catalog` queue that does not
+exist, from a bare string array no type could check.
 
 8c.6 The same thing is called the same thing everywhere: the class, the file,
 the test file, the directory, the error code, the ADR and the design spec. A

@@ -11,7 +11,10 @@ import { describe, expect, it } from 'vitest';
 async function services(): Promise<Record<string, Record<string, unknown>>> {
   const file = await readFile(new URL('../../../docker-compose.yml', import.meta.url), 'utf8');
 
-  return (parse(file) as { services: Record<string, Record<string, unknown>> }).services;
+  // `merge: true` resolves the `<<:` anchors the file uses for the shared environment and
+  // store gate, so this reads the same shape Compose does rather than a literal `<<` key.
+  return (parse(file, { merge: true }) as { services: Record<string, Record<string, unknown>> })
+    .services;
 }
 
 const WORKERS = ['event-handler', 'ingestion-worker', 'reconciler'] as const;
