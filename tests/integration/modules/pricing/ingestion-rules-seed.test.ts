@@ -4,7 +4,7 @@ import { RuleCompiler } from '@src/modules/pricing/domain/rule-compiler.js';
 import { RowPricer } from '@src/modules/pricing/domain/row-pricer.js';
 import type { PricingRuleRow } from '@src/modules/pricing/domain/dto/pricing-rule-row.js';
 import { RuleSetLoader } from '@src/modules/pricing/domain/rule-set-loader.js';
-import { pricingRules } from '@src/shared/db/schema.js';
+import { pricingRules } from '@src/modules/pricing/db/schema/pricing-rules.js';
 import { useTestDatabase } from '../../db.js';
 
 const db = useTestDatabase();

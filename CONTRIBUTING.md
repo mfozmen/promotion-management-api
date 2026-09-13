@@ -10,10 +10,11 @@ src/
     domain/     behaviour as classes, collaborators through the constructor (REVIEW.md 8c.9); imports no store and no framework
       dto/      every shape those classes operate on: types, interfaces, enum-like aliases, zod schemas, queue payloads (8c.8)
     db/         queries and repositories (Drizzle)
+      schema/   this module's tables, one file per table (REVIEW.md 8c.10)
     http/       routes, handlers, request schemas (zod)
     jobs/       BullMQ processors
   shared/
-    db/schema/  one file per table, schema.ts re-exports
+    db/         the client and the migrator; migrations/ holds the one journal
     http/       error type, error handler, request validator, logger
     config.ts
 tests/
