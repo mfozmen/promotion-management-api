@@ -698,7 +698,7 @@ src/
       jobs/      scheduling.ts
     pricing/
       domain/    base-price-calculator.ts (compiles the rules, owns the engine, serialises its runs, prices a row), base-price-calculator-cache.ts (caches a compiled calculator; the query that feeds it is the caller's)
-        dto/     pricing-rule-row.ts, compiled-rule-set.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8
+        dto/     pricing-rule-row.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8
       db/        resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts

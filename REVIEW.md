@@ -51,7 +51,7 @@ of that is a finding, because the next input will find the case it misses.
 
 1.3 Exactly one implementation of each discount formula exists, in the
 `Discount` for that discount type (`src/modules/promotion/domain/`), reached
-only through `calculateEffectivePrice`. A second copy inline in a query, a worker or a
+only through `EffectivePriceCalculator`. A second copy inline in a query, a worker or a
 test fixture is a finding even when it agrees today.
 
 1.4 Rounding direction is stated and tested: the discount is floored, so the
@@ -526,7 +526,7 @@ tree-wide property with no source file (`migration-journal.test.ts`) is named
 for the property, at the path of what it guards. ADR-0008.
 
 7.8 **A test imports its subject through the `@src/*` alias, production code
-never does.** `import { calculateEffectivePrice } from '@src/modules/promotion/domain/calculate-effective-price.js'`
+never does.** `import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js'`
 in a test; a relative specifier in `src/`. The alias is `paths` in
 `tsconfig.json` plus `resolve.alias` in `vitest.config.ts`, and an ESLint
 `no-restricted-imports` rule scoped to `src/**` enforces the second half,

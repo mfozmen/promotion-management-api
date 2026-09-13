@@ -39,6 +39,7 @@ export class BasePriceCalculator {
       BasePriceCalculator.newestVersion(active),
     );
   }
+
   async calculate(row: VendorRowFacts): Promise<PricingOutcome> {
     const facts = vendorRowFacts.safeParse(row);
     if (!facts.success) {
@@ -73,11 +74,13 @@ export class BasePriceCalculator {
       pricingRulesVersion: this.pricingRulesVersion,
     };
   }
+
   private static activeIngestionRules(rows: readonly PricingRuleRow[]): PricingRuleRow[] {
     return rows
       .filter((row) => row.active && row.type === 'ingestion')
       .sort((a, b) => b.priority - a.priority || a.id - b.id);
   }
+
   private static async toRule(row: PricingRuleRow, priority: number): Promise<RuleProperties> {
     const where = `pricing rule ${row.id} ("${row.name}")`;
     const properties: RuleProperties = {
@@ -92,6 +95,7 @@ export class BasePriceCalculator {
     await BasePriceCalculator.probe(properties, row, where);
     return properties;
   }
+
   private static parseEvent(row: PricingRuleRow, where: string): AdjustmentEvent {
     const event = adjustmentEvent.safeParse(row.event);
     if (!event.success) {
@@ -99,11 +103,13 @@ export class BasePriceCalculator {
     }
     return event.data;
   }
+
   private static rejectEmptyGroup(row: PricingRuleRow, where: string): void {
     if (BasePriceCalculator.hasEmptyGroup(row.conditions)) {
       throw new Error(`${where} has an empty all or any, which matches every row or none`);
     }
   }
+
   private static async probe(
     properties: RuleProperties,
     row: PricingRuleRow,
@@ -120,9 +126,11 @@ export class BasePriceCalculator {
       throw new Error(`${where} cannot be compiled: ${(error as Error).message}`);
     }
   }
+
   private static newestVersion(rows: readonly PricingRuleRow[]): number {
     return rows.reduce((max, row) => Math.max(max, row.updatedAt.getTime()), 0);
   }
+
   private static outOfRange(cents: bigint, rejectedBy: string): PricingOutcome | undefined {
     if (cents < 0n) {
       return { ok: false, fault: 'row', rejectedBy, reason: `price ${cents} is below zero` };
@@ -137,6 +145,7 @@ export class BasePriceCalculator {
     }
     return undefined;
   }
+
   /** The engine stops at the first priority set that decides, so the probe strips priorities to reach every operator. */
   private static withoutPriorities(node: unknown): unknown {
     if (Array.isArray(node))
@@ -148,6 +157,7 @@ export class BasePriceCalculator {
         .map(([key, value]) => [key, BasePriceCalculator.withoutPriorities(value)]),
     );
   }
+
   /** Both `{all:[]}` and `{any:[]}` are well-formed and fire on every row. ADR-0005. */
   private static hasEmptyGroup(node: unknown): boolean {
     if (Array.isArray(node)) return node.some((child) => BasePriceCalculator.hasEmptyGroup(child));
@@ -156,6 +166,7 @@ export class BasePriceCalculator {
     if (groups.some(([, value]) => Array.isArray(value) && value.length === 0)) return true;
     return Object.values(node).some((value) => BasePriceCalculator.hasEmptyGroup(value));
   }
+
   private run(facts: VendorRowFacts) {
     // Re-checked here: a row queued before the failure must not run.
     const run = this.queue.then(() =>
@@ -166,6 +177,7 @@ export class BasePriceCalculator {
     });
     return run;
   }
+
   private apply(cents: bigint, event: AdjustmentEvent): bigint {
     return event.type === 'adjustCents'
       ? cents + BigInt(event.params.value)
