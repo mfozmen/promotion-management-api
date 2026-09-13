@@ -27,12 +27,28 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Node.js 22 (see `.nvmrc`)
 - Docker with the Compose plugin (PostgreSQL 16, Redis 7 and the `api` image built from this repository's `Dockerfile` all run locally from `docker-compose.yml`), plus one throwaway Redis on 6399 for the queue integration tests, which use no mocks (REVIEW.md 7.3)
 
-## Getting started
+## Run it
+
+Docker with the Compose plugin, and Node for the two npm scripts below.
+
+```bash
+cp .env.example .env   # placeholders only; .env is gitignored
+npm run up             # PostgreSQL, Redis, the api and the test stores, all healthy
+```
+
+The API is on http://127.0.0.1:3100 and BullMQ's dashboard on
+http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data; add `-v` to that compose command to
+drop the volumes too. PostgreSQL creates its database on first start only, so a test store
+that predates a change to `POSTGRES_DB` needs `docker compose --profile test rm -sfv
+postgres-test` rather than a restart.
+
+## Develop
 
 ```bash
 npm ci
-cp .env.example .env       # placeholders only; .env is gitignored
-docker compose up -d --wait --wait-timeout 300   # PostgreSQL, Redis and the api, all healthy
+npm test              # the unit layer, no database needed
+npm run test:integration
+npm run lint
 ```
 
 That one command is the whole boot. `api` migrates before it listens, so `--wait` returns only once the schema is current and the application is answering on http://127.0.0.1:3100 — there are no tables, constraints, the `active_promotions` view or seeded `ingestion` pricing rules to install by hand, and no `DATABASE_URL` to get right: the service composes it from the same `POSTGRES_*` variables `postgres` reads. Every `up` is safe, because Drizzle's migrations table applies only what it has not already recorded.
@@ -55,10 +71,9 @@ Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT 
 
 [`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the upload endpoint and chunk worker arrive with issue #16, and that half of issue #19 is still open.
 
-Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
+Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one — `npm run up` starts it, along with the throwaway PostgreSQL the integration layer clones from. Both are in the `test` profile and hold nothing worth keeping.
 
 ```bash
-docker run -d --rm -p 6399:6379 redis:7-alpine # only the integration layer needs it
 npm test
 npm run test:cov # needs a PostgreSQL and that Redis, see below
 npm run lint
@@ -75,7 +90,7 @@ The suite is split into layers, so the one that needs nothing can run anywhere:
 | both, with coverage                | `npm run test:cov`         | the same two                                                                                                     | CI (the 100 % gate)         |
 
 The integration tests run against a real PostgreSQL and a real Redis, never a mock. Point them at one with
-`TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
+`TEST_DATABASE_URL` (default `postgres://postgres:postgres@127.0.0.1:55432/promotion`). That
 default is not the compose server: `docker-compose.yml` publishes 5432 with the `.env`
 credentials, so either reuse it with
 `TEST_DATABASE_URL=postgres://promo:promo@localhost:5432/promotion`, or keep the harness's
@@ -115,13 +130,17 @@ The compose file holds the two stores, the `api` service built from this reposit
 
 Four queues, one per urgency class, and `eventRouting` maps an event to one of
 them — the caller never picks. `promotions` carries `promotion.changed` and the
-delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
+delayed boundary jobs, `products` carries `product.upserted`, `ingestion` carries
 `chunk.process`, and `maintenance` carries `readmodel.rebuild` and
 `reconciler.run`. The partition is what keeps a 500 000-row import's ~500
 announcements, or a full read-model rebuild, from sitting in front of a flash
 sale's `promotion.changed`: each queue gets its own worker, so two events that
 need different priority get different consumers rather than a priority number
-inside one queue (ADR-0003).
+inside one queue (ADR-0003). No worker consumes any of them yet: `src/workers/`
+is empty, so the reconciler's boundary sweep
+(`src/modules/reconciler/commands/sweep-boundaries-command.ts`, PR #111) runs
+only when something calls it. The worker services story brings the entry points
+and the schedule.
 
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
@@ -147,7 +166,7 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 
 ## Database schema
 
-The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), `0002_active_promotions.sql` creates the `active_promotions` view, and `0003_promotion_list_indexes.sql` adds the two `(product_id, id)` and `(category, id)` btree indexes the admin promotion list filters and orders on — the GiST exclusion indexes cannot serve it, being partial on `status = 'active'`. Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/workers/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
+The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), `0002_active_promotions.sql` creates the `active_promotions` view, `0003_promotion_list_indexes.sql` adds the two `(product_id, id)` and `(category, id)` btree indexes the admin promotion list filters and orders on — the GiST exclusion indexes cannot serve it, being partial on `status = 'active'` — and `0004_promotion_boundary_indexes.sql` adds four partial btree indexes on `starts_at`, `ends_at`, `cancelled_at` and `created_at` for the reconciler's boundary sweep, each skipping the rows that sweep never reads (`status <> 'draft'`, and `cancelled_at is not null` for its own), and `0005_reconciler_watermark_milliseconds.sql` narrows `reconciler_state.last_boundary_sweep_at` to `timestamp (3) with time zone`, so the watermark holds only the milliseconds the sweep's compare-and-set can send back (ADR-0007). Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/modules/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver selects from it instead of restating the predicate (ADR-0004). The admin reads do not: `GET /api/promotions` and `GET /api/promotions/:id` have to show drafts, scheduled and expired promotions too, which the view by definition does not hold, so they project a five-valued `state` from the same half-open window in SQL (one `sql` fragment in `src/modules/promotion/db/promotion-repository.ts`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
 
@@ -190,6 +209,13 @@ All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are
 | POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`        |
 | GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`               |
 | GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`        |
+
+**Operations.** After `npm run up`, BullMQ's own dashboard is at
+http://localhost:3100/admin/queues — the four queues with their counts, the dead-letter set
+(`removeOnFail: false` keeps every exhausted job in BullMQ's failed set) and the controls to
+retry, promote or remove a job. It is Bull Board mounted inside the api process, outside the
+`/api` prefix and outside this API's error envelope, and like everything else here it is
+unauthenticated.
 
 `GET /api/products` takes `category` (exact match, optional, 256 characters), `sort=effectivePrice` (the only sort), `order=asc|desc` (default `asc`), `page` (default 1) and `pageSize` (1-100, default 20); the resulting offset may not exceed 10 000. `GET /api/products/:id` takes an id of digits only.
 

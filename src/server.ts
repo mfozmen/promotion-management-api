@@ -23,7 +23,6 @@ const queue = EventQueue.connect(
   eventRegistry,
   eventRouting,
 );
-
 const app = createApp({
   logger,
   db: createDb(pool),
@@ -32,6 +31,7 @@ const app = createApp({
   products: new ProductReadRepository(
     createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB),
   ),
+  boardQueues: queue.all(),
 });
 
 const server = app.listen(config.PORT, () => {

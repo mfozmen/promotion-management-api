@@ -101,7 +101,7 @@ could still fix stays raised until it is fixed.
    - queue producers and consumers, workers, cron or serverless handlers. Four
      BullMQ queues exist on the logical database `REDIS_QUEUE_DB` names
      (default 1), one per urgency class: `promotions` carrying
-     `promotion.changed`, `catalog` carrying `product.upserted`, `ingestion`
+     `promotion.changed`, `products` carrying `product.upserted`, `ingestion`
      carrying `chunk.process`, and `maintenance` carrying `readmodel.rebuild`
      and `reconciler.run`. A promotion
      boundary is a delayed `promotion.changed` under the write-once job id
