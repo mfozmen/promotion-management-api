@@ -1,6 +1,6 @@
 import { asc, desc, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { pricingRules } from '@src/shared/db/schema.js';
+import { pricingRules } from '@src/modules/pricing/db/schema/pricing-rules.js';
 import { useTestDatabase } from '../../db.js';
 
 const db = useTestDatabase();
@@ -21,9 +21,6 @@ describe('seeded pricing rules', () => {
     expect(rows.every((row) => row.active)).toBe(true);
   });
 
-  // The vocabulary the ingestion wrapper (#39) compiles: an `adjustPercentBps` event with a
-  // signed basis-point value, and facts that exist on a parsed vendor row. A rule the wrapper
-  // cannot parse stops the whole job, so the seed is pinned rule by rule rather than sampled.
   // Applied in priority order to an Electronics row at 80 000 cents with stock 150 that is
   // 80 000 → 92 000 → 89 240 → 93 702; an Apparel row at 80 000 with stock 10 is 84 000.
   it('states every rule in the vocabulary the ingestion wrapper compiles', async () => {

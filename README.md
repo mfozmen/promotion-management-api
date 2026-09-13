@@ -12,6 +12,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - zod (request validation at the boundary)
 - pino + pino-http (structured JSON logging)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
+- json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
 - SonarCloud (static analysis / quality gate)
@@ -73,7 +74,7 @@ parallel. The template is named after the checkout and clones carry a timestamp,
 worktrees can share one server without dropping each other's databases. Run one integration
 suite per worktree at a time, though: the template is rebuilt at the start of each run, so two
 runs in the same checkout would pull it out from under each other. Regenerate the
-migrations with `npm run db:generate` after changing `src/shared/db/schema/`, and apply
+migrations with `npm run db:generate` after changing a module's `db/schema/`, and apply
 them to a running database with `DATABASE_URL=... npm run db:migrate` (drizzle-kit reads
 `DATABASE_URL`, not `TEST_DATABASE_URL`, and falls back to
 `postgres://postgres:postgres@localhost:5432/promotion` when it is unset, which is not the
@@ -95,15 +96,15 @@ The compose file holds the two stores, the `api` service built from this reposit
 ## Project structure
 
 ```
-src/                app.ts (the Express app and the /api router), server.ts (the process entry point)
-src/modules/        one directory per module, with domain/, db/ and http/ as it needs them
-src/shared/db/      the Drizzle schema, client and SQL migrations
-src/shared/http/    the HTTP boundary: the error type and its status table, the error handler,
-                    the not-found handler, the request validator and the request logger
-src/shared/         config.ts, logger.ts (the root logger and the error whitelist every log site
-                    uses), and http/ above
-tests/              unit, integration and e2e, each layer mirroring src/
-docs/               design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
+src/                 app.ts (the Express app and the /api router), server.ts (the process entry point)
+src/modules/         one module per directory, each owning its tables under db/schema/ and using
+                     domain/, db/ and http/ as it needs them
+src/shared/db/       the client, the migrator and the SQL migrations
+src/shared/http/     the HTTP boundary: the error type and its status table, the error handler,
+                     the not-found handler, the request validator and the request logger
+src/shared/          config.ts, logger.ts (the root logger and the error whitelist every log site uses)
+tests/               unit, integration and e2e, each layer mirroring src/
+docs/                design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
 
 Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7). A helper both test layers import sits at `tests/<subject>-<role>.ts` (7.7).
@@ -112,11 +113,33 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 
 ## Database schema
 
-The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with #36, ADR-0004), and `0002_active_promotions.sql` creates the `active_promotions` view. [`src/shared/db/schema/`](./src/shared/db/schema) is the Drizzle mirror used by queries, one file per table, per enum and one for the view, with the barrel `schema.ts` beside the directory rather than in it, so drizzle-kit does not scan the re-exports and register the view twice (commits `1aaaffc`, `10b326c`, PR #50). Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003, commits `489bc27`, `ba5c2ca`, `888e632`). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree (commit `10b326c`).
+The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), and `0002_active_promotions.sql` creates the `active_promotions` view. Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/workers/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver (#36) and the admin reads will select from it instead of restating the predicate (ADR-0004, commit `1aaaffc`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed (commit `2142664`). It is not an endpoint; no route exposes it.
 
 `tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
+
+## Dynamic pricing rules
+
+Ingestion prices every vendor row through `json-rules-engine` rules that live in the
+`pricing_rules` table, not in code. Changing a markup is an `UPDATE`; no deploy, and a running import picks the new set up
+within 60 seconds because the compiled set is cached for that long.
+
+Migration `0001` seeds the three the case study asks for, applied in priority order:
+
+| Priority | Rule                        | Condition                  | Adjustment |
+| -------- | --------------------------- | -------------------------- | ---------- |
+| 30       | electronics category markup | `category = 'Electronics'` | +15 %      |
+| 20       | bulk stock discount         | `stockQuantity > 100`      | -3 %       |
+| 10       | vendor commission           | every row                  | +5 %       |
+
+An Electronics row at 80 000 cents with stock 150 therefore stores 93 702: 80 000 → 92 000 →
+89 240 → 93 702, each step floored so rounding never favours the customer.
+
+`BasePriceCalculator.fromRules(rows)` compiles the active rules once and rejects a rule that
+cannot run — an unknown operator, a fact no vendor row carries, an empty condition group that
+would fire on every row. `calculate(row)` then prices one row and returns either the price or
+the rule that rejected it, never a throw. The code is `src/modules/pricing/domain/`.
 
 ## API
 
