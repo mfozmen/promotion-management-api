@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { compileRules } from '@src/modules/pricing/domain/compile-rules.js';
-import { priceRow } from '@src/modules/pricing/domain/price-row.js';
+import { RuleCompiler } from '@src/modules/pricing/domain/rule-compiler.js';
+import { RowPricer } from '@src/modules/pricing/domain/row-pricer.js';
 import type { PricingRuleRow } from '@src/modules/pricing/domain/dto/pricing-rule-row.js';
 import type { VendorRowFacts } from '@src/modules/pricing/domain/dto/vendor-row-facts.js';
 
@@ -34,9 +34,9 @@ const vendorRow = (over: Partial<VendorRowFacts> = {}): VendorRowFacts => ({
   ...over,
 });
 
-describe('compileRules', () => {
+describe('RuleCompiler', () => {
   it('ignores inactive rows and derives the version from the active rows', async () => {
-    const compiled = await compileRules([
+    const compiled = await new RuleCompiler().compile([
       ruleRow({
         id: 1,
         name: 'markup',
@@ -58,14 +58,14 @@ describe('compileRules', () => {
   });
 
   it('refuses an empty rule set rather than pricing a catalogue at vendor cost', async () => {
-    await expect(compileRules([])).rejects.toThrowError(
+    await expect(new RuleCompiler().compile([])).rejects.toThrowError(
       /no active ingestion pricing rules \(none seeded, or every rule deactivated\)/,
     );
   });
 
   it('refuses a rule set whose every row is inactive', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500), active: false }),
       ]),
     ).rejects.toThrowError(
@@ -74,7 +74,7 @@ describe('compileRules', () => {
   });
 
   it('names the rules it compiled, so a rule the caller expected cannot go missing quietly', async () => {
-    const compiled = await compileRules([
+    const compiled = await new RuleCompiler().compile([
       ruleRow({ id: 7, name: 'commission', priority: 10, conditions: always, event: percent(500) }),
       ruleRow({ id: 4, name: 'markup', priority: 30, conditions: always, event: percent(1500) }),
       ruleRow({ id: 9, name: 'retired', conditions: always, event: percent(100), active: false }),
@@ -85,7 +85,7 @@ describe('compileRules', () => {
   });
 
   it('ignores a promotion-layer rule, which this engine cannot price', async () => {
-    const compiled = await compileRules([
+    const compiled = await new RuleCompiler().compile([
       ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
       ruleRow({
         id: 2,
@@ -96,14 +96,14 @@ describe('compileRules', () => {
       }),
     ]);
 
-    await expect(priceRow(compiled, vendorRow())).resolves.toMatchObject({
+    await expect(new RowPricer(compiled).price(vendorRow())).resolves.toMatchObject({
       basePriceCents: 92_000,
     });
   });
 
   it('rejects with a descriptive error for an unknown event type', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({
           id: 7,
           name: 'broken',
@@ -116,7 +116,7 @@ describe('compileRules', () => {
 
   it('rejects with a descriptive error for a non-integer adjustment value', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({ id: 8, name: 'fractional', conditions: always, event: percent(1.5) }),
       ]),
     ).rejects.toThrowError(/pricing rule 8 \("fractional"\)/);
@@ -124,7 +124,7 @@ describe('compileRules', () => {
 
   it('rejects a percentage adjustment that removes more than the whole price', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({
           id: 13,
           name: 'over-100-percent-off',
@@ -136,16 +136,18 @@ describe('compileRules', () => {
   });
 
   it('accepts a percentage adjustment that removes exactly the whole price', async () => {
-    const rules = await compileRules([
+    const rules = await new RuleCompiler().compile([
       ruleRow({ id: 14, name: 'free', conditions: always, event: percent(-10_000) }),
     ]);
 
-    await expect(priceRow(rules, vendorRow())).resolves.toMatchObject({ basePriceCents: 0 });
+    await expect(new RowPricer(rules).price(vendorRow())).resolves.toMatchObject({
+      basePriceCents: 0,
+    });
   });
 
   it('rejects with a descriptive error for a rule naming a fact no vendor row has', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({
           id: 10,
           name: 'vendor-tier',
@@ -158,7 +160,7 @@ describe('compileRules', () => {
 
   it('rejects with a descriptive error for an unknown operator', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({
           id: 11,
           name: 'typo',
@@ -171,7 +173,7 @@ describe('compileRules', () => {
 
   it('rejects a typo that hides behind a higher-priority condition', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({
           id: 12,
           name: 'hidden-typo',
@@ -189,7 +191,7 @@ describe('compileRules', () => {
 
   it('rejects with a descriptive error for malformed conditions', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({ id: 9, name: 'no-conditions', conditions: { nope: [] }, event: percent(100) }),
       ]),
     ).rejects.toThrowError(/pricing rule 9 \("no-conditions"\)/);
@@ -197,7 +199,7 @@ describe('compileRules', () => {
 
   it('rejects an empty all, which fires on every row instead of being rejected', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({ id: 4, name: 'typo-for-always', conditions: { all: [] }, event: percent(-3000) }),
       ]),
     ).rejects.toThrowError(/pricing rule 4 \("typo-for-always"\) has an empty all or any/);
@@ -205,7 +207,7 @@ describe('compileRules', () => {
 
   it('rejects an empty any nested under a populated all', async () => {
     await expect(
-      compileRules([
+      new RuleCompiler().compile([
         ruleRow({
           id: 5,
           name: 'nested-typo',
