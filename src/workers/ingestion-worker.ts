@@ -1,0 +1,86 @@
+import { Worker } from 'bullmq';
+import { and, asc, desc, eq } from 'drizzle-orm';
+import { eventRegistry } from '../events/event-registry.js';
+import { eventRouting } from '../events/event-routing.js';
+import { ChunkJobHandler } from '../modules/ingestion/jobs/chunk-job-handler.js';
+import { pricingRules } from '../modules/pricing/db/schema/pricing-rules.js';
+import { BasePriceCalculatorCache } from '../modules/pricing/domain/base-price-calculator-cache.js';
+import { ProductRepository } from '../modules/product/db/product-repository.js';
+import { loadConfig } from '../shared/config.js';
+import { createDb, createPool } from '../shared/db/client.js';
+import { logger } from '../shared/logger.js';
+import { EventQueue } from '../shared/queue/event-queue.js';
+
+const config = loadConfig();
+const pool = createPool(config.DATABASE_URL);
+const db = createDb(pool);
+const queue = EventQueue.connect(
+  config.REDIS_URL,
+  config.REDIS_QUEUE_DB,
+  eventRegistry,
+  eventRouting,
+);
+
+// Both predicates, so the partial index `pricing_rules_active_idx` serves the query.
+const calculators = new BasePriceCalculatorCache({
+  now: () => Date.now(),
+  source: () =>
+    db
+      .select()
+      .from(pricingRules)
+      .where(and(eq(pricingRules.type, 'ingestion'), eq(pricingRules.active, true)))
+      .orderBy(desc(pricingRules.priority), asc(pricingRules.id)),
+});
+
+const handler = new ChunkJobHandler({
+  db,
+  products: new ProductRepository(db),
+  calculators,
+  // Copied because the event schema owns a mutable array and the processor hands
+  // out a readonly view of the ids it just stored.
+  publish: (productIds) => queue.publish('product.upserted', { productIds: [...productIds] }),
+  reenqueue: (chunk) => queue.publish('chunk.process', chunk),
+  log: logger,
+  batchSize: config.INGESTION_BATCH_SIZE,
+  budgetMs: config.INGESTION_BUDGET_MS,
+  leaseMs: config.INGESTION_LEASE_MS,
+});
+
+const worker = new Worker('ingestion', (job) => handler.handle(job.data), {
+  connection: { url: config.REDIS_URL, db: config.REDIS_QUEUE_DB },
+  concurrency: ChunkJobHandler.CONCURRENCY,
+  // Longer than the budget the handler gives itself, or the queue hands the same
+  // chunk to a second worker while this one is still inside a batch.
+  lockDuration: ChunkJobHandler.lockDurationFor(config.INGESTION_BUDGET_MS),
+});
+
+worker.on('failed', (job, error) => {
+  logger.error({ jobId: job?.id, name: job?.name, err: error }, 'chunk job failed');
+});
+
+worker.on('error', (error) => {
+  // An `error` event with no listener is an uncaught exception.
+  logger.error({ err: error }, 'ingestion worker error');
+});
+
+logger.info(
+  { queue: 'ingestion', concurrency: ChunkJobHandler.CONCURRENCY },
+  'ingestion worker listening',
+);
+
+// `close()` waits for the job in flight, which is bounded by the budget; the
+// chunk's own checkpoint is what makes a harder stop survivable anyway.
+process.on('SIGTERM', () => {
+  void worker
+    .close()
+    .then(() => queue.close())
+    .then(() => pool.end())
+    .then(() => {
+      logger.info('ingestion worker stopped');
+      process.exit(0);
+    })
+    .catch((error: unknown) => {
+      logger.error({ err: error }, 'ingestion worker shutdown failed');
+      process.exit(1);
+    });
+});
