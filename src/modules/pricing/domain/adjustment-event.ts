@@ -1,8 +1,6 @@
 import { z } from 'zod';
 
-/** A percentage adjustment stops at -10 000 basis points, which already makes
- *  the price zero: anything beyond it can only produce a negative price, so it
- *  is rejected once at compile time rather than row by row. */
+/** -10 000 basis points already makes the price zero; beyond it is always negative. */
 export const adjustmentEvent = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('adjustPercentBps'),

@@ -1,7 +1,6 @@
 export type PricingRuleRow = {
   id: number;
-  /** The promotion layer keeps its rules in the same table and its events mean
-   *  nothing here, so they are skipped rather than parsed and rejected. */
+  /** The promotion layer shares this table; its rows are skipped, not rejected. */
   type: 'ingestion' | 'promotion';
   name: string;
   conditions: unknown;
