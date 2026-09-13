@@ -15,7 +15,7 @@ const DOCUMENTS = [
   '.claude/agents/impact-analyzer.md',
   '.claude/agents/test-case-generator.md',
 ];
-const ROOTS = ['src/', 'tests/', 'docs/', '.claude/', '.github/'];
+const ROOTS = ['src/', 'tests/', 'docs/', 'scripts/', 'fixtures/', '.claude/', '.github/'];
 
 const BACKTICKED = /`([^`\s]+)`/g;
 
@@ -36,6 +36,10 @@ const NAMED_BUT_ABSENT = new Map([
   ],
   ['src/shared/db/schema/', 'where the table schemas were before they moved into their modules'],
   ['src/modules/vendor/', 'a module the agent triggers name before it is written'],
+  [
+    'scripts/generate-vendor-csv.ts',
+    'the vendor-file generator the ingestion story names as a deliverable, not written yet',
+  ],
 ]);
 
 /** `Foo.bar` or `Foo.bar(args)` in a document: a member of one of our own declarations. */
@@ -120,7 +124,7 @@ describe('the documents', () => {
       for (const [, owner, member] of text.matchAll(MEMBER)) {
         const source = owner === undefined ? undefined : declarations.get(owner);
         // A whole word: `includes` stayed green on `connect` because of `connectTimeout`.
-        // ponytail: a match in a comment counts too; parsing the file is the upgrade.
+        // A match in a comment counts too; parsing the file is the upgrade.
         if (source !== undefined && member !== undefined && !wholeWord(member).test(source)) {
           missing.push(`${document}: ${owner}.${member}`);
         }
