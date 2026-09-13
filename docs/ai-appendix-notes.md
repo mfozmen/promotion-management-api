@@ -831,6 +831,34 @@ Each was written carefully, each was wrong, and none was caught by reading it ag
 - Verification: measured, not reasoned. Peak memory tracked the size of the upload, which is the one property Scenario A promises it does not.
 - Lesson: the memory bound and the success report failed together, and either alone would have been found sooner. A bound stated in an ADR needs a test that feeds it the input its author did not imagine; "no newline in the body" is not an edge case for a CSV, it is a platform.
 
+### 2026-09-14 — A log line that asserted a queue that does not exist
+
+- Challenge: the generated worker entry point logged `queues: ['promotions', 'catalog']`. There is no `catalog` queue — the four are `promotions`, `products`, `ingestion` and `maintenance` — and the claim was wrong twice over, because `EventQueue.connect` opens a producer handle on all four in every process, so no worker ever holds a subset to name. The array was a bare string literal, so nothing but a reader could catch it.
+- Verification: read against `src/events/event-routing.ts`, the only list of queue names, then confirmed against ADR-0003, whose matching sentence ("each entry point logs the queues it holds") had gone stale the same way.
+- Resolution: the first attempt annotated the array `QueueName[]`, which would have moved the finding from prose review to the build. Deleting the array was smaller and removed the false claim as well as the typo — a line that lists nothing cannot list it wrongly. The three entry points collapsed to two lines each over a shared `startWorker`, whose one remaining parameter is typed to a union of the three service names in `docker-compose.yml` rather than `string`. REVIEW.md 8c.5 now covers the data a line logs, not only the arguments a function takes.
+- Lesson: AI-written log lines and comments assert facts about neighbouring modules that nothing type-checks. Every review round on that branch found at least one.
+
+### 2026-09-14 — Duplication created in the same change as the text it duplicates
+
+- Challenge: the branch that wrote ADR-0003 also wrote two test comments and an `.env.example` note restating its reasoning near-verbatim. This is the case REVIEW.md 8b.3a and 8b.6 exist for, and the one least likely to be noticed, because both copies are true on the day they are written.
+- Verification: each dropped sentence was checked against ADR-0003 in the head rather than against the diff — a pointer into a paragraph that has since lost the sentence is worse than the duplication it replaced.
+- Resolution: comments reduced to pointers keeping only what the ADR does not carry. A separate defect surfaced in the same pass: an ownership test ordered `mkdir -p` before `USER` using `indexOf`, which returns `-1` for a missing line, so the check passed with the `mkdir` deleted.
+- Lesson: an ordering assertion built on `indexOf` is vacuously true when either operand is absent, and the test reads as strict.
+
+### 2026-09-14 — An id the library refuses, tested against a double that accepts everything
+
+- Challenge: the reconciler's sweep built its BullMQ dedup id as `sweep:{id}:{ISO timestamp}`. BullMQ 6.3.4 refuses a custom job id containing a colon unless it splits into exactly three parts, and an ISO timestamp adds two more, so every publish would have thrown — a reconciler that repaired nothing and never advanced its watermark, failing only under the condition it exists to handle. The rule was already written down in ADR-0007, one bullet above the code that broke it.
+- Verification: the only test of that path used a hand-written queue that stored whatever id it was handed and validated nothing, so it was green. Caught by reading the ADR against the code, then proved by publishing through the real queue.
+- Resolution: `SweepBoundariesCommand.jobId` returns `sweep:{id}:{watermark in milliseconds}`. Two changes, not one — milliseconds for the colon rule, and keyed on the watermark rather than the window's end, which moves with the clock on every read and so gave a fresh id, a full recompute per promotion, on every re-read of an unadvanced window. REVIEW.md gained 7.11. The same round found that `promo:{id}:{boundary}` split in three by luck, and that the integration test ADR-0007 claimed would catch such an upgrade did not exist; it does now.
+- Lesson: documentation being present is not the defence. A double written from a library's documentation accepts every shape the library refuses.
+
+### 2026-09-14 — A watermark the database wrote and the code could not match
+
+- Challenge: the boundary sweep's compare-and-set read `reconciler_state.last_boundary_sweep_at` back as a JS `Date` and sent it as the compare value. The column was `timestamptz`, which stores microseconds; a `Date` carries milliseconds. The equality never matched, so from the first deploy the watermark stayed at its seeded value and every run re-swept the same window, publishing its repairs and moving nothing.
+- Verification: not by any test — found by running the stack against the compose test stores and watching the row. Every test wrote the watermark itself, in milliseconds, which is the one shape that cannot reproduce the bug; a suite where the fixture and the reader share a precision assumption agrees with itself.
+- Resolution: migration `0005_reconciler_watermark_milliseconds.sql` narrows the column to `timestamp(3) with time zone`, so the store keeps only what the reader can represent, plus an integration test that lets PostgreSQL's own `now()` write the mark. Verified by mutation: the test fails without the migration.
+- Lesson: AI-written tests inherit the production code's assumptions about serialisation precision. A value that crosses a type boundary needs one check that lets the database, not the test, produce it.
+
 ## Overall reflection
 
 - Estimated ratio: for the scripting and documentation work measured so far, the code is roughly 80 % AI-generated and lightly edited; the documentation started AI-generated and is closer to half human, because nearly every correction recorded above came from a human or an agent reading a claim against the tree.
