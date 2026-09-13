@@ -13,8 +13,10 @@ describe('the storefront client limits its wait on Redis', () => {
     expect(maxRetriesPerRequest).toBe(1);
     // A refused connection fails in a round trip on its own; a server that
     // accepts and never replies does not, and without this every storefront
-    // request holds an Express socket for as long as the partition lasts.
-    expect(commandTimeout).toBe(200);
+    // request holds an Express socket for as long as the partition lasts. The
+    // budget is client-side elapsed time, so it clears the event-loop lag this
+    // process shows under load rather than answering 503 because of it.
+    expect(commandTimeout).toBe(1_000);
     // The read model's own database, never the queue's (ADR-0003).
     expect(db).toBe(9);
   });

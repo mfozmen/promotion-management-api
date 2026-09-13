@@ -239,6 +239,21 @@ describe('a rebuild that has removed a product the index still lists', () => {
     expect(res.body.items.map((item: { id: number }) => item.id)).toEqual([2]);
   });
 
+  it('fails loudly when the writer put something other than a hash at a product key', async () => {
+    await seedProducts(redis(), [product({ id: 1 }), product({ id: 2 })]);
+    // A real ReplyError from a real Redis: the pipeline resolves carrying it
+    // rather than rejecting, which is how it reached a client as a TypeError.
+    await redis().unlink('product:1');
+    await redis().set('product:1', 'not a hash');
+
+    const res = await request(app()).get('/api/products');
+
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe('INTERNAL');
+    // Not 503: retrying cannot fix a key the writer wrote wrong.
+    expect(res.headers['retry-after']).toBeUndefined();
+  });
+
   it('calls that product a rebuild on the detail route, not a missing product', async () => {
     await seedProducts(redis(), [product({ id: 1 })]);
     await redis().unlink('product:1');

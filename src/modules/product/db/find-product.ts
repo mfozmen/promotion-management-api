@@ -3,6 +3,7 @@ import { toProductView } from '../domain/to-product-view.js';
 import { ALL_PRODUCTS } from './all-products-key.js';
 import { fromReadModel } from './from-read-model.js';
 import { productKey } from './product-key.js';
+import { reportGhosts } from './report-ghosts.js';
 import { HttpError } from '../../../shared/http/http-error.js';
 
 /** Undefined when the read model holds no such product, so the route decides
@@ -17,6 +18,11 @@ export async function findProduct(redis: Redis, id: number) {
   const listed = await fromReadModel(redis.zscore(ALL_PRODUCTS, String(id)));
 
   if (listed !== null) {
+    // Counted, not just answered: a writer that died between UNLINK and ZREM
+    // leaves this member for ever, and the 503 it produces is the same code a
+    // whole-model outage sends, so nothing else would tell them apart.
+    reportGhosts(ALL_PRODUCTS, 1);
+
     throw new HttpError('READ_MODEL_NOT_READY', 'The read model is still being built');
   }
 

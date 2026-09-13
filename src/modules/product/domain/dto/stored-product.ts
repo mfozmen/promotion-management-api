@@ -1,18 +1,27 @@
 import { z } from 'zod';
 
+/** Redis answers strings, and `z.coerce.number()` is not a parser: it reads ''
+ *  and ' ' as 0, '0x10' as 16, and would have served a product for nothing at
+ *  200. Digits only, then the number. */
+const cents = z
+  .string()
+  .regex(/^\d+$/)
+  .transform(Number)
+  .pipe(z.number().int().max(Number.MAX_SAFE_INTEGER));
+
 /** A product as the read model holds it. Redis stores strings, so the hash is
  *  coerced rather than trusted: an entry missing a field is a bug in the
  *  writer, and a 500 the operator sees beats a product priced at zero. */
 export const storedProduct = z
   .object({
-    id: z.coerce.number().int(),
+    id: cents,
     sku: z.string(),
     name: z.string(),
     category: z.string(),
-    basePriceCents: z.coerce.number().int(),
-    effectivePriceCents: z.coerce.number().int(),
-    stockQuantity: z.coerce.number().int(),
-    promotionId: z.coerce.number().int().optional(),
+    basePriceCents: cents,
+    effectivePriceCents: cents,
+    stockQuantity: cents,
+    promotionId: cents.optional(),
     promotionName: z.string().min(1).optional(),
   })
   // Both or neither: the writer writes the pair together, so half a pair is a
@@ -23,6 +32,10 @@ export const storedProduct = z
     ({ promotionId, promotionName }) =>
       (promotionId === undefined) === (promotionName === undefined),
     { message: 'a stored promotion needs both an id and a name' },
-  );
-
-export type StoredProduct = z.infer<typeof storedProduct>;
+  )
+  // REVIEW.md 1.5 holds on the way out as well as on the way in: a promotion
+  // lowers a price, so an effective price above its base is the writer having
+  // computed one wrong, and a storefront that renders it has sold at it.
+  .refine(({ basePriceCents, effectivePriceCents }) => effectivePriceCents <= basePriceCents, {
+    message: 'an effective price cannot exceed the base price it came from',
+  });

@@ -35,6 +35,23 @@ describe('reportGhosts', () => {
     expect(warn.mock.calls[0]?.[0]).toMatchObject({ requests: 1, missing: 3 });
   });
 
+  it('reports each index on its own counts, not the whole process on one key', async () => {
+    const { reportGhosts, warn } = await freshReportGhosts();
+
+    reportGhosts('products:shoes', 1);
+    for (let i = 0; i < 40; i += 1) reportGhosts('products:knitwear', 300);
+    vi.advanceTimersByTime(10_000);
+    reportGhosts('products:shoes', 1);
+
+    // Shared counters printed knitwear's 12 000 ghosts beside `products:shoes`,
+    // and an operator reading that line rebuilds the wrong category.
+    expect(warn.mock.calls.at(-1)?.[0]).toMatchObject({
+      key: 'products:shoes',
+      requests: 1,
+      missing: 1,
+    });
+  });
+
   it('reports the burst it swallowed when the window closes', async () => {
     const { reportGhosts, warn } = await freshReportGhosts();
     for (let i = 0; i < 500; i += 1) reportGhosts('products:knitwear', 3);
