@@ -691,13 +691,13 @@ src/
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
     promotion/
-      domain/    calculate-effective-price.ts (calculateEffectivePrice, pure, with the input guard as its private helper), percentage-discount.ts and fixed-discount.ts (one Discount each, formula and value check together), discounts.ts (Record<DiscountType, Discount>), discount-for.ts (the only lookup; undefined for a type the union does not have), candidate-selection.ts (runs the engine over already-loaded rules, pure)
+      domain/    effective-price-calculator.ts (EffectivePriceCalculator: discounts injected, the lookup and the input guard its private methods), percentage-discount.ts and fixed-discount.ts (one Discount class each, formula and value check together), candidate-selection.ts (runs the engine over already-loaded rules, pure)
         dto/     promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), discount.ts (the Discount interface: valueError + discountCents) — REVIEW.md 8c.8
       db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
       jobs/      scheduling.ts
     pricing/
-      domain/    compile-rules.ts, price-row.ts, create-rule-set-loader.ts (caches a compiled set; the query that feeds it is the caller's)
+      domain/    rule-compiler.ts, row-pricer.ts (one per rule set: its queue is a field), rule-set-loader.ts (caches a compiled set; the query that feeds it is the caller's)
         dto/     pricing-rule-row.ts, compiled-rule-set.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8
       db/        resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
@@ -705,7 +705,7 @@ src/
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
   shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
-  unit/          calculate-effective-price, csv-lines, compile-rules, price-row, create-rule-set-loader, schemas
+  unit/          effective-price-calculator, csv-lines, rule-compiler, row-pricer, rule-set-loader, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
   e2e/           the docs/e2e-cases scenarios against the running compose stack
 docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander
