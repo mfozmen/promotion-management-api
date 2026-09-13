@@ -43,28 +43,18 @@ services:
       retries: 12
       start_period: 5s
 
-  # One-shot: `docker compose up -d --wait` leaves the schema in place, so migrating is
-  # never a step anyone has to remember. `--wait` treats a `restart: no` service that has
-  # exited 0 as complete. Stopgap — once #19 builds the api image the migration moves into
-  # its entrypoint (`drizzle-kit migrate && node dist/server.js`) and this service goes;
-  # the two must not both run migrations.
   migrate:
     image: node:22-alpine
     working_dir: /app
     volumes:
       - .:/app
-      # Anonymous volume shadowing the bind mount. Without it `npm ci` installs into the
-      # host's own node_modules and replaces the Windows esbuild binary with a Linux one,
-      # which breaks the host's next `npm run dev`.
       - /app/node_modules
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
     depends_on:
       postgres:
         condition: service_healthy
-    # npm ci inside the container rather than reusing the host install: drizzle-kit pulls
-    # in esbuild, whose binary is platform-specific.
-    command: ['sh', '-c', 'npm ci && npx drizzle-kit migrate']
+    command: ['sh', '-c', 'npm ci --ignore-scripts && npx drizzle-kit migrate']
     restart: 'no'
     networks:
       - promotion
