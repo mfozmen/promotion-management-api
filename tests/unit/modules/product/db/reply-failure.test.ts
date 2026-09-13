@@ -42,10 +42,9 @@ describe('replyFailure', () => {
 
     const raised = replyFailure(refused, 'category:knitwear') as createError.HttpError;
 
-    // Rebuilding it to carry a key hand-copied the fields the log whitelist
-    // emits, which dropped `code` once already and would drop the next field
-    // the whitelist grows. The key is not evidence here either: it names what
-    // was being read, not what is broken.
+    // The key is not evidence here: it names what was being read, not what is
+    // broken, and rebuilding the error to carry it loses the driver's own
+    // fields.
     expect(raised.cause).toBe(refused);
   });
 
