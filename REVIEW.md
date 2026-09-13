@@ -925,7 +925,9 @@ files as the list of files to resolve: `git add -A` after a conflict turns an
 unmerged path into a staged one, so the markers stop showing as unmerged and
 `git status` stops mentioning them. The check that holds is `git grep` for the
 markers over the working tree **and** `--cached` over the index, plus
-`git diff --name-only --diff-filter=U`.
+`git diff --name-only --diff-filter=U` — which is `npm run check:conflicts`, run
+by the pre-commit hook, because a check someone has to remember to type is not
+one.
 
 Evidence: three conflict markers reached `58c6f87` and the pull request opened
 from it. That merge named two conflicted files in its output, both were
@@ -933,8 +935,12 @@ resolved, and README was a third; the tree grep that would have caught it had
 been run before the merge rather than after, so it was true of an earlier tree
 and the claim was carried forward. Same family as a `complexity` rule that
 arrives in `eslint.config.mjs` after a branch point and is therefore not
-enforced on the branch claiming to meet it: a gate that cannot fire is
-indistinguishable from a gate that passed.
+enforced on the branch claiming to meet it, and as the hand-typed version of
+this very check, which printed `CLEAN` from an unconditional `echo` whatever the
+grep above it found: a gate that cannot fire is indistinguishable from a gate
+that passed. That is why this one exits non-zero and is verified in both
+directions — it fails on a marker in the working tree, and on one that
+`git add -A` has already staged, which is the case that got past it.
 
 ## 13b. The rulebook learns
 
