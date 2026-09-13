@@ -1,9 +1,9 @@
 import type { Engine } from 'json-rules-engine';
 
-import type { AdjustmentEvent } from './adjustment-event.js';
+import type { AdjustmentEvent } from './dto/adjustment-event.js';
 import type { CompiledRuleSet } from './dto/compiled-rule-set.js';
 import type { PricingOutcome } from './dto/pricing-outcome.js';
-import { type VendorRowFacts, vendorRowFacts } from './vendor-row-facts.js';
+import { type VendorRowFacts, vendorRowFacts } from './dto/vendor-row-facts.js';
 
 const BPS = 10_000n;
 const MAX_CENTS = BigInt(Number.MAX_SAFE_INTEGER);
