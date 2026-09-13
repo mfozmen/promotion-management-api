@@ -1,8 +1,8 @@
 -- Demo catalogue and one flash sale, applied by `npm run seed`. README's "Demo data" says what
 -- it produces and what running it twice promises.
 
--- ponytail: 1 000 rows in one statement, under the pool's 10 s statement_timeout. A realistic
--- catalogue arrives through vendor ingestion, not by raising this number.
+-- 1 000 rows in one statement, under the pool's 10 s statement_timeout. A realistic catalogue
+-- arrives through vendor ingestion, not by raising this number.
 INSERT INTO "products" ("sku", "name", "category", "base_price_cents", "stock_quantity")
 SELECT
   format('DEMO-%s', lpad(i::text, 4, '0')),
@@ -11,9 +11,8 @@ SELECT
   1000 + (i % 200) * 50,
   i % 300
 FROM generate_series(1, 1000) AS i
--- DO UPDATE rather than DO NOTHING plus the guard below: it takes the row lock before it
--- evaluates the guard, and that lock is what makes two concurrent seeds serialise here instead
--- of both reaching the promotion statements and one of them failing on 23P01.
+-- DO UPDATE, not DO NOTHING plus the guard below: it takes the row lock before evaluating the
+-- guard, and that lock is what serialises two concurrent seeds.
 ON CONFLICT ("sku") DO UPDATE SET
   "name" = excluded."name",
   "category" = excluded."category",

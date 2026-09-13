@@ -100,11 +100,8 @@ runs the operations in parallel and asserts the invariant afterwards. "Should be
 fine" is not a test. Writing the test is also how the claim gets checked, not just
 the code: the rule catches a wrong description as often as a wrong mechanism.
 
-Evidence: a README and a pull request body said two concurrent demo seeds made the
-loser abort on 23P01. The test written to satisfy this rule races two seeds against an
-empty catalogue and again against a seeded one, and neither run fails: they serialise
-on the product rows, and the second deletes the first sale by name before inserting its
-own. The documented failure mode did not exist (PR #96).
+Evidence: a README said two concurrent demo seeds left the loser aborting on 23P01, and
+the test this rule demanded showed neither run fails.
 
 2.6 A `WHERE` clause on a nullable column states its `NULL` branch explicitly.
 `NULL` compared with anything is `NULL`, not `TRUE`, and a row-value

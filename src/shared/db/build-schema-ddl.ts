@@ -16,8 +16,7 @@ export async function buildSchemaDdl(migrationsFolder: string): Promise<string> 
   const migrations = await Promise.all(
     journal.entries.map(async ({ tag }) => {
       const sql = await readFile(join(migrationsFolder, `${tag}.sql`), 'utf8');
-      // Plain strings rather than one `\s*`-prefixed pattern: the marker sits either after a
-      // semicolon or alone on its line, and a regex for both backtracks (SonarQube S8786).
+      // Plain strings: a pattern matching the marker in both positions backtracks (S8786).
       const body = sql
         .replaceAll('\r\n', '\n')
         .replaceAll('\n--> statement-breakpoint', '')
