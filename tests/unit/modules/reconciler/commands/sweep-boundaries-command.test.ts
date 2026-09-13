@@ -37,6 +37,35 @@ const recordingQueue = () => {
 };
 
 describe('SweepBoundariesCommand', () => {
+  it('counts the repairs it published, in the return value and in one line', async () => {
+    // `promotion-20` asserts exactly one repair per boundary, so a run that says only that
+    // it ran cannot answer the case; the number has to leave the process.
+    const { logger, lines } = captureLogger();
+
+    const repaired = await new SweepBoundariesCommand(
+      boundariesHolding([7, 9]),
+      recordingQueue(),
+      logger,
+    ).execute();
+
+    expect(repaired).toBe(2);
+    expect(lines.map((line) => line.repaired)).toContain(2);
+  });
+
+  it('says zero rather than staying silent on a window with no boundary', async () => {
+    // A quiet sweep and a sweep that never ran read identically in a log otherwise.
+    const { logger, lines } = captureLogger();
+
+    const repaired = await new SweepBoundariesCommand(
+      boundariesHolding([]),
+      recordingQueue(),
+      logger,
+    ).execute();
+
+    expect(repaired).toBe(0);
+    expect(lines.map((line) => line.repaired)).toContain(0);
+  });
+
   it('re-emits one event per promotion and advances from the mark it started at', async () => {
     const { logger } = captureLogger();
     const boundaries = boundariesHolding([7, 9]);

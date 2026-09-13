@@ -25,7 +25,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
-- Docker with the Compose plugin (PostgreSQL 16, Redis 7 and the `api` image built from this repository's `Dockerfile` all run locally from `docker-compose.yml`), plus one throwaway Redis on 6399 for the queue integration tests, which use no mocks (REVIEW.md 7.3)
+- Docker with the Compose plugin (PostgreSQL 16, Redis 7, and the `api` image built from this repository's `Dockerfile`, which also runs the three worker services, all run locally from `docker-compose.yml`), plus the `test` profile's two throwaway stores — PostgreSQL on 55432 and Redis on 6399 — for the integration tests, which use no mocks (REVIEW.md 7.3)
 
 ## Run it
 
@@ -33,14 +33,50 @@ Docker with the Compose plugin, and Node for the two npm scripts below.
 
 ```bash
 cp .env.example .env   # placeholders only; .env is gitignored
-npm run up             # PostgreSQL, Redis, the api and the test stores, all healthy
+npm run up             # PostgreSQL, Redis, the api, three workers and the test stores
 ```
 
 The API is on http://127.0.0.1:3100 and BullMQ's dashboard on
 http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data; add `-v` to that compose command to
-drop the volumes too. PostgreSQL creates its database on first start only, so a test store
-that predates a change to `POSTGRES_DB` needs `docker compose --profile test rm -sfv
-postgres-test` rather than a restart.
+drop the volumes too.
+
+If `npm run up` stops with `postgres-test` unhealthy, that is the expected failure for a test
+store older than the last change to `POSTGRES_DB`: PostgreSQL creates the database only when it
+initialises its volume, and the healthcheck queries the database by name, so a store holding the
+old name never reports healthy instead of handing the suite a server without it. The fix is
+`docker compose --profile test rm -sfv postgres-test`, which drops the volume; a restart keeps it
+and changes nothing (ADR-0003).
+
+Three worker services run from the same image as `api`, one command each, and each waits on
+`postgres`, `redis` and `api` being healthy — `api` is the gate that matters, being the only
+process that migrates.
+
+- `reconciler` **consumes `reconciler.run` on the `maintenance` queue** and registers the
+  repeatable that publishes it every five minutes, so the promotion boundary sweep runs on a fresh
+  stack with nothing to start by hand.
+- `event-handler` will drain `promotions` and `products` for the read model; it consumes nothing
+  yet (issue #12).
+- `ingestion-worker` will drain `ingestion` for the chunk processor; it consumes nothing yet
+  (issue #105). It is capped at 256 MiB and half a CPU — the case study's own constraint, and what
+  Scenario A's 500 000-row import is measured against — and runs with
+  `NODE_OPTIONS=--max-old-space-size=192` so V8's heap ceiling sits under that cap.
+
+Each start-up line carries a `consuming` list: `maintenance` for the reconciler, empty for the
+other two, so an idle queue is not read as a drained one. None of the three has a healthcheck, so
+`--wait` treats them as up once they are running.
+
+`api` and `ingestion-worker` share a named `uploads` volume at `/app/uploads`, because `api` writes
+the uploaded file and the worker reads it back by `file_ref`; nothing writes to it yet (the upload
+endpoint and chunk worker arrive with issue #16).
+
+`docker compose stop` gives those four services — `api` and the three workers, the ones that close
+a queue — `stop_grace_period: 15s` for a shutdown budgeted at `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s),
+one deadline over the whole sequence, after which the process exits anyway.
+
+Why each of those is what it is — the grace period against the drain budget, the heap ceiling under
+the memory cap, the volume's ownership, `unless-stopped` rather than `always` — is in ADR-0003.
+`tests/unit/docs/compose-workers.test.ts` parses the compose file and the `Dockerfile` and fails if
+any of them goes missing.
 
 ## Develop
 
@@ -69,13 +105,13 @@ Run it as often as you like: what you get depends on the migrations and this run
 
 Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own: an active `Electronics` promotion under another name is not deleted by name, so the insert aborts on `23P01` and the whole file rolls back, leaving no half-written catalogue behind.
 
-[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the upload endpoint and chunk worker arrive with issue #16, and that half of issue #19 is still open.
+[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the `ingestion-worker` container runs but registers no consumer, and the upload endpoint and chunk worker arrive with issue #16.
 
-Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one — `npm run up` starts it, along with the throwaway PostgreSQL the integration layer clones from. Both are in the `test` profile and hold nothing worth keeping.
+Tests and checks. The whole integration layer runs against the `test` profile's own PostgreSQL and Redis, never the ones `api` and the workers use: the queue and shutdown tests obliterate the queues they touch, and the layer clones a database per test file. `npm run up` starts both, and neither holds anything worth keeping.
 
 ```bash
 npm test
-npm run test:cov # needs a PostgreSQL and that Redis, see below
+npm run test:cov # needs both test stores, see below
 npm run lint
 ```
 
@@ -83,23 +119,24 @@ npm run lint
 
 The suite is split into layers, so the one that needs nothing can run anywhere:
 
-| Layer                              | Command                    | Needs                                                                                                            | Runs                        |
-| ---------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| unit (`tests/unit/`)               | `npm test`                 | nothing                                                                                                          | pre-commit hook, everywhere |
-| integration (`tests/integration/`) | `npm run test:integration` | PostgreSQL, the compose Redis (database 9) and, for the queue and shutdown tests only, a throwaway Redis on 6399 | CI, before every push       |
-| both, with coverage                | `npm run test:cov`         | the same two                                                                                                     | CI (the 100 % gate)         |
+| Layer                              | Command                    | Needs                                                                                    | Runs                        |
+| ---------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing                                                                                  | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | the `test` profile's PostgreSQL on 55432 and Redis on 6399, both started by `npm run up` | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | the same two                                                                             | CI (the 100 % gate)         |
 
-The integration tests run against a real PostgreSQL and a real Redis, never a mock. Point them at one with
-`TEST_DATABASE_URL` (default `postgres://postgres:postgres@127.0.0.1:55432/promotion`). That
-default is not the compose server: `docker-compose.yml` publishes 5432 with the `.env`
-credentials, so either reuse it with
-`TEST_DATABASE_URL=postgres://promo:promo@localhost:5432/promotion`, or keep the harness's
-template and clone databases out of the compose volume with a throwaway server:
-
-```bash
-docker run -d --rm --name pma-db-test -p 55432:5432 \
-  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promotion postgres:16-alpine
-```
+The integration tests run against a real PostgreSQL and a real Redis, never a mock. The defaults name
+the `test` profile's two stores — `TEST_DATABASE_URL`
+`postgres://postgres:postgres@127.0.0.1:55432/promotion` and `TEST_REDIS_URL`
+`redis://127.0.0.1:6399/9` — so after `npm run up` the suite needs no override; CI sets both
+explicitly against its own services. The queue and shutdown tests read a third variable,
+`QUEUE_TEST_REDIS_URL` (default `redis://127.0.0.1:6399`, the same store), which names the server and
+no logical database: those two files select the indexes in code, because what they exercise is the
+read-model/queue split itself. CI leaves it at that default. Each host is `127.0.0.1` rather than `localhost` because Node
+resolves `localhost` to `::1` first and compose publishes IPv4 only. Pointing
+`TEST_DATABASE_URL` at the application's own server
+(`postgres://promo:promo@127.0.0.1:5432/promotion`) works and puts the clones in the
+`postgres-data` volume you are developing against.
 
 The integration project's `globalSetup` applies `src/shared/db/migrations/*.sql` to a template
 database once; each test file then clones that template, so files stay isolated and can run in
@@ -118,13 +155,13 @@ migration fails the build. It reads the success line rather than the exit code b
 `drizzle-kit generate` exits 0 even when it fails and writes nothing; `git add -AN` is what
 makes an untracked new migration visible to the diff (ADR-0003).
 
-Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data` and `redis-data` volumes as well. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
+Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data`, `redis-data` and `uploads` volumes as well. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
 
 ### Configuration
 
 `.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
 
-The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. Issue #19 adds the remaining containers (event-handler, ingestion-worker, reconciler) and the `monitoring` profile on top of it.
+The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, the three worker services (`event-handler`, `ingestion-worker`, `reconciler`) running that same image with one command each, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. The workers have no healthcheck, so `--wait` treats them as up once they are running, whether or not they consume. The `monitoring` profile is not built: issue #18 adds it.
 
 ### The queue
 
@@ -136,11 +173,13 @@ delayed boundary jobs, `products` carries `product.upserted`, `ingestion` carrie
 announcements, or a full read-model rebuild, from sitting in front of a flash
 sale's `promotion.changed`: each queue gets its own worker, so two events that
 need different priority get different consumers rather than a priority number
-inside one queue (ADR-0003). No worker consumes any of them yet: `src/workers/`
-is empty, so the reconciler's boundary sweep
-(`src/modules/reconciler/commands/sweep-boundaries-command.ts`, PR #111) runs
-only when something calls it. The worker services story brings the entry points
-and the schedule.
+inside one queue (ADR-0003). One of the four has a consumer: `src/workers/reconciler.ts`
+takes `reconciler.run` off `maintenance` and runs the boundary sweep
+(`src/modules/reconciler/commands/sweep-boundaries-command.ts`). `readmodel.rebuild`
+shares that queue and has no handler, so publishing one fails into the dead-letter
+set rather than being acknowledged by a process that ignored it — deliberate, and the
+read-model story adds the handler. Nothing consumes `promotions`, `products` or
+`ingestion` yet (issues #12 and #105).
 
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
@@ -152,11 +191,12 @@ check that they differ mean something.
 has no default and is required (`.env.example` sets the compose one), but it
 starts and serves without a Redis
 there: connection errors are logged and every publish fails at its 2 s bound
-rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the
-HTTP server first and the queues last, and waits at most `SHUTDOWN_DRAIN_TIMEOUT_MS`
+rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the HTTP
+server first, the pool next and the queues last, and `SHUTDOWN_DRAIN_TIMEOUT_MS`
 (default 10 s; digits only, so a blank value is rejected rather than read as the
-`0` that exits immediately) for open connections before closing the
-queues anyway (ADR-0003).
+`0` that exits immediately) is one deadline over that whole sequence, not one per
+step: whatever has not finished by then is abandoned and the process exits
+(ADR-0003). Every process in the image stops the same way.
 
 ## Project structure
 
