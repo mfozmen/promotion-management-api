@@ -256,13 +256,7 @@ describe('EventQueue', () => {
       );
       expect(Date.now() - startedAt).toBeLessThan(EventQueue.OPERATION_TIMEOUT_MS * 3);
       expect(errors).toHaveBeenCalled();
-      // Through the ADR-0010 whitelist under an `error` key, never the error
-      // itself and never a plain line: a process that writes one writes it at
-      // the moment someone is reading its JSON.
-      // What the line carries, not just that there is one: an unreachable queue
-      // reports through the ADR-0010 whitelist under an `error` key, so the
-      // driver's own object never reaches a serializer that would write its
-      // fields out whole.
+      // What the line carries, not just that there is one (ADR-0010).
       for (const [fields] of errors.mock.calls) {
         expect(fields).toHaveProperty('error.type');
         expect(fields).toHaveProperty('error.message');

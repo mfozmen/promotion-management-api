@@ -505,7 +505,8 @@ A request in this system does not end at the HTTP response: it emits an event th
 ### Consequences
 
 - Every line is JSON carrying `reqId`, so a grep on one id returns the whole request — provided the id is unique, which is the caller's responsibility once it supplies one (see trade-offs).
-- The error handler logs at `warn` for a mapped client error and at `error` with the stack for an unexpected throw, which makes "real 500s" a distinct, alertable signal rather than noise mixed with client mistakes.
+- The error handler logs at three levels, and the middle one is the point. A mapped client error is `warn` with its code and status. An unexpected throw is `error` with the stack. A **retriable** 5xx — `READ_MODEL_NOT_READY`, and `BACKPRESSURE` if it ever answers above 499 — is `warn` as a deferred request, with no stack and with the raiser's own message as `reason`, because every request during a rebuild or an outage raises one and putting those at `error` buries the real 500s at exactly the moment someone is looking for them. `reason` exists because two conditions answer that code with the same public wording and `serializeError` reports the root of the chain, so an unreachable store and a cold start are otherwise the same line.
+- That `reason` is the raiser's message, bounded but not passed through the whitelist's redaction, so it must be literal. Nothing raises those codes with a message built from a driver error today; the first story that does owns keeping it that way.
 - The id is the join key the queue boundary will have to carry: an event payload must propagate it so a worker's lines attach to the request that caused them. That propagation is **not implemented yet** — it lands with the first event producer.
 
 ### Trade-offs
