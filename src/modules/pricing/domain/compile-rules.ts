@@ -1,8 +1,8 @@
 import { Engine, type RuleProperties, type TopLevelCondition } from 'json-rules-engine';
 
 import { adjustmentEvent } from './adjustment-event.js';
-import type { CompiledRuleSet } from './compiled-rule-set.js';
-import type { PricingRuleRow } from './pricing-rule-row.js';
+import type { CompiledRuleSet } from './dto/compiled-rule-set.js';
+import type { PricingRuleRow } from './dto/pricing-rule-row.js';
 import type { VendorRowFacts } from './vendor-row-facts.js';
 
 /** Every rule is compiled against these facts, so a rule naming a fact that is

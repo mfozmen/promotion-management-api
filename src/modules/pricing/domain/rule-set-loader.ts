@@ -1,6 +1,6 @@
 import { compileRules } from './compile-rules.js';
-import type { CompiledRuleSet } from './compiled-rule-set.js';
-import type { PricingRuleRow } from './pricing-rule-row.js';
+import type { CompiledRuleSet } from './dto/compiled-rule-set.js';
+import type { PricingRuleRow } from './dto/pricing-rule-row.js';
 
 /** The clock is injected so the 60 s policy is testable without sleeping, and
  *  the in-flight promise is cached so a batch starting cold issues one query,

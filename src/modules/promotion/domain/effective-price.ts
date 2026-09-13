@@ -1,7 +1,7 @@
 import { discountCalculatorFor } from './discount-calculator-for.js';
 import { pricingInputError } from './pricing-input-error.js';
-import type { PricingOutcome } from './pricing-outcome.js';
-import type { Promotion } from './promotion.js';
+import type { PricingOutcome } from './dto/pricing-outcome.js';
+import type { Promotion } from './dto/promotion.js';
 
 export function effectivePrice(
   basePriceCents: number,
