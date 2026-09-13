@@ -80,7 +80,11 @@ code's behaviour down as the expectation without noticing.
   Concrete values, so the run can assert them.
 - **Measure** — for any criterion that states a number: what is measured, over
   how many runs, and the value that fails it. "Fast" is not runnable; "p99 over
-  three runs of 15 s at 100 connections, under 100 ms" is.
+  three runs of 15 s at 100 connections, under 300 ms" is. A number also needs
+  somewhere to come from: say what it derives from, because a bar nobody
+  checked was reachable is as useless as no bar at all — this example used to
+  read 100 ms, which is below what a route serialising a constant measures at
+  that concurrency, so no run could have passed it.
 
 ## Report format
 

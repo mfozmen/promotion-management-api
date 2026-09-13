@@ -28,6 +28,7 @@ export async function listProducts(redis: Redis, { category, order, page, pageSi
         : redis.zrange(key, '+inf', '-inf', 'BYSCORE', 'REV', 'LIMIT', offset, pageSize),
       redis.zcard(key),
     ]),
+    key,
   );
 
   const pipeline = redis.pipeline();

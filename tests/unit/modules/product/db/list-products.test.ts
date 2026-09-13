@@ -27,7 +27,13 @@ describe('listProducts', () => {
     // round trip later answered 500 and invited an immediate retry.
     expect(raised).toBeInstanceOf(HttpError);
     expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
-    expect((raised as HttpError).cause).toBe(failure);
+    // The cause is rebuilt to name the index it failed on, so what has to
+    // survive is the driver's own code and its message, not the identity of
+    // the object ioredis happened to throw.
+    const cause = (raised as HttpError).cause as Error & { code?: unknown };
+    expect(cause.code).toBe('ECONNRESET');
+    expect(cause.message).toContain(failure.message);
+    expect(cause.message).toContain('products:all');
   });
 
   it('reads the failure a pipeline resolves with rather than waiting to be rejected', async () => {

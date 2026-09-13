@@ -16,7 +16,7 @@ export async function findProduct(redis: Redis, id: number) {
   const hash = await fromReadModel(redis.hgetall(productKey(id)), productKey(id));
   if (Object.keys(hash).length > 0) return toProductView(hash);
 
-  const listed = await fromReadModel(redis.zscore(ALL_PRODUCTS, String(id)));
+  const listed = await fromReadModel(redis.zscore(ALL_PRODUCTS, String(id)), ALL_PRODUCTS);
 
   if (listed !== null) {
     // Counted under its own name: a writer that died between UNLINK and ZREM

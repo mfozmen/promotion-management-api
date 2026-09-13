@@ -34,6 +34,20 @@ describe('replyFailure', () => {
     expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
   });
 
+  it('keeps the driver code when it names the key, which is where an outage shows', () => {
+    const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:6379'), {
+      code: 'ECONNREFUSED',
+    });
+
+    const raised = replyFailure(refused, 'product:7') as HttpError;
+
+    // The log whitelist reports the root of the cause chain, so rebuilding the
+    // error to carry the key threw away the field the error handler documents
+    // as the one place an outage shows.
+    expect((raised.cause as { code?: unknown }).code).toBe('ECONNREFUSED');
+    expect((raised.cause as Error).message).toContain('product:7');
+  });
+
   it('does not read a property off something that is not an error', () => {
     // A rejection carrying a non-error would otherwise throw inside the
     // catch that called this, so `next` is never reached and the request

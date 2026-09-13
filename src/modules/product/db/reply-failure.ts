@@ -13,8 +13,13 @@ export function replyFailure(error: unknown, key?: string): unknown {
     // The key travels in the message because the log whitelist (REVIEW.md 8.4)
     // emits four fields and a key attached to the error is not one of them.
     // Ours, never a caller's, and a 500's message never crosses to a client.
-    const named = new Error(`${error.message} at ${key}`);
-    named.name = error.name;
+    // `code` is carried with it: the whitelist reports the root of the cause
+    // chain, so a rebuild that dropped it would take the driver's own code —
+    // the one field that says an outage is an outage — off the log line.
+    const named = Object.assign(new Error(`${error.message} at ${key}`), {
+      name: error.name,
+      code: (error as { code?: unknown }).code,
+    });
 
     return replyFailure(named);
   }

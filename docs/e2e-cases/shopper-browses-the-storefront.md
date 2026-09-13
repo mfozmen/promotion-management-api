@@ -106,7 +106,7 @@ Test cases
 - Given: one product opened by many shoppers at once
 - When: 100 concurrent shoppers read it for 15 seconds
 - Then: every response is a 200 with the same price, none fails, none times out
-- Measure: p99 latency, median of three runs, under 300 ms at 100 connections; zero non-2xx; zero errors. The bar is derived from the measured baseline rather than chosen: `GET /api/health`, which serialises a constant and touches nothing, measures 130-192 ms p99 at this same concurrency on this machine (ADR-0009), so the criterion is that the storefront's three Redis round trips add no more than about 100 ms to a route that does nothing. Re-derive it against a fresh baseline on different hardware; the 100 ms it replaced was below what the empty route clears, so no run could have passed it (owner decision, 2026-09-13)
+- Measure: p99 latency, median of three runs, under 300 ms at 100 connections; zero non-2xx; zero errors. The bar is derived from the measured baseline rather than chosen: `GET /api/health`, which serialises a constant and touches nothing, measures 130-192 ms p99 at this same concurrency on this machine (ADR-0009), so the criterion is that the detail route's two Redis commands add no more than about 100 ms to a route that does nothing. Re-derive it against a fresh baseline on different hardware; the 100 ms it replaced was below what the empty route clears, so no run could have passed it (owner decision, 2026-09-13)
 
 ### shopper-10
 

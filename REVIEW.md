@@ -605,6 +605,15 @@ server. Fixtures on that same PR modelled a product the writer cannot produce,
 a base of 10 000 beside an effective 9 000 with no promotion, and reader and
 fixture confirmed each other for as long as nobody asked what writes the hash.
 
+**Break the thing the test names and watch it fail.** That is what keeps
+catching this family, because a mutation is the thing outside both: it asks
+the test a question the code did not supply the answer to. Three times on one
+pull request — a double that rejected where the library resolves, fixtures
+that agreed with the reader about an impossible product, and an ordering case
+whose two orders came out in the same sequence so a scorer reading the wrong
+column passed it. Each was written carefully and each was wrong; none of them
+was caught by reading it again.
+
 ---
 
 ## 8. Boundaries, errors and API shape

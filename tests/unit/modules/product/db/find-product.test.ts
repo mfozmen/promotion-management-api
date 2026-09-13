@@ -14,6 +14,17 @@ describe('findProduct', () => {
     expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
   });
 
+  it('names the key when the writer put something else at it', async () => {
+    const wrongType = Object.assign(new Error('WRONGTYPE Operation against a key'), {
+      name: 'ReplyError',
+    });
+    const redis = { hgetall: () => Promise.reject(wrongType) } as unknown as Redis;
+
+    const raised = await findProduct(redis, 7).catch((error: unknown) => error);
+
+    expect((raised as Error).message).toContain('product:7');
+  });
+
   it('calls a product the index still lists a rebuild, not a missing product', async () => {
     // The listing drops this member and calls it a rebuild in progress. The
     // detail route answered 404, which a crawler and a CDN both cache, for a
