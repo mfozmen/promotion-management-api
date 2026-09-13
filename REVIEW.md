@@ -396,10 +396,20 @@ state the write rate and why it is acceptable, or move the count to a query.
 
 6.21 **Redis memory and command cost are bounded.** A hash per product times
 500 000 products is the read model's footprint; a new field is multiplied by
-that. `ZRANGE` with `LIMIT` is O(log N + M); a `ZRANGE` without `LIMIT`, an
-`SMEMBERS` on a large set, or an `HGETALL` on an unbounded hash is a finding.
-Big pipelines are chunked (about 1 000 commands) so one reply does not buffer
-the whole category.
+that. `ZRANGE` with `LIMIT offset count` is O(log N + offset + M), **not**
+O(log N + M): Redis walks and discards `offset` members before it returns
+anything, so a page number large enough makes one unauthenticated request
+scan the whole set on a single-threaded server. A page size cap bounds the
+fan-out and not that scan, so an offset bound is its own rule: cap it, and
+name a keyset cursor on `(score, member)` as the upgrade when something has to
+walk further. A `ZRANGE` without `LIMIT`, an `SMEMBERS` on a large set, or an
+`HGETALL` on an unbounded hash is a finding. Big pipelines are chunked (about
+1 000 commands) so one reply does not buffer the whole category.
+
+Evidence: this rule stated the cost without the `offset` term, and the
+storefront listing shipped an unbounded `page` past a review that read the
+rule and agreed with it (PR #76). The wrong half was the half a reviewer
+would lean on.
 
 6.22 **Measure what you claim.** Any change to a storefront route, the event
 handler or the chunk processor reports the `e2e-tester` numbers in the PR:

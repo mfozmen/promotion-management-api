@@ -12,7 +12,7 @@ cheapest thing I want without opening every product.
 Acceptance criteria
 
 - The list can be filtered to one category.
-- The list is paginated, and two pages never share a product or skip one.
+- The list is paginated. While prices are still, two pages never share a product or skip one; while a sale is changing them, a product whose price moves may be seen twice or missed, because the pages are cut by price and the price is what changed.
 - The list can be sorted by effective price, ascending or descending.
 - Every item shows its effective price, which is the price after the active promotion, not the base price.
 - Before the storefront has prices to show, the shopper is told the catalogue is not ready rather than shown an empty or stale one (owner decision, issue #13).
@@ -40,7 +40,7 @@ Test cases
 - Precondition: `GET /api/products`
 - Given: a category with more products than one page holds
 - When: the shopper reads page 2 while a product on page 1 is discounted and moves
-- Then: the shopper still sees every product exactly once across the pages they read
+- Then: every product the shopper sees is a real product of that category at a price that was true when the page was built, and the page they asked for is the size they asked for; a product whose price moved across the page boundary may appear twice or not at all, which is the cost of ordering by the thing the sale changes
 - Measure: none
 
 ### shopper-7
