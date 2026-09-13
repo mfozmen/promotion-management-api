@@ -81,7 +81,8 @@ code's behaviour down as the expectation without noticing.
 - **Measure** — for any criterion that states a number: what is measured, over
   how many runs, and the value that fails it. "Fast" is not runnable; "p99 over
   three runs of 15 s at 100 connections, under 300 ms" is. A number also needs
-  somewhere to come from: cite the measurement it derives from.
+  somewhere to come from: name the run that produced it, and say so when it is
+  provisional rather than measured.
 
 ## Report format
 

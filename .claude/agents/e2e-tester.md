@@ -221,8 +221,8 @@ first result is ambiguous, and say so.
 - No deadlock in the PostgreSQL log, no statement count that scales with page
   size, one rebuild per cache expiry, and heap returning to its baseline.
 - p99 latency for `GET /api/products/:id` under 300 ms at 100 connections,
-  median of three runs. The bar derives from ADR-0009's measured baseline;
-  re-derive it from a fresh baseline on other hardware.
+  median of three runs. Provisional: set from a run of the health route on one
+  machine and recorded nowhere, so this run either confirms it or replaces it.
 - Peak RSS under 256 MB for the API, under 128 MB for an ingestion run.
 - Every invariant in section 2 holds after every race scenario in section 3.
 

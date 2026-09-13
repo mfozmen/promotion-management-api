@@ -72,7 +72,7 @@ Test cases
 - Given: the sale fully applied
 - When: 100 concurrent shoppers list and open Accessories products for 15 seconds
 - Then: every response correct, none from the write database
-- Measure: p99 latency under 300 ms at 100 connections, median of three runs (the bar and its derivation are in ADR-0009); PostgreSQL statement count during the run near zero
+- Measure: p99 latency under 300 ms at 100 connections, median of three runs; PostgreSQL statement count during the run near zero. The bar is provisional: it was set from a run of the health route on one machine, that measurement is in no record, and the first `e2e-tester` run against these routes either confirms it or replaces it.
 
 ## S14 Ending the sale
 

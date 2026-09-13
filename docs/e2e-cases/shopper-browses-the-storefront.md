@@ -106,7 +106,7 @@ Test cases
 - Given: one product opened by many shoppers at once
 - When: 100 concurrent shoppers read it for 15 seconds
 - Then: every response is a 200 with the same price, none fails, none times out
-- Measure: p99 latency under 300 ms at 100 connections, median of three runs (the bar and its derivation are in ADR-0009); zero non-2xx; zero errors
+- Measure: p99 latency under 300 ms at 100 connections, median of three runs; zero non-2xx; zero errors. The bar is provisional: it was set from a run of the health route on one machine, that measurement is in no record, and the first `e2e-tester` run against these routes either confirms it or replaces it.
 
 ### shopper-10
 
