@@ -1013,6 +1013,23 @@ that passed. That is why this one exits non-zero and is verified in both
 directions — it fails on a marker in the working tree, and on one that
 `git add -A` has already staged, which is the case that got past it.
 
+13.10 **Two files that have to agree are checked by a test that reads both, not
+by a diff.** When a value is written twice — a URL in a compose healthcheck and
+the route that serves it, a port in a Dockerfile and in a config, a queue name
+in a producer and a consumer — changing one side leaves a diff that is
+individually correct and a review that has nothing to compare. The side that
+did not change is not in the diff at all, so the branch that broke the pair
+looks clean. Land a test that reads the value out of one file and exercises the
+other.
+
+Evidence: moving the health probe under `/api` left `docker-compose.yml`
+fetching `/health`. Both files were right on their own, this branch never
+edited compose so the textual diff against `main` was empty, and the container
+would never have reported healthy — `up --wait` hanging rather than failing,
+which is the slowest way to learn. `tests/unit/docs/compose-healthcheck.test.ts`
+now parses the URL out of compose and calls it, and was verified to fail when
+the path is put back.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
