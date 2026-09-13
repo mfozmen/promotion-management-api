@@ -360,6 +360,25 @@ describe('ChunkProcessor', () => {
     expect(job?.status).toBe('completed');
   });
 
+  it('counts the products it stored, not the lines it read, when a batch repeats a sku', async () => {
+    // The announcement and the checkpoint have to agree with the upsert, which
+    // dedupes within a batch because PostgreSQL refuses to touch a row twice in
+    // one statement. Three lines, two products: the count that reaches
+    // `rows_processed` is the one the batch actually wrote.
+    sequence += 1;
+    const repeated = `SKU-DUP-${sequence},name,Electronics,800.00,150
+`;
+    const { jobId } = await jobWithChunk(row(1) + repeated + repeated);
+    const sink = recorder();
+
+    const result = await processorWith(sink.publish, 100).process({ jobId, chunkIndex: 0 });
+
+    expect(result.rowsProcessed).toBe(2);
+    expect(await storedFor(jobId)).toHaveLength(2);
+    expect(sink.announced.flat()).toHaveLength(2);
+    expect((await chunkRow(jobId))?.rowsProcessed).toBe(2);
+  });
+
   it('marks the chunk done once the checkpoint reaches the end of its range', async () => {
     const { jobId } = await jobWithChunk(row(1));
 

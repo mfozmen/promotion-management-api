@@ -99,10 +99,11 @@ export class ChunkProcessor {
       else batch.rows.push(priced);
 
       if (batch.rows.length + batch.rejected >= this.batchSize) {
-        if (!(await this.commit(jobId, chunkIndex, batch))) {
+        const stored = await this.commit(jobId, chunkIndex, batch);
+        if (stored === null) {
           return { claimed: true, superseded: true, rowsProcessed, rowsRejected };
         }
-        rowsProcessed += batch.rows.length;
+        rowsProcessed += stored;
         rowsRejected += batch.rejected;
         batch = this.emptyBatch(endOffset);
 
@@ -117,10 +118,11 @@ export class ChunkProcessor {
     }
 
     if (batch.rows.length + batch.rejected > 0) {
-      if (!(await this.commit(jobId, chunkIndex, batch))) {
+      const stored = await this.commit(jobId, chunkIndex, batch);
+      if (stored === null) {
         return { claimed: true, superseded: true, rowsProcessed, rowsRejected };
       }
-      rowsProcessed += batch.rows.length;
+      rowsProcessed += stored;
       rowsRejected += batch.rejected;
     }
 
@@ -173,17 +175,25 @@ export class ChunkProcessor {
     };
   }
 
-  /** Whether this invocation still holds the chunk: false means it has been superseded. */
-  private async commit(jobId: number, chunkIndex: number, batch: Batch): Promise<boolean> {
+  /**
+   * How many products the batch stored, or null because the compare-and-set was
+   * refused and this invocation no longer holds the chunk.
+   */
+  private async commit(jobId: number, chunkIndex: number, batch: Batch): Promise<number | null> {
     const ids = await upsertProducts(this.db, batch.rows);
     if (ids.length > 0) await this.publish(ids);
-    return checkpointBatch(this.db, {
+    // `ids.length`, not `batch.rows.length`: a vendor file repeating a SKU inside
+    // one batch stores one product for two lines, and `rows_processed` counts the
+    // products the import produced rather than the lines it read.
+    const moved = await checkpointBatch(this.db, {
       jobId,
       chunkIndex,
       seenOffset: batch.seenOffset,
       nextOffset: batch.nextOffset,
-      rowsProcessed: batch.rows.length,
+      rowsProcessed: ids.length,
       rowsRejected: batch.rejected,
     });
+
+    return moved ? ids.length : null;
   }
 }
