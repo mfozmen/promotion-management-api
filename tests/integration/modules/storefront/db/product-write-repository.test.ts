@@ -120,7 +120,7 @@ describe('ProductWriteRepository', () => {
     // The script hands the field list to `cjson.decode` and then `unpack`, and
     // a product name is the one field a person types: quotes, a backslash, a
     // colon and a non-Latin script all pass through a parser this test does not
-    // own, so it is proved against the server rather than a double.
+    // own (REVIEW.md 7.11), so it is proved against the server, not a double.
     const name = 'Kazak "kış" 50% \\ 2/3 — çok güzel: bak';
 
     expect(await write.write(entry({ name }), EARLY)).toBe(true);
