@@ -660,6 +660,8 @@ or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not. An ADR states the decision and the current state; it carries no pull
 request, commit or issue number — that history is git's.
 
+A path is checkable and a reference is not: `tests/unit/docs/documented-paths.test.ts` reads every backticked `src/`, `tests/`, `docs/`, `.claude/` and `.github/` path out of ADR.md, README.md, CONTRIBUTING.md and REVIEW.md and fails on one the tree does not hold, with a named exemption for each path a document mentions without claiming it exists. A number cannot be checked that way — `value "99999999999" is out of range for type integer` is a quoted error, not a citation — so the reference half of this rule stays a reader's, and the grep that finds candidates is a finder rather than a gate. Evidence: a day of renames left four documents naming a logger file, a schema directory and a calculator that no longer existed, and two careful readings passed over the same four; the check found them at once.
+
 8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
 properties) carry no explanatory comments; the entry says what it does. At most
 one short line per variable in `.env.example`.
