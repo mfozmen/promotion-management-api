@@ -104,6 +104,28 @@ The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/mi
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver (#36) and the admin reads will select from it instead of restating the predicate (ADR-0004, commit `1aaaffc`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed (commit `2142664`). It is not an endpoint; no route exposes it.
 
+## Dynamic pricing rules
+
+Ingestion prices every vendor row through rules that live in the `pricing_rules` table, not in
+code. Changing a markup is an `UPDATE`; no deploy, and a running import picks the new set up
+within 60 seconds because the compiled set is cached for that long.
+
+Migration `0001` seeds the three the case study asks for, applied in priority order:
+
+| Priority | Rule                | Condition                  | Adjustment |
+| -------- | ------------------- | -------------------------- | ---------- |
+| 100      | electronics markup  | `category = 'Electronics'` | +15 %      |
+| 50       | bulk stock discount | `stockQuantity > 100`      | -3 %       |
+| 10       | vendor commission   | every row                  | +5 %       |
+
+An Electronics row at 80 000 cents with stock 150 therefore stores 93 702: 80 000 → 92 000 →
+89 240 → 93 702, each step floored so rounding never favours the customer.
+
+`BasePriceCalculator.fromRules(rows)` compiles the active rules once and rejects a rule that
+cannot run — an unknown operator, a fact no vendor row carries, an empty condition group that
+would fire on every row. `calculate(row)` then prices one row and returns either the price or
+the rule that rejected it, never a throw. The code is `src/modules/pricing/domain/`.
+
 ## API
 
 | Method | Path      | Description                                                    |
