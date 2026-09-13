@@ -488,6 +488,7 @@ A request does not end at the HTTP response: it emits an event a worker picks up
 - `src/shared/logger.ts` exports the pino root logger and `src/shared/http/http-logger.ts` the `pino-http` middleware, mounted first in `createApp` so every later handler has `req.log`.
 - **Correlation id.** Taken from `x-request-id` only when it matches `^[A-Za-z0-9._-]{1,128}$`, otherwise generated. The header is untrusted input: a newline forges log lines and a CR injects a response header. It is echoed back and bound as `reqId` on every line.
 - **Narrowed serializers.** `req` is `{ id, method, path }` and `res` is `{ statusCode }`, so headers, body and query string are never serialised and no credential reaches a line.
+- **`err` is a fixed field set, not the error's own.** pino's default serializer copies an error's own enumerable properties, so a `DrizzleQueryError`'s `query` and `params` — the failing statement and the caller's bound values — arrive as top-level log fields. `src/shared/serialize-error.ts` therefore builds the line from `type`, a message, the stack's frames, and the SQLSTATE `code` with the `constraint` name when `src/shared/db/driver-fault.ts` finds a driver fault in the cause chain. SQL text and bound values are absent by construction rather than deleted. A driver message is replaced by `database error` rather than trimmed, because a driver quotes the caller's value in its own text; the stack keeps its frames and loses its message lines, because a stack begins with the message (REVIEW.md 8.4).
 - **The stack goes to the log and never to a response.**
 - **No `console`.** Every line the process emits is JSON with the same fields.
 
@@ -495,10 +496,12 @@ A request does not end at the HTTP response: it emits an event a worker picks up
 
 - A grep on one `reqId` returns the whole request, provided the caller's id is unique, which is the caller's responsibility once it supplies one.
 - A 4xx logs at `warn` with its status, and so does a 5xx carrying a `Retry-After`, which is an operating condition rather than a fault; every other 5xx logs at `error` under `err`, which makes real 500s an alertable signal rather than noise.
+- The serializer fails closed rather than throwing: an error whose `message` or `stack` getter throws is constructible, and pino does not catch a throwing serializer — the log call throws and no line is written at all — so an unreadable error is logged as `UnserializableError` instead of costing the diagnostic. `tests/unit/capture-logger.ts` attaches the same serializer as the root logger, so a test reads the line production writes.
 - The id is the join key the queue boundary will have to carry. It is not implemented: every payload schema is a `z.strictObject`, so an id attached by a producer throws inside `publish`, and adding it is a change to all five contracts.
 
 ### Trade-offs
 
 - A diagnosis needing a request header or query string has to reproduce the request rather than read it back.
-- pino's serializer walks `cause`, so a driver error's message and every wrapper around it reach the log line whole — the failing statement and its bound parameters with them. No route at this layer touches a database; the first story that queries PostgreSQL owns reducing a driver error against its real shape.
+- A diagnosis of a failed statement reads the SQLSTATE, the constraint name and the call site, and never the statement or the values that failed it. Reproducing the query is manual work the log line no longer saves. Accepted for ModaCo because a vendor row carries a supplier's pricing and an admin's request carries their session: a line that quoted bound values would put both in whatever aggregates the logs, and a constraint name identifies the fault class as precisely as the statement does.
+- The whitelist is maintained by hand, so a future field worth logging — a driver's `detail`, a retry count — reaches no line until someone adds it, and REVIEW.md 12.9 prefers a library's own shaping to ours. Taken anyway because the library's shaping is what leaked: a serializer that copies whatever the error carries cannot be audited against a dependency that adds a property.
 - A caller-supplied id is accepted, not verified to be unique, so a fleet sending one constant id collapses onto a single `reqId`.

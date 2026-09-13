@@ -642,8 +642,19 @@ the next author would have added it back and been right to.
 connection string, no secret, in a response. A log line is read by the operator,
 not the caller, so the stack of an unexpected error belongs there — it is the
 only way to diagnose a 500 — and never in the body. An error is logged under
-`err`, where pino's own serializer shapes it; a hand-written whitelist beside
-it is a finding (12.9).
+`err`. pino's own serializer shapes it, and a hand-written whitelist beside it is
+a finding (12.9) — except where the library's serializer is itself the leak, and
+then the whitelist is the fix and the default is the finding.
+
+Evidence: pino's standard `err` serializer copies an error's own enumerable
+properties. A `DrizzleQueryError` carries `query` and `params`, so a duplicate-key
+failure put the statement and the caller's bound value into one line four times —
+in `message`, twice in `stack` (whose first line is the message, repeated under
+`caused by:`), and in `query` and `params` as top-level fields. Scrubbing the
+message would have left the value in the line twice and read as fixed, so the
+line is built from a fixed field set instead (`src/shared/serialize-error.ts`).
+This generalises past drizzle: any library that attaches context to its errors
+attaches it to the log.
 
 A 5xx marked `expose: true` returns its message, so a host, a port, a statement
 or a credential in one is a finding at the raise site: the library masks the

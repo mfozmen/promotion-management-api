@@ -1,10 +1,6 @@
-/** The chain is walked rather than indexed into: `drizzle-orm` wraps the
- *  driver error and the nesting depth is the library's business. */
-export function hasSqlState(error: unknown, state: string): boolean {
-  for (let current = error, depth = 0; current instanceof Error && depth < 5; depth += 1) {
-    if ((current as { code?: unknown }).code === state) return true;
-    current = current.cause;
-  }
+import { driverFault } from './driver-fault.js';
 
-  return false;
+/** One walk of the cause chain lives in `driverFault`; this asks it a yes-or-no question. */
+export function hasSqlState(error: unknown, state: string): boolean {
+  return driverFault(error)?.code === state;
 }
