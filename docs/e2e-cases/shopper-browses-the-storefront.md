@@ -11,9 +11,11 @@ cheapest thing I want without opening every product.
 
 Acceptance criteria
 
-- The list can be filtered to one category.
+- The list can be filtered to one category, and with no category chosen the shopper browses the whole catalogue.
 - The list is paginated. While prices are still, two pages never share a product or skip one; while a sale is changing them, a product whose price moves may be seen twice or missed, because the pages are cut by price and the price is what changed.
 - The list can be sorted by effective price, ascending or descending.
+- Each page tells the shopper how many products the list holds, so they know how many pages there are.
+- A page larger than 100 items is refused rather than served (owner decision, issue #13).
 - Every item shows its effective price, which is the price after the active promotion, not the base price.
 - Before the storefront has prices to show, the shopper is told the catalogue is not ready rather than shown an empty or stale one (owner decision, issue #13).
 
@@ -24,7 +26,7 @@ Test cases
 - Precondition: `GET /api/products`
 - Given: a category with 45 products, some discounted
 - When: the shopper asks for that category sorted by effective price ascending, 20 per page, pages 1 to 3
-- Then: 20, 20 and 5 items; the union is the 45 with no duplicate; every page is in ascending order and the last item of one page is not above the first of the next
+- Then: 20, 20 and 5 items; the union is the 45 with no duplicate; every page is in ascending order and the last item of one page is not above the first of the next; every page reports the same total of 45 alongside the page asked for
 - Measure: none
 
 ### shopper-2
@@ -49,6 +51,22 @@ Test cases
 - Given: a freshly started storefront whose catalogue has not been built yet
 - When: the shopper opens a category list
 - Then: the request is refused with 503 and the code `READ_MODEL_NOT_READY`; no empty list and no prices are shown; when the catalogue is ready the same request returns the category's products
+- Measure: none
+
+### shopper-8
+
+- Precondition: `GET /api/products`
+- Given: a category with 45 products
+- When: the shopper asks for 500 of them on one page
+- Then: the request is refused with 400 and no list is returned; asking for 100 on one page is served
+- Measure: none
+
+### shopper-9
+
+- Precondition: `GET /api/products`
+- Given: a catalogue holding several categories, the dearest item after promotions at 480.00 and the cheapest at 9.99
+- When: the shopper lists products with no category chosen, sorted by effective price descending, first page of 20
+- Then: the first item is the 480.00 one, the page descends, no item of any category is excluded, and the total counts the whole catalogue rather than one category
 - Measure: none
 
 ## S10 Open a product
