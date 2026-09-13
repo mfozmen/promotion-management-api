@@ -95,8 +95,6 @@ describe('demo seed', () => {
       })
       .from(products)
       .where(eq(products.sku, 'DEMO-0004'));
-    // Every column that explains the price goes with the price. A row keeping its
-    // `pricing_rules_version` would claim a rule set produced a number the seed wrote.
     expect(reclaimed).toEqual({
       basePriceCents: 1200,
       ingestJobId: null,
@@ -114,7 +112,7 @@ describe('demo seed', () => {
       'utf8',
     );
     const shared = sample
-      .split('\n')
+      .split(/\r?\n/)
       .filter((line) => line.startsWith('DEMO-'))
       .map((line) => line.split(','))
       .map(([sku, name, category]) => ({ sku, name, category }));

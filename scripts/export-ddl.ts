@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { writeFile } from 'node:fs/promises';
 import { buildSchemaDdl } from '../src/shared/db/build-schema-ddl.js';
 import { MIGRATIONS_FOLDER } from '../src/shared/db/migrate.js';
@@ -7,4 +8,4 @@ import { MIGRATIONS_FOLDER } from '../src/shared/db/migrate.js';
 const target = new URL('../docs/schema.sql', import.meta.url);
 
 await writeFile(target, await buildSchemaDdl(MIGRATIONS_FOLDER));
-console.log('Wrote docs/schema.sql from', MIGRATIONS_FOLDER);
+console.log('Wrote', fileURLToPath(target), 'from', MIGRATIONS_FOLDER);
