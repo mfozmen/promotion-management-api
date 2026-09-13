@@ -11,22 +11,16 @@ interface Window {
   missing: number;
 }
 
-/** Keyed by index, because two categories rebuilt at once would otherwise be
- *  reported as one: the line would name whichever key happened to close the
- *  window and an operator would scope the rebuild at the wrong category.
+/** Keyed by index so two rebuilds are not reported as one (ADR-0006).
  *
- *  Bounded by the catalogue's categories rather than by traffic — but
- *  conditionally, not structurally. A caller can name any index in a query
- *  parameter; what keeps an invented one out of this map is that an absent key
- *  returns no members, so nothing is missing and the reporter is never called.
- *  A change that reported on an empty page would turn `?category=<random>`
- *  into unbounded growth in this process, on an unauthenticated route. */
+ *  Bounded by the catalogue's categories only because an absent key returns no
+ *  members, so an invented `?category=` never reaches here. Reporting on an
+ *  empty page would make this map unbounded on an unauthenticated route. */
 const windows = new Map<string, Window>();
 
-/** Ghost members are ordinary during a rebuild, and a rebuild of a 50 000-product
- *  category is exactly when the storefront is hottest, so a line per request is
- *  thousands per second into pino's unbounded destination. The first request in
- *  a window reports itself and what the previous window swallowed. */
+/** One line per window rather than per request, because a rebuild is when the
+ *  storefront is hottest (ADR-0006). The first request in a window reports
+ *  itself and what the previous window swallowed. */
 export function reportGhosts(key: string, absent: number): void {
   const now = Date.now();
   const open = windows.get(key) ?? { openedAt: 0, requests: 0, missing: 0 };

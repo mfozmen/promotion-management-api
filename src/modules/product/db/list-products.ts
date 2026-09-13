@@ -19,11 +19,8 @@ interface Page {
  *  product. With REV, Redis expects the maximum first. */
 export async function listProducts(redis: Redis, { category, order, page, pageSize }: Page) {
   const key = category === undefined ? ALL_PRODUCTS : categoryKey(category);
-  // Named to an operator only when we composed it. A category key is the
-  // caller's bytes with a prefix, so putting it in a message would let them
-  // write an operator's line and forge an ` at product:7` onto the end of it —
-  // and a key's existence being the writer's doing says nothing about the
-  // string. The category is on the request line under the same correlation id.
+  // Named to an operator only when we composed it, never when a caller did
+  // (ADR-0006).
   const ours = category === undefined ? ALL_PRODUCTS : undefined;
   const offset = (page - 1) * pageSize;
 
