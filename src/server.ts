@@ -42,10 +42,11 @@ const server = app.listen(config.PORT, () => {
 // HTTP server goes first and nothing is still producing when the sockets close.
 process.on('SIGTERM', () => {
   const startedAt = Date.now();
+  // The pool goes inside the budget rather than after it: awaited outside, it could hang
+  // past the grace period and turn a clean stop into an unexplained exit 137.
   void new GracefulShutdown(queue, config.SHUTDOWN_DRAIN_TIMEOUT_MS)
-    .run(server)
-    .then(async (path) => {
-      await pool.end();
+    .run(server, () => pool.end())
+    .then((path) => {
       logger.info({ path, ms: Date.now() - startedAt }, 'shutdown complete');
       process.exit(0);
     })

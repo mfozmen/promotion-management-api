@@ -67,6 +67,28 @@ export class EventQueue<R extends Registry> {
     );
   }
 
+  /**
+   * A repeatable job, keyed by the event name alone: one schedule per event, so a restart
+   * re-asserts it instead of adding a second. The id is built here and nowhere else, and the
+   * name is what BullMQ parses — no colons, which is the character that makes it reject a
+   * custom id (REVIEW.md 7.11 has the failure).
+   */
+  async schedule<N extends keyof R & string>(
+    name: N,
+    everyMs: number,
+    payload: z.infer<R[N]>,
+  ): Promise<void> {
+    const schema = this.registry[name] as ZodType;
+    await this.bounded(
+      `schedule("${name}")`,
+      this.queues[this.routing[name]].upsertJobScheduler(
+        name,
+        { every: everyMs },
+        { name, data: schema.parse(payload) },
+      ),
+    );
+  }
+
   /** `1` also means there was no such job, so a code is not proof of a removal. */
   async remove<N extends keyof R & string>(name: N, jobId: string): Promise<number> {
     return this.bounded(`remove("${jobId}")`, this.queues[this.routing[name]].remove(jobId));

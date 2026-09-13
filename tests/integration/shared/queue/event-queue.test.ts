@@ -310,6 +310,34 @@ describe('EventQueue', () => {
     }
   });
 
+  it('schedules a repeatable the real library accepts, and re-asserting it adds no second', async () => {
+    // REVIEW.md 7.11: BullMQ parses the scheduler id, so the only proof it accepts ours is
+    // BullMQ accepting it. A hand-written double would pass whatever we wrote.
+    const maintenance = new Queue('maintenance', {
+      connection: { url: redisUrl, db: QUEUE_DB },
+      prefix: PREFIX,
+    });
+    try {
+      await bus.schedule('reconciler.run', 60_000, {});
+      await bus.schedule('reconciler.run', 60_000, {});
+      const schedulers = await maintenance.getJobSchedulers();
+
+      expect(schedulers.map((scheduler) => scheduler.key)).toEqual(['reconciler.run']);
+      expect(schedulers[0]?.every).toBe(60_000);
+      // The job the schedule produces carries the event name a handler dispatches on. It is
+      // not necessarily delayed: BullMQ runs the first iteration straight away, so waiting
+      // and delayed are both where it can legitimately be.
+      await waitFor(
+        async () => (await maintenance.getJobs(['waiting', 'delayed'])).length === 1,
+        4_000,
+      );
+      expect((await maintenance.getJobs(['waiting', 'delayed']))[0]?.name).toBe('reconciler.run');
+    } finally {
+      await maintenance.removeJobScheduler('reconciler.run');
+      await maintenance.close();
+    }
+  });
+
   it('bounds a removal against an unavailable queue too', async () => {
     const errors = vi.spyOn(logger, 'error').mockReturnValue(undefined);
     const unreachable = EventQueue.connect(

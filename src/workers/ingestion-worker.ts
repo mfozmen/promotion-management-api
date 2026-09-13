@@ -1,3 +1,3 @@
 import { startWorker } from './start-worker.js';
 
-startWorker('ingestion-worker');
+startWorker('ingestion-worker').stopping();
