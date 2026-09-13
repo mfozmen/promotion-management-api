@@ -3,6 +3,8 @@ import { upsertProducts, type ProductUpsert } from '../../catalog/db/upsert-prod
 import type { BasePriceCalculatorCache } from '../../pricing/domain/base-price-calculator-cache.js';
 import { checkpointBatch } from '../db/checkpoint-batch.js';
 import { claimChunk } from '../db/claim-chunk.js';
+import { completeJobIfDone } from '../db/complete-job-if-done.js';
+import { releaseChunk } from '../db/release-chunk.js';
 import { findIngestionJob } from '../db/find-ingestion-job.js';
 import type { ChunkOutcome } from '../domain/dto/chunk-outcome.js';
 import type { ChunkProcess } from '../events/chunk-process.js';
@@ -38,19 +40,34 @@ export class ChunkProcessor {
   private readonly publish: (productIds: readonly number[]) => Promise<unknown>;
   private readonly batchSize: number;
   private readonly leaseMs: number;
+  private readonly budgetMs: number;
+  private readonly now: () => number;
+  private readonly reenqueue: (chunk: ChunkProcess) => Promise<unknown>;
 
   constructor(options: {
     db: Db;
     calculators: Pick<BasePriceCalculatorCache, 'current'>;
     publish: (productIds: readonly number[]) => Promise<unknown>;
+    /**
+     * Enqueues the next invocation for a chunk this one ran out of time on.
+     * Required rather than defaulted: a processor that cannot hand off is one
+     * whose budget silently does nothing, and the default would be a function
+     * no caller ever reaches.
+     */
+    reenqueue: (chunk: ChunkProcess) => Promise<unknown>;
     batchSize?: number;
     leaseMs?: number;
+    budgetMs?: number;
+    now?: () => number;
   }) {
     this.db = options.db;
     this.calculators = options.calculators;
     this.publish = options.publish;
+    this.reenqueue = options.reenqueue;
     this.batchSize = options.batchSize ?? ChunkProcessor.DEFAULT_BATCH_SIZE;
     this.leaseMs = options.leaseMs ?? ChunkProcessor.DEFAULT_LEASE_MS;
+    this.budgetMs = options.budgetMs ?? Number.POSITIVE_INFINITY;
+    this.now = options.now ?? Date.now;
   }
 
   async process({ jobId, chunkIndex }: ChunkProcess): Promise<ChunkOutcome> {
@@ -64,6 +81,7 @@ export class ChunkProcessor {
     const job = (await findIngestionJob(this.db, jobId))!;
 
     const calculator = await this.calculators.current();
+    const startedAt = this.now();
     let batch: Batch = this.emptyBatch(claimed.nextOffset);
     let rowStart = claimed.nextOffset;
     let rowsProcessed = 0;
@@ -87,6 +105,14 @@ export class ChunkProcessor {
         rowsProcessed += batch.rows.length;
         rowsRejected += batch.rejected;
         batch = this.emptyBatch(endOffset);
+
+        // Between batches is the only safe place to stop: the checkpoint is
+        // committed, so the next invocation resumes from it having lost nothing.
+        if (this.now() - startedAt >= this.budgetMs && endOffset < claimed.endOffset) {
+          await releaseChunk(this.db, jobId, chunkIndex);
+          await this.reenqueue({ jobId, chunkIndex });
+          return { claimed: true, exhausted: true, rowsProcessed, rowsRejected };
+        }
       }
     }
 
@@ -97,6 +123,10 @@ export class ChunkProcessor {
       rowsProcessed += batch.rows.length;
       rowsRejected += batch.rejected;
     }
+
+    // The checkpoint reached the end of the range, so this chunk is done; the
+    // job is completed by whichever chunk was last, and only one call wins.
+    await completeJobIfDone(this.db, jobId);
 
     return { claimed: true, rowsProcessed, rowsRejected };
   }

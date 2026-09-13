@@ -103,7 +103,13 @@ function recorder() {
 }
 
 const processorWith = (publish: (ids: readonly number[]) => Promise<void>, batchSize = 100) =>
-  new ChunkProcessor({ db: db(), calculators: calculators(), publish, batchSize });
+  new ChunkProcessor({
+    db: db(),
+    calculators: calculators(),
+    publish,
+    batchSize,
+    reenqueue: () => Promise.resolve(),
+  });
 
 describe('ChunkProcessor', () => {
   it('prices the rows, stores them, announces them and checkpoints the chunk', async () => {
@@ -215,6 +221,7 @@ describe('ChunkProcessor', () => {
         db: db(),
         calculators: broken,
         publish: recorder().publish,
+        reenqueue: () => Promise.resolve(),
       }).process({ jobId, chunkIndex: 0 }),
     ).rejects.toThrow('rule set is unusable');
 
@@ -236,6 +243,7 @@ describe('ChunkProcessor', () => {
       db: db(),
       calculators: calculators(),
       batchSize: 2,
+      reenqueue: () => Promise.resolve(),
       publish: async (ids) => {
         batches += 1;
         if (batches === 1) {
@@ -268,6 +276,7 @@ describe('ChunkProcessor', () => {
       db: db(),
       calculators: calculators(),
       batchSize: 100,
+      reenqueue: () => Promise.resolve(),
       publish: async () => {
         await db()
           .update(ingestionChunks)
@@ -280,6 +289,75 @@ describe('ChunkProcessor', () => {
 
     expect(result).toMatchObject({ claimed: true, superseded: true, rowsProcessed: 0 });
     expect((await chunkRow(jobId))?.status).not.toBe('done');
+  });
+
+  it('hands the chunk back and re-enqueues when the time budget is spent', async () => {
+    // The serverless criterion: an invocation that runs out of time stops between
+    // batches rather than being killed mid-one. It must also RELEASE the chunk —
+    // holding the lease it no longer needs means the job it just enqueued finds
+    // the chunk busy and returns having done nothing, so the import stalls for a
+    // lease duration on every budget window.
+    const { jobId, startOffset } = await jobWithChunk(row(1) + row(2) + row(3) + row(4));
+    const enqueued: { jobId: number; chunkIndex: number }[] = [];
+    let clock = 0;
+
+    const result = await new ChunkProcessor({
+      db: db(),
+      calculators: calculators(),
+      batchSize: 2,
+      budgetMs: 500,
+      // Zero when the invocation starts, past the budget at every later check:
+      // the first batch fits and the second would not.
+      now: () => (clock++ === 0 ? 0 : 1000),
+      reenqueue: (chunk) => {
+        enqueued.push(chunk);
+        return Promise.resolve();
+      },
+      publish: () => Promise.resolve(),
+    }).process({ jobId, chunkIndex: 0 });
+
+    expect(result).toMatchObject({ claimed: true, exhausted: true, rowsProcessed: 2 });
+    expect(enqueued).toEqual([{ jobId, chunkIndex: 0 }]);
+
+    const chunk = await chunkRow(jobId);
+    expect(chunk?.nextOffset).toBe(startOffset + Buffer.byteLength(row(1) + row(2)));
+    expect(chunk?.status).toBe('pending');
+    expect(chunk?.leaseUntil).toBeNull();
+  });
+
+  it('does not re-enqueue a chunk the spent budget happened to finish', async () => {
+    // Budget exhausted and no bytes left is a completed chunk, not a hand-off.
+    // Re-enqueueing here costs a redelivery that claims nothing and returns.
+    const { jobId } = await jobWithChunk(row(1) + row(2));
+    const enqueued: unknown[] = [];
+    let clock = 0;
+
+    const result = await new ChunkProcessor({
+      db: db(),
+      calculators: calculators(),
+      batchSize: 2,
+      budgetMs: 500,
+      now: () => (clock++ === 0 ? 0 : 1000),
+      reenqueue: (chunk) => {
+        enqueued.push(chunk);
+        return Promise.resolve();
+      },
+      publish: () => Promise.resolve(),
+    }).process({ jobId, chunkIndex: 0 });
+
+    expect(result).toMatchObject({ claimed: true, rowsProcessed: 2 });
+    expect(result.exhausted).toBeFalsy();
+    expect(enqueued).toEqual([]);
+    expect((await chunkRow(jobId))?.status).toBe('done');
+  });
+
+  it('completes the job when the chunk it finished was the last one', async () => {
+    const { jobId } = await jobWithChunk(row(1));
+
+    await processorWith(recorder().publish).process({ jobId, chunkIndex: 0 });
+
+    const [job] = await db().select().from(ingestionJobs).where(eq(ingestionJobs.id, jobId));
+    expect(job?.status).toBe('completed');
   });
 
   it('marks the chunk done once the checkpoint reaches the end of its range', async () => {

@@ -11,6 +11,8 @@
 export interface ChunkOutcome {
   claimed: boolean;
   superseded?: boolean;
+  /** The time budget ran out with bytes left; the chunk is released and re-enqueued. */
+  exhausted?: boolean;
   rowsProcessed: number;
   rowsRejected: number;
 }

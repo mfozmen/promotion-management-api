@@ -94,6 +94,7 @@ describe('a worker killed mid-chunk', () => {
       db: db(),
       calculators: calculators(),
       batchSize: BATCH,
+      reenqueue: () => Promise.resolve(),
       publish: (ids) => {
         batches += 1;
         if (batches === 2) return Promise.reject(new Error('killed mid-batch'));
@@ -117,6 +118,7 @@ describe('a worker killed mid-chunk', () => {
       db: db(),
       calculators: calculators(),
       batchSize: BATCH,
+      reenqueue: () => Promise.resolve(),
       publish: () => Promise.reject(new Error('should never be called')),
     });
     expect(await blocked.process({ jobId, chunkIndex: 0 })).toMatchObject({ claimed: false });
@@ -127,6 +129,7 @@ describe('a worker killed mid-chunk', () => {
       db: db(),
       calculators: calculators(),
       batchSize: BATCH,
+      reenqueue: () => Promise.resolve(),
       publish: (ids) => {
         announced.push(...ids);
         return Promise.resolve();
