@@ -31,11 +31,15 @@ const NAMED_BUT_ABSENT = new Map([
   ['src/modules/vendor/', 'a module the agent triggers name before it is written'],
 ]);
 
-/** `Foo.bar` in a document: a member of one of our own exported declarations. */
-const MEMBER = /`([A-Z][A-Za-z0-9]*)\.([a-zA-Z][A-Za-z0-9_]*)`/g;
+/** `Foo.bar` or `Foo.bar(args)` in a document: a member of one of our own declarations. */
+const MEMBER = /`([A-Z][A-Za-z0-9]*)\.([a-zA-Z][A-Za-z0-9_]*)(?:\([^`]*\))?`/g;
 
 /** An `ADR-00NN` citation anywhere in the documents. */
 const CITATION = /\bADR-(\d{4})\b/g;
+
+function wholeWord(name: string): RegExp {
+  return new RegExp(`\\b${name}\\b`);
+}
 
 function isTemplate(path: string): boolean {
   return path.includes('*') || path.includes('<') || path.includes('{');
@@ -74,7 +78,9 @@ async function exportedDeclarations(): Promise<Map<string, string>> {
     for (const [, name] of text.matchAll(
       /export (?:abstract )?(?:class|const|function|type|interface) ([A-Za-z_$][\w$]*)/g,
     )) {
-      if (name) found.set(name, text);
+      // Two modules may export the same name by design, and a map would keep whichever
+      // the glob yielded last; a member found in either file is the honest answer.
+      if (name) found.set(name, (found.get(name) ?? '') + text);
     }
   }
   return found;
@@ -108,7 +114,12 @@ describe('the documents', () => {
       const text = await readFile(document, 'utf8');
       for (const [, owner, member] of text.matchAll(MEMBER)) {
         const source = owner === undefined ? undefined : declarations.get(owner);
-        if (source !== undefined && member !== undefined && !source.includes(member)) {
+        // A whole word, not a substring: `connect` survives as part of `connectTimeout`, so
+        // `includes` stayed green through a source-side rename — the likelier direction,
+        // because an IDE renames the code and never the prose.
+        // ponytail: a match inside a comment or an import still counts; parsing the file
+        // is the upgrade if that ever hides a real rename.
+        if (source !== undefined && member !== undefined && !wholeWord(member).test(source)) {
           missing.push(`${document}: ${owner}.${member}`);
         }
       }
@@ -133,7 +144,7 @@ describe('the documents', () => {
       }
     }
 
-    expect({ records: records.size, dangling }).toEqual({ records: records.size, dangling: [] });
+    expect({ records: records.size > 0, dangling }).toEqual({ records: true, dangling: [] });
   });
 
   it('checks enough names and citations that an empty pattern could not pass', async () => {
