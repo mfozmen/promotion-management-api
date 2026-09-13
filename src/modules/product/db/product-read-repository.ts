@@ -1,5 +1,5 @@
 import type { Redis } from 'ioredis';
-import { ReadModelUnavailable } from './read-model-unavailable.js';
+import { ReadModelUnavailableError } from './read-model-unavailable-error.js';
 
 interface Page {
   category?: string;
@@ -80,7 +80,7 @@ export class ProductReadRepository {
   /** `WRONGTYPE` is the writer's doing and nothing else is. */
   private static classify(error: unknown, ourKey: string): unknown {
     if (!(error instanceof Error) || !error.message.startsWith('WRONGTYPE')) {
-      return new ReadModelUnavailable('The read model cannot be reached', error);
+      return new ReadModelUnavailableError('The read model cannot be reached', error);
     }
 
     const named = new Error(`${error.message} at ${ourKey}`);
