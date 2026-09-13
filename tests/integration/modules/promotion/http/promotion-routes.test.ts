@@ -89,7 +89,7 @@ beforeEach(() => {
 });
 
 describe('POST /api/promotions', () => {
-  it('creates an active promotion when a target is given, and announces it', async () => {
+  it('creates an active promotion when a target is given, and schedules it', async () => {
     const category = uniqueCategory();
     const res = await request(app())
       .post('/api/promotions')
@@ -97,9 +97,9 @@ describe('POST /api/promotions', () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ status: 'active', state: 'scheduled', category });
-    expect(rec.events).toEqual([
-      { name: 'promotion.changed', payload: { promotionId: res.body.id } },
-    ]);
+    // No recompute now: the sale starts later, so the `activate` job carries it.
+    // Publishing here would scan the whole category to change no price.
+    expect(rec.events).toEqual([]);
     // Order is not asserted: they are scheduled concurrently, so it is an accident.
     const sorted = [...rec.scheduled].sort((a, b) => a.boundary.localeCompare(b.boundary));
     expect(sorted.map((s) => s.boundary)).toEqual(['activate', 'expire']);
@@ -196,7 +196,7 @@ describe('POST /api/promotions', () => {
 });
 
 describe('POST /api/promotions/:id/assign', () => {
-  it('assigns a draft, sets it active and announces it', async () => {
+  it('assigns a draft, sets it active and schedules it', async () => {
     const created = await request(app()).post('/api/promotions').send(draftBody());
     const category = uniqueCategory();
 
@@ -206,9 +206,9 @@ describe('POST /api/promotions/:id/assign', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ status: 'active', category });
-    expect(rec.events).toEqual([
-      { name: 'promotion.changed', payload: { promotionId: created.body.id } },
-    ]);
+    // The draft's window opens later, so both boundaries are scheduled and
+    // nothing is recomputed yet.
+    expect(rec.events).toEqual([]);
     expect(rec.scheduled).toHaveLength(2);
   });
 
@@ -371,7 +371,7 @@ describe('GET /api/promotions', () => {
     const res = await request(app()).get('/api/promotions/999999');
 
     expect(res.status).toBe(404);
-    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
+    expect(res.body.error.message).toBe('No such promotion');
   });
 
   it('filters by category', async () => {
@@ -530,7 +530,8 @@ describe('two admins assigning one draft at the same moment', () => {
 
     const [stored] = await db().select().from(promotions).where(eq(promotions.id, created.body.id));
     expect(stored?.status).toBe('active');
-    expect(rec.events).toHaveLength(1);
+    // The winner schedules its boundaries; neither admin's sale is running yet.
+    expect(rec.events).toEqual([]);
   });
 });
 
@@ -593,7 +594,7 @@ describe('a promotion aimed at a product that does not exist', () => {
       .send({ ...draftBody(), productId: 424242 });
 
     expect(res.status).toBe(404);
-    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
+    expect(res.body.error.message).toBe('No such product');
   });
 
   it('answers 404 on assign too', async () => {
@@ -604,7 +605,7 @@ describe('a promotion aimed at a product that does not exist', () => {
       .send({ productId: 424242 });
 
     expect(res.status).toBe(404);
-    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
+    expect(res.body.error.message).toBe('No such product');
   });
 });
 

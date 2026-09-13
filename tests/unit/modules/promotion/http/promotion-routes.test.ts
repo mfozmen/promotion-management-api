@@ -53,19 +53,22 @@ describe('POST /api/promotions when the announcement fails', () => {
   it('still answers 201 and logs it for the reconciler', async () => {
     const { logger, lines } = captureLogger();
     const failing = { publish: () => Promise.reject(new Error('Redis is down')) };
+    // Already running, so the publish is this promotion's activation: a sale
+    // that starts later is announced by its `activate` job, not here.
+    const live = { ...stored, startsAt: new Date(Date.now() - hour) };
 
     const res = await request(
       createApp(
         appDeps({
           logger,
-          db: insertReturning([stored]),
+          db: insertReturning([live]),
           queue: failing,
           scheduler: silentScheduler,
         }),
       ),
     )
       .post('/api/promotions')
-      .send(body);
+      .send({ ...body, startsAt: new Date(Date.now() - hour).toISOString() });
 
     expect(res.status).toBe(201);
     expect(

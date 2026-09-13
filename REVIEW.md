@@ -630,7 +630,8 @@ is the one the handler passed to `createError`.
 
 There is no carve-out. The one this rule used to grant — `details.conflictingPromotionId`
 on the overlap `409` — cost a query on every conflict whose result the response
-discarded, and the admin can find the blocker with a filter they already have.
+discarded. What removing it costs the admin is a window comparison across the
+active rows for that target, with a filter they already have.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
 another row's fields, which they never had. Evidence: while the carve-out stood,

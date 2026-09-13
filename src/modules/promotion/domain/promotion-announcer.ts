@@ -20,16 +20,19 @@ export class PromotionAnnouncer {
   async announce(promotion: PromotionView, now: Date): Promise<void> {
     if (promotion.status !== 'active') return;
 
-    await this.settle(
-      this.queue.publish('promotion.changed', { promotionId: promotion.id }),
-      promotion.id,
-    );
-
-    // A promotion already running needs no activation job: the publish above is
-    // the activation. Scheduling one anyway gives it `delay: 0`, so two
-    // `promotion.changed` jobs land within milliseconds and each keyset-scans
-    // the same category — two full rescans of 50 000 products.
     const alreadyRunning = promotion.startsAt.getTime() <= now.getTime();
+
+    // Only for a sale that is already running: the publish is its activation, and
+    // an `activate` job on top would land a second recompute of the same category
+    // milliseconds later. A scheduled sale gets that job and nothing now — an
+    // immediate recompute would change no price and would queue a full-category
+    // scan ahead of boundaries that are due.
+    if (alreadyRunning) {
+      await this.settle(
+        this.queue.publish('promotion.changed', { promotionId: promotion.id }),
+        promotion.id,
+      );
+    }
 
     await Promise.all([
       this.settle(
@@ -48,18 +51,29 @@ export class PromotionAnnouncer {
   }
 
   async announceCancellation(promotionId: number): Promise<void> {
-    await this.settle(this.queue.publish('promotion.changed', { promotionId }), promotionId);
-    await this.settle(this.scheduler.cancel(promotionId), promotionId);
+    const announced = await this.settle(
+      this.queue.publish('promotion.changed', { promotionId }),
+      promotionId,
+    );
+
+    // Only once the cancellation is out. The `expire` job re-reads the row and
+    // publishes the base price, so it is the fallback for a lost announcement;
+    // removing it after a failed publish deletes the recovery with the event.
+    if (announced) await this.settle(this.scheduler.cancel(promotionId), promotionId);
   }
 
-  private async settle(work: Promise<unknown>, promotionId: number): Promise<void> {
+  private async settle(work: Promise<unknown>, promotionId: number): Promise<boolean> {
     try {
       await work;
+
+      return true;
     } catch (error) {
       this.logger.error(
         { promotionId, err: error },
         'a promotion change could not be announced; the read model stays stale until this promotion changes again',
       );
+
+      return false;
     }
   }
 }
