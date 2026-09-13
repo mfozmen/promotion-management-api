@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
 import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
 import { reconcilerState } from '@src/modules/reconciler/db/schema/reconciler-state.js';
 import { BoundaryRepository } from '@src/modules/reconciler/db/boundary-repository.js';
@@ -156,6 +157,23 @@ describe('BoundaryRepository', () => {
     const second = await repository.crossedSince();
 
     expect(second.promotionIds).toContain(inSecondHour);
+  });
+
+  it('advances a watermark PostgreSQL wrote, not only one a fixture wrote', async () => {
+    // The migration seeds this column with `now()`. A timestamptz carries microseconds
+    // and a JS Date cannot, so the value read back was never equal to the one stored
+    // and the compare-and-set in `advance` failed every time from the first deploy —
+    // the sweep published its jobs and then left the mark exactly where it was. Every
+    // other case here writes the watermark from the process clock in milliseconds,
+    // which is the one shape that cannot reproduce it.
+    await db()
+      .update(reconcilerState)
+      .set({ lastBoundarySweepAt: sql`now() - interval '10 minutes'` });
+    const repository = new BoundaryRepository(db());
+
+    const { since, windowEnd } = await repository.crossedSince();
+
+    expect(await repository.advance(since, windowEnd)).toBe(true);
   });
 
   it('refuses to sweep rather than crash when the watermark row is gone', async () => {

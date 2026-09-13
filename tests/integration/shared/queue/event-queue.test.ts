@@ -5,6 +5,7 @@ import { eventRegistry } from '@src/events/event-registry.js';
 import { eventRouting } from '@src/events/event-routing.js';
 import { EventQueue } from '@src/shared/queue/event-queue.js';
 import { SweepBoundariesCommand } from '@src/modules/reconciler/commands/sweep-boundaries-command.js';
+import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-scheduler.js';
 import { logger } from '@src/shared/logger.js';
 import { randomUUID } from 'node:crypto';
 
@@ -122,6 +123,21 @@ describe('EventQueue', () => {
     expect(first.id).toBe('promo:5:activate');
     expect(second.id).toBe(first.id);
     expect(await bus.inspect('promotions').getDelayedCount()).toBe(1);
+  });
+
+  it('stores the boundary jobs the scheduler schedules, under the ids it removes them by', async () => {
+    // ADR-0007 promises this test catches a BullMQ that tightens the colon rule.
+    // `promo:{id}:{boundary}` splits in three by luck rather than by method, and
+    // every other test of the scheduler uses a double that validates no id at all.
+    const scheduler = new PromotionScheduler(bus);
+    const now = new Date();
+    const at = new Date(now.getTime() + 86_400_000);
+
+    const activate = await scheduler.schedule(11, 'activate', at, now);
+    const expire = await scheduler.schedule(11, 'expire', at, now);
+
+    expect([activate.id, expire.id]).toEqual(['promo:11:activate', 'promo:11:expire']);
+    expect(await scheduler.cancel(11)).toEqual({ activate: 1, expire: 1 });
   });
 
   it('accepts the id the boundary sweep builds, which BullMQ parses rather than stores', async () => {
