@@ -733,12 +733,13 @@ that reads them at the same level, which is harder to scan than the split
 costs. This does not apply outside `domain/` — `http/`, `db/` and `jobs/` are
 not further split by syntax.
 
-8c.9 Behaviour is named as behaviour. An object implementing an interface
-carries the interface's role: `percentageDiscountCalculator`, not
-`percentageDiscount`, which reads as data. A function starts with a verb:
-`calculateEffectivePrice`, `compileRules`. A function named for the value it
-returns (`effectivePrice`, `pricingInputError`) reads as a property and is a
-finding. The file follows the name (8c.3, 8c.6). Why: ADR-0008.
+8c.9 An interface is named for the role it plays, as the noun a reader would
+use, and each implementation is the variant plus that noun: `Discount`, with
+`fixedDiscount` and `percentageDiscount`, collected in `discounts`. A suffix
+such as `Calculator` on the interface is noise the implementations then have
+to repeat or drop. A function starts with a verb: `calculateEffectivePrice`,
+`compileRules`; one named for the value it returns (`effectivePrice`) reads as
+a property and is a finding. The file follows the name (8c.3, 8c.6). Why: ADR-0008.
 
 ---
 
