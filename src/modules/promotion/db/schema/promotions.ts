@@ -10,9 +10,7 @@ export const promotions = pgTable(
     id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
     name: text('name').notNull(),
     discountType: promotionDiscountType('discount_type').notNull(),
-    // Basis points for 'percentage', minor units for 'fixed'. integer, not bigint: a fixed
-    // discount therefore tops out well below base_price_cents, which is harmless because a
-    // discount above the base clamps to zero anyway.
+    // basis points for 'percentage', minor units for 'fixed'
     value: integer('value').notNull(),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
@@ -25,7 +23,6 @@ export const promotions = pgTable(
   (table) => [
     check('promotions_window_check', sql`${table.endsAt} > ${table.startsAt}`),
     check('promotions_value_check', sql`${table.value} > 0`),
-    // 10 000 basis points is a free product; beyond it the price would go negative.
     check(
       'promotions_percentage_value_check',
       sql`${table.discountType} <> 'percentage' or ${table.value} <= 10000`,

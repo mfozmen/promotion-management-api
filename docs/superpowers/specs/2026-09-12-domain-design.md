@@ -697,7 +697,7 @@ src/
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
       jobs/      scheduling.ts
     pricing/
-      domain/    rule-compiler.ts, compiled-rule-set.ts (owns the engine and serialises its runs), row-pricer.ts, rule-set-loader.ts (caches a compiled set; the query that feeds it is the caller's)
+      domain/    base-price-calculator.ts (compiles the rules, owns the engine, serialises its runs, prices a row), base-price-calculator-cache.ts (caches a compiled calculator; the query that feeds it is the caller's)
         dto/     pricing-rule-row.ts, compiled-rule-set.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8
       db/        resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
@@ -705,7 +705,7 @@ src/
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
   shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
-  unit/          effective-price-calculator, csv-lines, rule-compiler, compiled-rule-set, row-pricer, rule-set-loader, schemas
+  unit/          effective-price-calculator, csv-lines, base-price-calculator, base-price-calculator-cache, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
   e2e/           the docs/e2e-cases scenarios against the running compose stack
 docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander
