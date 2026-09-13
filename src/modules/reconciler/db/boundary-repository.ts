@@ -21,9 +21,8 @@ export class BoundaryRepository {
     const [bounds] = await this.db
       .select({
         since: reconcilerState.lastBoundarySweepAt,
-        // `string`, not `Date`: drizzle replaces node-postgres' timestamptz parser
-        // with the identity and maps per column instead, so a raw fragment keeps the
-        // text. Annotating `Date` typechecks and throws on the first use.
+        // Text, not a Date: drizzle replaces node-postgres' timestamptz parser with the
+        // identity and maps per column instead, and a raw fragment has no column to map.
         windowEnd: sql<string>`least(
           now() - make_interval(secs => ${COMMIT_LAG_SECONDS}),
           ${reconcilerState.lastBoundarySweepAt} + make_interval(secs => ${MAX_WINDOW_SECONDS})
