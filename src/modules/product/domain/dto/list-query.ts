@@ -20,9 +20,8 @@ export const listQuery = z
     page: digits(Number.MAX_SAFE_INTEGER).default(1),
     pageSize: digits(MAX_PAGE_SIZE).default(20),
   })
-  .refine(({ page, pageSize }) => (page - 1) * pageSize <= MAX_OFFSET, {
-    message: `page is too deep; the offset may not exceed ${MAX_OFFSET}`,
-    path: ['page'],
-  });
+  // No message: the validator answers `Invalid request query` and discards a
+  // schema's own wording, so one written here would reach nobody (ADR-0009).
+  .refine(({ page, pageSize }) => (page - 1) * pageSize <= MAX_OFFSET);
 
 export type ListQuery = z.infer<typeof listQuery>;
