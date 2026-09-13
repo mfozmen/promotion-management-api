@@ -38,6 +38,16 @@ It is one verb rather than two because a one-shot migration service cannot be wa
 
 For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
 
+Demo data. Once the schema is up, one more command fills it:
+
+```bash
+DATABASE_URL=postgres://promo:promo@localhost:5432/promotion npm run seed
+```
+
+It applies [`scripts/demo-seed.sql`](./scripts/demo-seed.sql) as a single transaction: 1 000 products over `Electronics`, `Apparel`, `Home` and `Sports`, and one seven-day 20 % flash sale on `Electronics`. Run it as often as you like — products upsert on `sku` and rewrite only a row whose values changed, and the flash sale is deleted by name and re-inserted, because the `promotions_no_overlapping_active_category` exclusion constraint would reject a second active row over the same category and window. What you get depends on the migrations and this run alone, never on what a previous run left. A promotion someone else created over `Electronics` is not deleted by name, so the seed fails against it rather than replacing it.
+
+[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet — the upload endpoint and chunk worker arrive with issue #16 — and no worker service runs, so the read model the storefront reads is not built by `npm run seed`; that half of issue #19 is still open.
+
 Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
 
 ```bash
@@ -125,7 +135,9 @@ queues anyway (ADR-0003).
 ```
 src/    application source code (each module owns its tables under db/schema/; src/shared/db holds the client, the migrator and the SQL migrations)
 tests/  automated tests (unit, integration, e2e), each layer mirroring src/
-docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
+docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases), the exported DDL (docs/schema.sql)
+scripts/  developer commands that are not in the image: the demo seed and the DDL export
+fixtures/ sample input files (fixtures/vendor-sample.csv)
 ```
 
 Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias, (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
@@ -133,6 +145,8 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 ## Database schema
 
 The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), and `0002_active_promotions.sql` creates the `active_promotions` view. Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/workers/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
+
+[`docs/schema.sql`](./docs/schema.sql) is that same set in one file, for reading and for handing over: `npm run db:export-ddl` concatenates the migrations in `meta/_journal.json` order and strips drizzle's `statement-breakpoint` markers. It is a copy, so it can go stale, and the thing that stops it is not the export but the comparison: `tests/unit/shared/db/build-schema-ddl.test.ts` rebuilds it from `src/shared/db/migrations/` and fails when the committed file differs, in the unit layer, so the pre-commit hook catches a migration that landed without a re-export. Being the migration script rather than a folded schema, a later `ALTER TABLE` stands as its own statement below the `CREATE TABLE` it changes, and `0001`'s seed rows are part of it — a DDL without them describes a database this application cannot price against.
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver (#36) and the admin reads will select from it instead of restating the predicate (ADR-0004, commit `1aaaffc`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed (commit `2142664`). It is not an endpoint; no route exposes it.
 
