@@ -270,7 +270,7 @@ rewritten.
 ### 2026-09-12 — Merged main, and the stack contract the e2e agent measures (PR #34, commits `82ed2fa`, `f588058`)
 
 - Strategy: the branch was five commits behind `origin/main`, so main was merged rather than the branch rebased, to keep the four `architecture-critic` verdicts already recorded against their commits. The only conflict was in this file: both sides had appended entries about different pull requests into the same two sections. Resolved by keeping every entry, main's first and this branch's after — this file is append-only, so a conflict here is never a choice between two versions.
-- Human refinement: `.claude/agents/e2e-tester.md`, updated on main in `9f780e8` (PR #44), now brings the stack up with `docker compose` on a fixed host port 3000 and polls `/api/health`. This compose file holds the two stores only and publishes no application port, so the contract was written into `docker-compose.yml` as a comment (`f588058`) and into README.md, rather than a port being published for a service that does not exist yet. Fixing the port is deliberate: it is what stops two concurrent runs measuring the same machine.
+- Human refinement: `.claude/agents/e2e-tester.md` brings the stack up with `docker compose` on a fixed host port and polls a health route. Fixing the port is deliberate: it is what stops two concurrent runs measuring the same machine. **Superseded on 2026-09-13 in both its port and what the compose file holds** — the port is 3100, because 3000 is the default of every other Node service on a developer's machine and was already taken here, and the compose file now holds an `api` service built from this repository, publishing `127.0.0.1:3100` and migrating before it listens, so the contract lives in the compose file rather than in a comment beside it.
 - Doc check against main's CI changes of the same day: the required checks are now `ci` and `claude-review` only, `local-gates` still runs but no longer blocks a merge, the pull-request title check is gone, and SonarCloud scans only when the diff touches something it reads (`e0beddd`, PR #56). Nothing this branch adds to ADR.md or README.md describes CI, so nothing there is falsified. One branch-added sentence in this file is now dated — "the `architecture-critic`, which `local-gates` requires once a PR touches `ADR.md`" — and is left standing rather than edited, because this file is not rewritten; the correction is this line. The agent labels are still computed and asserted by `local-gates`, they simply no longer hold a merge.
 - Verification: `git diff origin/main...HEAD` re-read end to end against ADR.md and README.md; `docker compose config` still parses (comment-only change); no source file touched in this round. README.md gained the port-and-health contract and a note that the design spec puts every route under `/api`, while the shipped scaffold route is still `/health` — the table states what ships, not what is planned.
 
@@ -618,6 +618,101 @@ rewritten.
 - Challenge: the owner asked what the 149-line hand-written validator was for, given that its stated reason for not using zod ("zod is not here yet, a dependency for twenty lines is a 12.5 finding") described a `package.json` two pull requests old. Two earlier entries in this file (the first `chore/compose-config` entry and the comment-density pass) and the module comment in `src/shared/config.ts` had repeated that reasoning without re-checking it.
 - Verification: `grep zod package.json` and `git log -S zod -- package.json` on `origin/main`: the dependency arrived with #27 and is imported on #30. The premise of the deferral had been false since before the branch's third review round.
 - Resolution: the validator and its 296-line test file are replaced by the owner's schema; every check that merely re-typed a value went, the three that catch a quiet late failure stayed. The lesson recorded for the appendix: a documented reason to defer must be re-verified on every merge from main, because the AI carries the sentence forward verbatim and the tree does not.
+
+### 2026-09-13 — A control that reads as safe and is not
+
+- Challenge: an `architecture-critic` round found a comment claiming that `as const` "stops anything rewriting a row at runtime". It does not: the annotation is erased at build time, so the three error lookup tables were ordinary mutable objects in the shipped JavaScript, and one assignment from any consumer would have changed the error body of every concurrent request in the process. The fix was to freeze them. The next round found the freeze was shallow: `Object.freeze` held the key-to-row binding and left each row writable, and a row's fields are exactly what the envelope spreads into a response. The test written alongside the first fix asserted the assignment the freeze does stop and never the one it does not.
+- Verification: the agent proved it by probe rather than by argument, assigning to a frozen table's row and getting a database connection string back as the body of a 413. The corrected test asserts that assignment throws and that the message is unchanged afterwards, and it failed before the fix.
+- Resolution: each row frozen individually, the constant holding the body of every 500 frozen, and a `ReadonlySet` whose `.add` still worked replaced by a frozen array — that last one sitting in the same file as the sentence claiming the type was the control. REVIEW.md 7.4b gained this as its third piece of evidence: assert the reachable breach, not the one the control obviously covers.
+- Lesson: a type annotation is not a runtime control, and a comment that says it is will be believed by the next reader. When prose claims a guarantee, the test has to attack the guarantee, not the annotation.
+
+### 2026-09-13 — Writing a rule does not inoculate you against it
+
+- Challenge: the advisory review found that a test added with the 5xx logging fix passed its cause as the error class's third constructor argument, which is `details`, not `Error.cause`. The serialiser reads `err.cause`, so the injected driver error was inert: the test pinned the two new fields and never the claim its own comment made, and it would have passed identically with the cause deleted. That is REVIEW.md 7.4b, whose evidence the same branch had widened one commit earlier.
+- Verification: the corrected test sets the real `cause` and asserts the serialised error carries `ECONNREFUSED` alongside the 503 the client read. The production fix was then removed on purpose to watch the test go red, and restored — the check the first round had skipped.
+- Resolution: test rewritten. The same round corrected a first draft of this entry which claimed the branch had authored the rule it broke; it had not, and a `docs-scribe` run caught the overclaim against the commit history.
+- Lesson: knowing a rule, even having just sharpened its wording, does not protect you from it; the habit that catches it is mechanical — break the production code and watch the test fail. And a self-critical note that flatters the narrative gets checked less often than a claim about a library, because it reads as humility rather than as a claim.
+
+### 2026-09-13 — A merge that would have reverted a route, caught by the rename it came with
+
+`main` moved `tests/health.test.ts` to `tests/unit/app.test.ts` while a branch had created a different file at that path, so git raised an add/add conflict rather than a silent overwrite. Main's copy asserted `GET /health` returns 200; the branch had moved the route to `/api/health` and kept a test asserting the old path now 404s. Taking either side wholesale would have been wrong: main's would have failed, and the branch's would have dropped the rename. The resolution folded the two health cases into the branch's app tests and deleted the extra file, because the layout rule is one test file per source file and no `src/health.ts` exists.
+
+Lesson, narrow and worth keeping: a rename conflict is the one conflict shape that cannot be resolved by preferring a side, because each side describes a different tree, and the question is which tree the merged code is in.
+
+### 2026-09-13 — An alias that resolved everywhere except where the tests ran
+
+The `@src` alias arrived from another branch while one branch had split the suite into vitest workspace projects. A workspace project does not inherit the root config's `resolve` block, so every aliased import failed to load and eleven test files went red at once — each of them green on either branch alone. Caught by running the suite, not by reading either change. The alias is now declared once and spread into every project, and REVIEW.md 7.8 carries the failure as its evidence.
+
+### 2026-09-13 — Three rounds of fixing a claim instead of the thing
+
+- Challenge: the owner asked that `docker compose up -d --wait` alone leave the schema in place. An AI-written one-shot migration service and the paragraph explaining it were wrong three rounds running, and each round "fixed" it by correcting the prose one level down.
+- Verification: executing the command. `--wait` gets a one-shot wrong in both directions — an exited container reads as a failed stack, and a still-running one reads as success — so the boot went green at 9.4 seconds with the migration still installing, and green again over a migration heading for an auth failure that left no tables behind it. The same shape appeared in the drift check: `drizzle-kit generate` exits 0 when it fails, so a CI step asserting its exit status passed over real schema drift.
+- Lesson: a green CI step and a plausible paragraph both read as evidence and are neither. The cheap check is running the command and reading its exit code.
+
+### 2026-09-13 — A harness that measured a database nobody could reproduce
+
+- Challenge: the `e2e-tester` agent brought the stack up with `docker compose up -d --wait` and tore it down with a plain `docker compose down`, explicitly leaving the `db` and `redis` volumes in place. Every run therefore measured whatever earlier runs had written: a promotion left active by a previous run changes the price a shopper case asserts, a half-ingested SKU set hides the duplicate a fresh ingestion run would catch, and a Redis read model built by older code answers for a schema that no longer exists.
+- Verification: human, by reading the agent definition against what an end-to-end number is supposed to mean — a result reproducible from migrations plus the run's own writes. No test caught it, because the harness itself was the defect and a green run on dirty state looks identical to a green run on clean state.
+- Resolution: setup is now `docker compose down -v --remove-orphans` then `docker compose up -d --wait`, with migrations applied against the empty database before the first request; teardown drops the volumes too. README gained one line warning that a run destroys the local volumes.
+- Lesson: agent definitions are treated as configuration and escape the review attention given to `src/`, yet they decide what "verified" means for the whole submission.
+
+### 2026-09-13 — A prohibition that read as a control
+
+- Challenge: the `e2e-tester` definition told the run to use bare `docker compose down` and `up`, and said "leave the `db` and `redis` volumes alone unless you created them". The compose file pins `name: promotion-management-api`, the same project the developer's own stack runs under, so the teardown would have dropped their `postgres-data` and `redis-data` volumes. The sentence read as a safeguard and had no mechanism behind it.
+- Verification: reading `docker-compose.yml` rather than the agent's prose — the fixed project name, and the fixed published host ports, which also rule out two stacks coexisting. On Windows `netstat` attributes every published container port to `com.docker.backend`, so ownership has to come from the compose project label instead.
+- Resolution: `-p pma-e2e` on every compose command — a flag rather than an environment variable, because each command runs in its own shell and the variable is gone by the next one; an ownership check before the first destructive command; `down -v` then `up -d --wait --wait-timeout 300` from empty volumes; teardown on the run's own project.
+- Lesson: an instruction phrased as a prohibition was accepted as a control for weeks. Only isolation by project name makes it enforceable, and the hazard was invisible until someone asked what the command would actually delete.
+
+### 2026-09-13 — A documentation claim that aged into a falsehood
+
+- Challenge: an ADR trade-off written while a branch was still open promised that the branch "asserts in a unit test that its compiler accepts exactly that shape". After a rebase the compiler had landed and the assertion lived in an integration test against the real seeded rows, so the sentence named both the wrong tense and the wrong kind of test. The same section cited three commit hashes the rebase had orphaned, which resolve to nothing in a fresh clone.
+- Verification: `git merge-base --is-ancestor` over every hash cited in ADR.md and README.md, and the test kind read off the file rather than off memory of the pull request description.
+- Lesson: forward-referencing prose is correct when written and false the moment the referenced branch merges or is rebased. A cross-branch claim should be written as the check that proves it, not as a promise about other work — and a commit hash in a document is a claim to be re-verified after every rebase. REVIEW.md 8b.5 now forbids them outright.
+
+### 2026-09-13 — The refactors renamed the code and left the prose describing a shape it no longer had
+
+- Challenge: a day of class-extraction refactors left ADR.md describing structure that had moved underneath it — a "private lookup method" that is an inline `Object.hasOwn` check, a deleted file cited under a name it never carried, a "five files" cost count the same refactor had cut to three, and "twelve tables" where the tree holds six tables, five enums and one view. Two further sentences said work was pending that had already merged.
+- Verification: every class, method and path the record names was read against the worktree and against `git ls-tree origin/main`, rather than against the record's own prose.
+- Lesson: an AI-assisted rename is reliable in code and unreliable in the prose about it, and every stale claim described structure rather than behaviour — so tests, typecheck and coverage stayed green through all of it. Nothing mechanical was going to catch them, which is why a documented-paths test was written to catch at least the paths.
+
+### 2026-09-13 — Documented paths, extracted mechanically
+
+A container healthcheck and an agent's readiness step both polled `/health` after the route moved under `/api`. Neither was caught by reading: the compose file was proved wrong by booting the stack in its own project with the ports overridden, and the path was then extracted mechanically. The same technique — pull every backticked repository path out of the documents and stat it — found four dead paths in an ADR that three review rounds had read past, and it is now a test on main rather than a habit.
+
+Its limit is known, and was hit three times the same day: it checks paths, not identifiers or claims. A renamed export still named in prose, and an `ADR-00NN` citation pointing at the wrong record, stay green.
+
+### 2026-09-13 — A crashed test worker reads exactly like a failing test
+
+After resetting a git worktree, `npm run test:cov` died with "Worker exited unexpectedly" and then `MODULE_NOT_FOUND` inside rollup's native binding. That is not a failing test: `node_modules` was wedged. `npm ci` then failed twice more, first on husky's prepare step (a worktree's `.git` is a file, so there is no hooks directory to install into) and then on `ENOTEMPTY` under `drizzle-orm`. Removing `node_modules` and reinstalling with scripts disabled cleared it.
+
+Recorded because it is the mirror of the failure class this project kept hitting all week: a green gate that cannot fire proves nothing, and a red one that comes from the toolchain rather than from the code proves nothing either. Both are read as a verdict on the change, and neither is one.
+
+### 2026-09-13 — A threshold nobody checked was reachable, held by the thing that judges it
+
+Three files carried "p99 under 100 ms at 100 connections" for the storefront routes. Two were claims in documents; the third was `.claude/agents/e2e-tester.md`, the pass conditions of the agent that judges a run. The project's own ADR records `GET /api/health` — a route that serialises a constant and touches nothing — at 130-192 ms p99 at that same concurrency on this machine, so the bar sat below what an empty route clears. Any run would have been marked fail by an instruction nobody could satisfy, and the report would have read as a system problem rather than as a bad threshold.
+
+This is the week's recurring defect with its polarity flipped: not a gate that cannot fire, a gate that can only fire. The root is identical — nobody had asked whether the threshold was reachable, because a number in a document reads as a decision someone made. The fix derives the bar from the measured baseline, states in each copy which measurement it derives from, and tells the next machine to re-derive rather than inherit.
+
+### 2026-09-13 — A promotion aimed at a product that does not exist answered 500
+
+The foreign key raised `23503` and nothing caught it, so an admin's typo in a product id paged someone instead of being refused. The README's error table for that route did not list the case either.
+
+Two independent places silent about the same path is not two misses: it is one miss counted twice, because the same person wrote both from the same mental model of the path. That is the argument for a reader who is not the author, which is what the agents are. Fixed with a foreign-key-violation mapper beside the existing unique-violation one, a 404, and two integration cases.
+
+### 2026-09-13 — Three costumes of one defect: a test built from the code's own assumption
+
+- A double that rejected where `ioredis` resolves: `pipeline.exec()` returns an array of per-command errors and does not reject, even for a dead connection, so a mocked rejection proved a branch the library never reaches while production answered 500 with no `Retry-After`.
+- Fixtures modelling a product the writer cannot produce — a base price of 10 000 beside an effective price of 9 000 with no promotion — so the reader and the fixtures confirmed each other and neither had asked what writes the hash.
+- An ordering case whose two orders came out in the same sequence, because the mutation moved the seed the assertion read.
+
+Each was written carefully, each was wrong, and none was caught by reading it again. The rule that came out of them is an instruction rather than an observation: break the thing the test names and watch it fail. A mutation is the thing outside both code and test — it asks the test a question the code did not supply the answer to.
+
+### 2026-09-13 — Eleven review rounds on one pull request, and what ended them
+
+- Challenge: the queue pull request took eleven agent rounds. The code stopped changing at round four; every round after that re-read the whole branch and found another sentence in another document that a previous round's fix had left behind. Each finding was real, and none could have been found by the round that caused it, because each agent started from the full branch diff with no memory of what it had already judged.
+- Contributing cause, and it was ours: the ADR grew five clauses specifying a read-model writer that does not exist. Every read of them produced a new and correct question that could only be answered in the story that builds the component.
+- Resolution: after the first pass an agent reviews the range since the commit it last reported on, against its own earlier findings, and says which range it read and which findings it carried forward; a finding only another component's code can close is named once in the report and never written into the record; and a record states the obligation and the hazard and names the component that owns the shape. The first two rounds run this way took 32 and 83 seconds against two to five minutes before, and both reported reviewing the delta only.
+- Lesson: an adversarial reviewer with no memory will always find something, and a record that describes unbuilt code will always give it something to find. Neither is a defect in the reviewer.
 
 ## Overall reflection
 
