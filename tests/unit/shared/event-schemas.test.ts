@@ -1,17 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { eventSchemas, parseEvent, queueOfEvent, type EventName } from '@src/shared/events.js';
+import type { EventName } from '@src/shared/event-name.js';
+import { eventSchemas } from '@src/shared/event-schemas.js';
 
-describe('event catalogue', () => {
-  it('routes ingestion.chunk to the ingestion queue and every other event to events', () => {
-    expect(queueOfEvent).toEqual({
-      'product.upserted': 'events',
-      'promotion.changed': 'events',
-      'readmodel.rebuild': 'events',
-      'reconcile.run': 'events',
-      'ingestion.chunk': 'ingestion',
-    });
-  });
-
+// The schemas are the contract the producer parses against; `EventBus.publish`
+// applies them, which is why these assert the schema rather than the caller.
+describe('eventSchemas', () => {
   it('names exactly the events the design table lists', () => {
     expect(Object.keys(eventSchemas).sort()).toEqual([
       'ingestion.chunk',
@@ -30,7 +23,7 @@ describe('event catalogue', () => {
     ['reconcile.run', {}],
     ['ingestion.chunk', { jobId: 7, chunkIndex: 0 }],
   ] as const)('accepts a valid %s payload unchanged', (name, payload) => {
-    expect(parseEvent(name, payload)).toEqual(payload);
+    expect(eventSchemas[name].parse(payload)).toEqual(payload);
   });
 
   it.each([
@@ -55,18 +48,18 @@ describe('event catalogue', () => {
   ] as const)(
     'rejects a %s payload with %s',
     (name: EventName, _reason: string, payload: unknown) => {
-      expect(() => parseEvent(name, payload)).toThrow();
+      expect(() => eventSchemas[name].parse(payload)).toThrow();
     },
   );
 
   it('trims a rebuild category so a blank one cannot become a SCAN prefix', () => {
-    expect(parseEvent('readmodel.rebuild', { category: '  shoes  ' })).toEqual({
+    expect(eventSchemas['readmodel.rebuild'].parse({ category: '  shoes  ' })).toEqual({
       category: 'shoes',
     });
-    expect(() => parseEvent('readmodel.rebuild', { category: '   ' })).toThrow();
+    expect(() => eventSchemas['readmodel.rebuild'].parse({ category: '   ' })).toThrow();
   });
 
   it('accepts chunk index zero', () => {
-    expect(parseEvent('ingestion.chunk', { jobId: 1, chunkIndex: 0 }).chunkIndex).toBe(0);
+    expect(eventSchemas['ingestion.chunk'].parse({ jobId: 1, chunkIndex: 0 }).chunkIndex).toBe(0);
   });
 });

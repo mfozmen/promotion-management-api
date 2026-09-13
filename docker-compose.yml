@@ -49,6 +49,9 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
       REDIS_URL: redis://redis:6379
+      REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
+      REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
+      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
     ports:
       - '127.0.0.1:3100:3100'
     depends_on:

@@ -94,14 +94,15 @@ The compose file holds the two stores, the `api` service built from this reposit
 
 ### The queue
 
-BullMQ uses Redis logical database 1, the `REDIS_QUEUE_DB` default, while
-database 0 holds the read model, so queue maintenance and read-model rebuilds
-cannot destroy each other (ADR-0007). `src/shared/queue.ts` takes that number as
-a constant rather than from `src/shared/config.ts`, which nothing calls yet.
+BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
+holds the read model, so queue maintenance and read-model rebuilds cannot destroy
+each other (ADR-0007). `src/server.ts` reads both from `src/shared/config.ts` and
+passes the queue one to `EventBus.connect`, which is what makes the configuration
+check that they differ mean something.
 
 `npm run dev` opens the queue connections at startup against `REDIS_URL`
 (default `redis://127.0.0.1:6379`), but it starts and serves without a Redis
-there: connection errors are logged and every enqueue fails at its 2 s bound
+there: connection errors are logged and every publish fails at its 2 s bound
 rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the
 HTTP server first and the queues last, and waits at most `SHUTDOWN_TIMEOUT_MS`
 (default 10 s, `0` exits immediately) for open connections before closing the

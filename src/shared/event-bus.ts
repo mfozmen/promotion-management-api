@@ -1,6 +1,10 @@
 import { Queue, type Job, type JobsOptions } from 'bullmq';
 import type { PromotionBoundary } from '../modules/promotion/domain/dto/promotion-boundary.js';
-import { parseEvent, queueOfEvent, type EventName, type EventPayload, type QueueName } from './events.js';
+import type { EventName } from './event-name.js';
+import type { EventPayload } from './event-payload.js';
+import { eventSchemas } from './event-schemas.js';
+import type { QueueName } from './queue-name.js';
+import { queueOfEvent } from './queue-of-event.js';
 
 /**
  * The event bus: BullMQ queues on their own Redis logical database, with the
@@ -11,9 +15,6 @@ import { parseEvent, queueOfEvent, type EventName, type EventPayload, type Queue
  * `error` listener turns a Redis blip into an uncaught exception.
  */
 export class EventBus {
-  /** Database 0 holds the read model; keeping the queue on its own logical database means neither can destroy the other. */
-  static readonly QUEUE_DB = 1;
-
   /** `removeOnFail: false` is what makes the failed set the dead-letter queue. */
   static readonly defaultJobOptions = {
     attempts: 3,
@@ -35,14 +36,20 @@ export class EventBus {
 
   private constructor(private readonly queues: Record<QueueName, Queue>) {}
 
-  static connect(redisUrl: string): EventBus {
+  /**
+   * `db` is passed rather than fixed at 1, because `config.ts` refuses a
+   * configuration where the queue and the read model share a logical database —
+   * and that refusal means nothing while the value it validates is unreachable.
+   *
+   * `prefix` scopes every key this bus touches. Production takes the default; a
+   * test gives itself a unique one, so a queue-wide count means "this run" rather
+   * than "whatever else shares this Redis".
+   */
+  static connect(redisUrl: string, db: number, prefix = 'bull'): EventBus {
     const options = {
-      connection: {
-        url: redisUrl,
-        db: EventBus.QUEUE_DB,
-        connectTimeout: EventBus.CONNECT_TIMEOUT_MS,
-      },
+      connection: { url: redisUrl, db, connectTimeout: EventBus.CONNECT_TIMEOUT_MS },
       defaultJobOptions: EventBus.defaultJobOptions,
+      prefix,
     };
     const queues = {
       events: new Queue('events', options),
@@ -55,7 +62,6 @@ export class EventBus {
     return new EventBus(queues);
   }
 
-  /** Ingestion has its own queue, so a 500 000-row import cannot starve promotion events. */
   async publish<N extends EventName>(
     name: N,
     payload: EventPayload<N>,
@@ -63,7 +69,7 @@ export class EventBus {
   ): Promise<Job> {
     return this.bounded(
       `publish("${name}")`,
-      this.queues[queueOfEvent[name]].add(name, parseEvent(name, payload), options),
+      this.queues[queueOfEvent[name]].add(name, EventBus.parse(name, payload), options),
     );
   }
 
@@ -103,18 +109,12 @@ export class EventBus {
   }
 
   /**
-   * The queue itself, for inspection and administration: a worker's own
-   * connection, a test asserting job state, an operator draining the dead-letter
-   * set. Publishing goes through `publish`, which is what applies the payload
-   * parse and the timeout.
+   * Reading a queue's state, narrowed to the three reads that have a caller.
+   * Anything that writes stays off this seam: `add` would skip the payload parse
+   * and the timeout, which are the two guarantees `publish` exists to give.
    */
-  queueFor(name: QueueName): Queue {
+  inspect(name: QueueName): Pick<Queue, 'getJob' | 'getWaitingCount' | 'getDelayedCount'> {
     return this.queues[name];
-  }
-
-  /** Removes every job on both queues. For a test between cases, not for a request. */
-  async clear(): Promise<void> {
-    await Promise.all(Object.values(this.queues).map((queue) => queue.obliterate({ force: true })));
   }
 
   /** Closing does not drain: an in-flight operation is rejected with the connection
@@ -130,6 +130,14 @@ export class EventBus {
    * depend on a fired job still being resident; ADR-0007 says what the reconciler
    * owes here.
    */
+  /**
+   * The producer parses before the job is added, so a malformed payload fails in
+   * the request that created it rather than in a worker three retries later.
+   */
+  private static parse<N extends EventName>(name: N, payload: EventPayload<N>): EventPayload<N> {
+    return eventSchemas[name].parse(payload) as EventPayload<N>;
+  }
+
   private static boundaryJobId(promotionId: number, boundary: PromotionBoundary): string {
     return `promo:${promotionId}:${boundary}`;
   }
