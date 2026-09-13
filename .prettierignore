@@ -1,0 +1,2 @@
+# drizzle-kit writes these; reformatting drifts them from what it emits
+src/shared/db/migrations/meta

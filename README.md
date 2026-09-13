@@ -27,12 +27,28 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Node.js 22 (see `.nvmrc`)
 - Docker with the Compose plugin (PostgreSQL 16, Redis 7 and the `api` image built from this repository's `Dockerfile` all run locally from `docker-compose.yml`), plus one throwaway Redis on 6399 for the queue integration tests, which use no mocks (REVIEW.md 7.3)
 
-## Getting started
+## Run it
+
+Docker with the Compose plugin, and Node for the two npm scripts below.
+
+```bash
+cp .env.example .env   # placeholders only; .env is gitignored
+npm run up             # PostgreSQL, Redis, the api and the test stores, all healthy
+```
+
+The API is on http://127.0.0.1:3100 and BullMQ's dashboard on
+http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data; add `-v` to that compose command to
+drop the volumes too. PostgreSQL creates its database on first start only, so a test store
+that predates a change to `POSTGRES_DB` needs `docker compose --profile test rm -sfv
+postgres-test` rather than a restart.
+
+## Develop
 
 ```bash
 npm ci
-cp .env.example .env       # placeholders only; .env is gitignored
-docker compose up -d --wait --wait-timeout 300   # PostgreSQL, Redis and the api, all healthy
+npm test              # the unit layer, no database needed
+npm run test:integration
+npm run lint
 ```
 
 That one command is the whole boot. `api` migrates before it listens, so `--wait` returns only once the schema is current and the application is answering on http://127.0.0.1:3100 — there are no tables, constraints, the `active_promotions` view or seeded `ingestion` pricing rules to install by hand, and no `DATABASE_URL` to get right: the service composes it from the same `POSTGRES_*` variables `postgres` reads. Every `up` is safe, because Drizzle's migrations table applies only what it has not already recorded.
@@ -55,10 +71,9 @@ Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT 
 
 [`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the upload endpoint and chunk worker arrive with issue #16, and that half of issue #19 is still open.
 
-Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
+Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one — `npm run up` starts it, along with the throwaway PostgreSQL the integration layer clones from. Both are in the `test` profile and hold nothing worth keeping.
 
 ```bash
-docker run -d --rm -p 6399:6379 redis:7-alpine # only the integration layer needs it
 npm test
 npm run test:cov # needs a PostgreSQL and that Redis, see below
 npm run lint
@@ -75,7 +90,7 @@ The suite is split into layers, so the one that needs nothing can run anywhere:
 | both, with coverage                | `npm run test:cov`         | the same two                                                                                                     | CI (the 100 % gate)         |
 
 The integration tests run against a real PostgreSQL and a real Redis, never a mock. Point them at one with
-`TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
+`TEST_DATABASE_URL` (default `postgres://postgres:postgres@127.0.0.1:55432/promotion`). That
 default is not the compose server: `docker-compose.yml` publishes 5432 with the `.env`
 credentials, so either reuse it with
 `TEST_DATABASE_URL=postgres://promo:promo@localhost:5432/promotion`, or keep the harness's
@@ -115,7 +130,7 @@ The compose file holds the two stores, the `api` service built from this reposit
 
 Four queues, one per urgency class, and `eventRouting` maps an event to one of
 them — the caller never picks. `promotions` carries `promotion.changed` and the
-delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
+delayed boundary jobs, `products` carries `product.upserted`, `ingestion` carries
 `chunk.process`, and `maintenance` carries `readmodel.rebuild` and
 `reconciler.run`. The partition is what keeps a 500 000-row import's ~500
 announcements, or a full read-model rebuild, from sitting in front of a flash
@@ -190,6 +205,13 @@ All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are
 | POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`        |
 | GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`               |
 | GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`        |
+
+**Operations.** After `npm run up`, BullMQ's own dashboard is at
+http://localhost:3100/admin/queues — the four queues with their counts, the dead-letter set
+(`removeOnFail: false` keeps every exhausted job in BullMQ's failed set) and the controls to
+retry, promote or remove a job. It is Bull Board mounted inside the api process, outside the
+`/api` prefix and outside this API's error envelope, and like everything else here it is
+unauthenticated.
 
 `GET /api/products` takes `category` (exact match, optional, 256 characters), `sort=effectivePrice` (the only sort), `order=asc|desc` (default `asc`), `page` (default 1) and `pageSize` (1-100, default 20); the resulting offset may not exceed 10 000. `GET /api/products/:id` takes an id of digits only.
 

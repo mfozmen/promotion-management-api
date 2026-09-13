@@ -5,7 +5,7 @@ describe('eventRouting', () => {
   it('gives each urgency class its own queue', () => {
     expect(eventRouting).toEqual({
       'promotion.changed': 'promotions',
-      'product.upserted': 'catalog',
+      'product.upserted': 'products',
       'chunk.process': 'ingestion',
       'readmodel.rebuild': 'maintenance',
       'reconciler.run': 'maintenance',
