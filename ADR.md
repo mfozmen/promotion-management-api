@@ -309,3 +309,53 @@ Alarms: the API and workers expose Prometheus metrics (`prom-client`); a `monito
 
 - Full rebuild on any drift: unnecessary load; scoped rebuilds are sufficient.
 - `FLUSHDB` for rebuilds: would erase the queue when it shares the instance.
+
+---
+
+## ADR-0008: Source layout and naming inside a module
+
+**Status:** Accepted — owner decisions of 2026-09-12 and 2026-09-13, enforced by REVIEW.md 8c
+
+### Context
+
+The first two modules were reviewed file by file, and the same three findings came back on each: several declarations in one file, directories named for a kind of syntax rather than a job, and exports whose names read as data when they were behaviour. REVIEW.md 8c says what a reviewer rejects; this record says what the layout is and why.
+
+### Decision
+
+**Layout.** A modular monolith: one directory per module under `src/modules/`, and inside a module the directories are named for a role, opened only when a file goes in:
+
+```
+src/modules/<module>/
+  domain/        the module's rules as functions; imports no store and no framework
+    dto/         the types, interfaces and enum-like aliases those functions operate on
+  db/            queries and repositories (Drizzle)
+  http/          routes, handlers, request schemas (zod)
+  jobs/          BullMQ processors
+src/shared/
+  config.ts
+  db/            client, migrator, migrations (one journal, owned by api — ADR-0003)
+  http/          error type, error handler, request validator, logger
+tests/
+  unit/          mirrors src/, one test file per source file
+  integration/   real PostgreSQL and Redis
+```
+
+**`shared/` is infrastructure only.** Nothing under `src/shared/` carries a business noun in its name: configuration, the database client and migrator, HTTP plumbing and the logger live there; `promotions`, `products`, `pricing_rules` do not. A table's Drizzle definition belongs to the module that owns the table, in `src/modules/<module>/db/schema/<table>.ts`, and `drizzle.config.ts` reads every module's `db/schema/`. The migrations stay in one place under `shared/db/`, because there is one journal and one process applies it (ADR-0003). Two consequences: a table two modules read is owned by one of them and imported by the other (`pricing_rules` belongs to `pricing`; the promotion resolver imports it for its precedence rule), and a table everything references is its own module (`products` becomes a `catalog` module that `promotion` and `pricing` may import, while those two still import nothing from each other). Without this rule `shared/` is where every table lands because it is the path of least resistance, and it grows into the one directory the module split was meant to prevent.
+
+`domain/dto/` is the one directory named for what it holds rather than for a job. With types and functions at one level a reader could not tell a data shape from the logic over it without opening the file; the split is taken for that reason and for nothing else — `http/`, `db/` and `jobs/` are not divided further. Promotion and pricing are separate modules that import nothing from each other (ADR-0004, ADR-0005).
+
+**One exported declaration per file, and the file is named for it.** A file holds one class, interface, type alias or function, plus the private helpers only it uses. The name is the same in the file, the export, the ADR and the spec — and in the test: `tests/` mirrors `src/` one file to one file, `calculate-effective-price.ts` is tested by `calculate-effective-price.test.ts` at the same path under `tests/unit/`, and its top-level `describe` is the export's name.
+
+**Naming.**
+
+- An interface is named for the role it plays, as the noun a reader would use: `Discount`. Each implementation is the variant plus that noun — `fixedDiscount`, `percentageDiscount` — and the record of them is the plural, `discounts`. A suffix on the interface (`DiscountCalculator`) is noise every implementation then has to repeat or drop.
+- A function starts with a verb: `calculateEffectivePrice`, `compileRules`, `priceRow`. A function named for the value it returns (`effectivePrice`) reads as a property.
+- A file carries the whole name: `discount.ts`, `percentage-discount.ts`, `calculate-effective-price.ts`. Never a bare verb with no subject (`validate.ts`).
+- Directories are never `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/`; a concept is what a directory is for, a syntax kind is not.
+
+### Consequences
+
+- More files, each short; the tree is the index, and a file name answers "what is this" without opening it.
+- `src/shared/db/schema/` today holds every table. It is emptied into the modules (`catalog`, `promotion`, `pricing`, `ingestion`) in one pull request after PR #39 merges, so that #39 does not carry a third batch; until then this line is the record of the gap.
+- The promotion module was written before the naming rules and does not yet match them: `discount-calculator.ts`, `discount-calculators.ts`, `discount-calculator-for.ts`, `effective-price.ts` and `pricing-input-error.ts` still carry the old names. They are renamed in PR #39 (`discount.ts`, `discounts.ts`, `discount-for.ts`, `calculate-effective-price.ts`, with `pricing-input-error.ts` folded into the last as the private `validateBasePriceAndDiscount`, since it serves one caller) rather than grandfathered, because an exception survives longer than the reason for it. Until that merges, this line is the record of the gap.
+- `REVIEW.md` 7.7, 8c.2, 8c.3, 8c.7, 8c.8, 8c.9 and 8c.10 carry the enforceable form, one sentence each with a pointer here; the reasoning lives in this record only, so a change here changes them in the same pull request.
