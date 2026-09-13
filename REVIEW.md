@@ -686,6 +686,8 @@ digits and a hexadecimal-looking string without citing anything, and no
 tightening tells the two apart, because the difference is what the number
 refers to. Grep to find candidates, then read them.
 
+A path is checkable and a reference is not. `tests/unit/docs/documented-paths.test.ts` reads every backticked repository path out of the deliverable documents and the agent definitions and fails on one the tree does not hold, with a named exemption for each path a document mentions without claiming it exists; the reference half stays a reader's, because `value "99999999999" is out of range for type integer` is a quoted error rather than a citation and no pattern tells those apart. Evidence: a day of renames left four documents naming a logger file, a schema directory and a calculator that no longer existed, and two careful readings passed over the same four.
+
 8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
 properties) carry no explanatory comments; the entry says what it does. At most
 one short line per variable in `.env.example`.
