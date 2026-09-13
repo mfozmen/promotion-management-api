@@ -64,7 +64,7 @@ No implementation code is written before its failing test exists.
 
 Required on `main`:
 
-- `ci` — lint, typecheck, schema-drift check (`db:generate` then `git diff --exit-code src/shared/db/migrations`), tests with 100 % coverage thresholds, SonarCloud scan
+- `ci` — lint, typecheck, schema-drift check (`db:generate`, asserted on its success line because it exits 0 on failure, then `git add -AN` and `git diff --exit-code` over `src/shared/db/migrations`), tests with 100 % coverage thresholds, SonarCloud scan
 - `claude-review` — advisory AI review
 
 `local-gates` also runs on every pull request but does not block a merge. It computes the agent labels this diff needs from its changed paths and prints the set: `docs-verified` always, `cases-verified` when the pull request touches `src/`, `impact-verified` for the behaviour or judgement group below, and `architecture-verified` when it touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules or `src/workers/`, or carries the `scenario` label. `e2e-verified` is never required; that run happens when the owner asks for it. Every new push strips all five, so the applicable agents are re-run and their labels re-applied before the pull request goes to the owner.

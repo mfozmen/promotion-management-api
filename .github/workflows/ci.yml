@@ -50,7 +50,8 @@ jobs:
 
       - name: No schema drift
         run: |
-          npm run db:generate < /dev/null
+          npm run db:generate < /dev/null 2>&1 | tee "$RUNNER_TEMP/db-generate.log"
+          grep -qE 'No schema changes|Your SQL migration file' "$RUNNER_TEMP/db-generate.log"
           git add -AN src/shared/db/migrations
           git diff --exit-code src/shared/db/migrations
 
