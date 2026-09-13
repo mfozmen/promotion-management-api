@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
 import type { Db } from '@src/shared/db/client.js';
-import type { Publish } from '@src/events/publish.js';
 import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-scheduler.js';
 import { captureLogger } from '../../../capture-logger.js';
 
@@ -48,21 +47,21 @@ const failingScheduler = (error: unknown) =>
     remove: () => Promise.reject(error),
   });
 
-const noopPublish: Publish = () => Promise.resolve();
+const noopPublish = { publish: () => Promise.resolve() };
 
 describe('POST /api/promotions when the announcement fails', () => {
   it('still answers 201 and logs it for the reconciler', async () => {
     // The row is committed. Refusing the write because Redis is unreachable
     // would lose the admin's promotion to repair a cache that repairs itself.
     const { logger, lines } = captureLogger();
-    const failing: Publish = () => Promise.reject(new Error('Redis is down'));
+    const failing = { publish: () => Promise.reject(new Error('Redis is down')) };
 
     const res = await request(
       createApp(
         appDeps({
           logger,
           db: insertReturning([stored]),
-          publish: failing,
+          queue: failing,
           scheduler: silentScheduler,
         }),
       ),
@@ -86,7 +85,7 @@ describe('POST /api/promotions when the announcement fails', () => {
         appDeps({
           logger,
           db: insertReturning([stored]),
-          publish: noopPublish,
+          queue: noopPublish,
           scheduler: failingScheduler('Redis is down'),
         }),
       ),
@@ -118,7 +117,7 @@ describe('POST /api/promotions/:id/cancel when the announcement fails', () => {
         appDeps({
           logger,
           db,
-          publish: () => Promise.reject(new Error('Redis is down')),
+          queue: { publish: () => Promise.reject(new Error('Redis is down')) },
           scheduler: silentScheduler,
         }),
       ),
@@ -153,7 +152,7 @@ describe('POST /api/promotions/:id/cancel when the boundaries cannot be dropped'
         appDeps({
           logger,
           db,
-          publish: noopPublish,
+          queue: noopPublish,
           scheduler: new PromotionScheduler({
             publish: () => Promise.resolve({} as never),
             remove: () => Promise.reject(new Error('Redis is down')),
@@ -188,7 +187,7 @@ describe('a rejection that is not an Error still reaches the log', () => {
         appDeps({
           logger,
           db,
-          publish: noopPublish,
+          queue: noopPublish,
           scheduler: failingScheduler('gone'),
         }),
       ),
@@ -218,9 +217,12 @@ describe('a failing boundary call never costs the event', () => {
     // one try, a Redis timeout swallowed the invalidation and left a cancelled
     // sale priced on the storefront. Asserting the 200 alone did not see it.
     const emitted: { name: string; payload: unknown }[] = [];
-    const recording: Publish = (name, payload) => {
-      emitted.push({ name, payload });
-      return Promise.resolve();
+    const recording = {
+      publish: (name: string, payload: unknown) => {
+        emitted.push({ name, payload });
+
+        return Promise.resolve();
+      },
     };
 
     const res = await request(
@@ -228,7 +230,7 @@ describe('a failing boundary call never costs the event', () => {
         appDeps({
           logger: captureLogger().logger,
           db: cancellingDb,
-          publish: recording,
+          queue: recording,
           scheduler: new PromotionScheduler({
             publish: () => Promise.resolve({} as never),
             remove: () => Promise.reject(new Error('Redis is down')),
@@ -252,7 +254,7 @@ describe('a failing boundary call never costs the event', () => {
         appDeps({
           logger: captureLogger().logger,
           db: insertReturning([stored]),
-          publish: noopPublish,
+          queue: noopPublish,
           scheduler: new PromotionScheduler({
             publish: (_name, _payload, options) => {
               const boundary = String(options?.jobId ?? '').endsWith(':activate')

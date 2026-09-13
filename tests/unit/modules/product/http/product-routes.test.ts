@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
 import type { Db } from '@src/shared/db/client.js';
-import type { Publish } from '@src/events/publish.js';
 import { captureLogger } from '../../../capture-logger.js';
 
 /**
@@ -21,7 +20,7 @@ const throwingDb = (error: unknown) =>
     }),
   }) as unknown as Db;
 
-const publish: Publish = () => Promise.resolve();
+const queue = { publish: () => Promise.resolve() };
 
 const validBody = (sku: string) => ({
   sku,
@@ -38,7 +37,7 @@ describe('POST /api/products when the write fails', () => {
       code: '23514',
     });
 
-    const res = await request(createApp(appDeps({ logger, db: throwingDb(failure), publish })))
+    const res = await request(createApp(appDeps({ logger, db: throwingDb(failure), queue })))
       .post('/api/products')
       .send({
         sku: 'MC-9001',
@@ -58,7 +57,7 @@ describe('POST /api/products when the write fails', () => {
     // A rejection with a string reaches the same handler, and the log line must
     // still be written rather than throwing inside the error path.
     const { logger, lines } = captureLogger();
-    const rejectsWithString: Publish = () => Promise.reject('Redis is down');
+    const rejectsWithString = { publish: () => Promise.reject('Redis is down') };
     const db = {
       insert: () => ({
         values: () => ({
@@ -67,7 +66,7 @@ describe('POST /api/products when the write fails', () => {
       }),
     } as unknown as Db;
 
-    const res = await request(createApp(appDeps({ logger, db, publish: rejectsWithString })))
+    const res = await request(createApp(appDeps({ logger, db, queue: rejectsWithString })))
       .post('/api/products')
       .send(validBody('MC-9004'));
 
@@ -81,7 +80,7 @@ describe('POST /api/products when the write fails', () => {
 
   it('logs the enqueue failure without failing the request', async () => {
     const { logger, lines } = captureLogger();
-    const failing: Publish = () => Promise.reject(new Error('Redis is down'));
+    const failing = { publish: () => Promise.reject(new Error('Redis is down')) };
     const db = {
       insert: () => ({
         values: () => ({
@@ -100,7 +99,7 @@ describe('POST /api/products when the write fails', () => {
       }),
     } as unknown as Db;
 
-    const res = await request(createApp(appDeps({ logger, db, publish: failing })))
+    const res = await request(createApp(appDeps({ logger, db, queue: failing })))
       .post('/api/products')
       .send({
         sku: 'MC-9002',

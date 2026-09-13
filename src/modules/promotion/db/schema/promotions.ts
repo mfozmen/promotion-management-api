@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { bigint, check, index, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
-import { products } from '../../../catalog/db/schema/products.js';
+import { products } from '../../../product/db/schema/products.js';
 import { promotionDiscountType } from './promotion-discount-type.js';
 import { promotionStatus } from './promotion-status.js';
 

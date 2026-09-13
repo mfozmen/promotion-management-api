@@ -3,9 +3,8 @@ import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
-import { products } from '@src/modules/catalog/db/schema/products.js';
+import { products } from '@src/modules/product/db/schema/products.js';
 import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
-import type { Publish } from '@src/events/publish.js';
 import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-scheduler.js';
 import { useTestDatabase } from '../../../db.js';
 
@@ -17,7 +16,10 @@ interface Recorded {
   removed: number[];
 }
 
-function recorder(): Recorded & { publish: Publish; scheduler: PromotionScheduler } {
+function recorder(): Recorded & {
+  queue: { publish: (name: string, payload: unknown) => Promise<unknown> };
+  scheduler: PromotionScheduler;
+} {
   const state: Recorded = { events: [], scheduled: [], removed: [] };
   // The real scheduler over a fake queue, so the deterministic job id and the
   // delay are exercised rather than stubbed away.
@@ -40,9 +42,12 @@ function recorder(): Recorded & { publish: Publish; scheduler: PromotionSchedule
   });
   return {
     ...state,
-    publish: (name, payload) => {
-      state.events.push({ name, payload });
-      return Promise.resolve();
+    queue: {
+      publish: (name: string, payload: unknown) => {
+        state.events.push({ name, payload });
+
+        return Promise.resolve();
+      },
     },
     scheduler,
   };
@@ -78,7 +83,7 @@ const draftBody = () => ({
 });
 
 let rec: ReturnType<typeof recorder>;
-const app = () => createApp(appDeps({ db: db(), publish: rec.publish, scheduler: rec.scheduler }));
+const app = () => createApp(appDeps({ db: db(), queue: rec.queue, scheduler: rec.scheduler }));
 
 beforeEach(() => {
   rec = recorder();

@@ -27,7 +27,7 @@ const queue = EventQueue.connect(
 const app = createApp({
   logger,
   db: createDb(pool),
-  publish: (name, payload) => queue.publish(name, payload).then(() => undefined),
+  queue,
   scheduler: new PromotionScheduler(queue),
   products: new ProductReadRepository(
     createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB),

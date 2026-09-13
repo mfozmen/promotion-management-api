@@ -8,12 +8,8 @@ import type { InsertProductOutcome } from '../domain/dto/insert-product-outcome.
 export class ProductRepository {
   constructor(private readonly db: Db) {}
 
-  /**
-   * A duplicate SKU is decided by the unique index, never by a `SELECT` first:
-   * two requests for one new SKU both pass a check-then-insert and one of them
-   * still fails at the index, so the check only moves the error somewhere less
-   * expected.
-   */
+  /** A duplicate SKU is decided by the unique index, never by a `SELECT` first:
+   *  a check-then-insert only moves the error somewhere less expected. */
   async insert(input: CreateProduct): Promise<InsertProductOutcome> {
     try {
       const rows = await this.db.insert(products).values(input).returning();

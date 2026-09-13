@@ -11,12 +11,7 @@ import type { AssignPromotion } from '../domain/dto/assign-promotion-input.js';
 import type { CreatePromotion } from '../domain/dto/create-promotion-input.js';
 import type { ListPromotionsInput } from '../domain/dto/list-promotions-input.js';
 
-/**
- * `state` as PostgreSQL decides it, for every read and every write's
- * `returning`. One expression, so no second copy can disagree with it and no
- * second clock can be consulted. The arm order is the definition: cancelled
- * outranks any window, and a draft has no window worth reporting.
- */
+// The arm order is the definition: cancelled outranks any window.
 const state = sql<PromotionState>`
   case
     when ${promotions.status} = 'cancelled' then 'cancelled'
@@ -26,12 +21,7 @@ const state = sql<PromotionState>`
     else 'live'
   end`;
 
-/**
- * Typed `string`, not `Date`: drizzle maps a declared `timestamptz` column, but
- * a raw fragment has no column mapper and arrives as the driver's text.
- * Annotating it `Date` compiles and throws at the first `getTime()` — which,
- * inside a swallowed announcement, meant no promotion ever activated.
- */
+// A raw fragment has no column mapper, so this is the driver's text, not a Date.
 const committedAt = sql<string>`now()`;
 
 const columns = {
@@ -50,11 +40,6 @@ const columns = {
 export class PromotionRepository {
   constructor(private readonly db: Db) {}
 
-  /**
-   * A duplicate target is decided by the exclusion constraints, never by a
-   * `SELECT` first: two requests for one window both pass a check-then-insert
-   * and one still fails at the constraint.
-   */
   async insert(input: CreatePromotion): Promise<PromotionWriteOutcome> {
     const hasTarget = input.productId !== undefined || input.category !== undefined;
     try {
@@ -77,7 +62,6 @@ export class PromotionRepository {
 
       return { ok: true, now: new Date(now), promotion };
     } catch (error) {
-      // A productId naming no product is an admin's typo, not a server fault.
       if (hasSqlState(error, SqlState.foreignKeyViolation)) {
         return { ok: false, reason: 'no-such-product' };
       }
@@ -87,13 +71,6 @@ export class PromotionRepository {
     }
   }
 
-  /**
-   * One guarded `UPDATE`: the target is set and the status becomes `active`
-   * only where the row is still a draft whose window has not passed. A
-   * concurrent assign loses because the second matches no row, and an expired
-   * draft cannot be woken — both decided on the database clock, in the
-   * statement that does the work rather than in a read before it.
-   */
   async assign(id: number, target: AssignPromotion): Promise<PromotionWriteOutcome> {
     try {
       const [row] = await this.db
@@ -128,7 +105,6 @@ export class PromotionRepository {
         ? { ok: false, reason: 'not-assignable' }
         : { ok: false, reason: 'not-found' };
     } catch (error) {
-      // A productId naming no product is an admin's typo, not a server fault.
       if (hasSqlState(error, SqlState.foreignKeyViolation)) {
         return { ok: false, reason: 'no-such-product' };
       }
@@ -138,11 +114,6 @@ export class PromotionRepository {
     }
   }
 
-  /**
-   * Idempotent, so a second call answers with the cancelled row rather than a
-   * conflict: the caller asked for a state the row is already in. The `ne`
-   * guard is what makes `cancelled_at` the first cancellation's instant.
-   */
   async cancel(id: number): Promise<CancelPromotionOutcome> {
     const [cancelled] = await this.db
       .update(promotions)
@@ -173,11 +144,6 @@ export class PromotionRepository {
     return row;
   }
 
-  /**
-   * The admin list reads `promotions` rather than `active_promotions`, because
-   * an admin screen has to show the draft, the scheduled and the expired ones
-   * too; the view answers "running now", one of the five states this returns.
-   */
   list(filters: ListPromotionsInput): Promise<PromotionView[]> {
     const conditions = [
       filters.status === undefined ? undefined : eq(promotions.status, filters.status),

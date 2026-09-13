@@ -1,32 +1,27 @@
 import type { Logger } from 'pino';
-import type { Publish } from '../../../events/publish.js';
 import type { PromotionView } from './dto/promotion-view.js';
 import type { PromotionScheduler } from './promotion-scheduler.js';
 
-/**
- * Every step is attempted on its own and a failure is logged rather than
- * raised: the row is committed by the time any of this runs, so telling the
- * admin their write failed would be false. A sequential chain would let the
- * first failure take the rest with it — a boundary call that times out skipping
- * the `promotion.changed` behind it, leaving a cancelled sale priced.
- *
- * The line carries the promotion id rather than the request id: what repairs a
- * lost event is a recompute for that promotion, and nothing in this class runs
- * inside a request.
- */
+/** Every step settles on its own: a sequential chain would let a boundary call
+ *  that times out skip the `promotion.changed` behind it, leaving a cancelled
+ *  sale priced. The row is committed by then, so a failure is logged, not raised. */
+/** What the announcer needs of the queue; the queue knows nothing of promotions. */
+type AnnouncementQueue = {
+  publish(name: 'promotion.changed', payload: { promotionId: number }): Promise<unknown>;
+};
+
 export class PromotionAnnouncer {
   constructor(
-    private readonly publish: Publish,
+    private readonly queue: AnnouncementQueue,
     private readonly scheduler: PromotionScheduler,
     private readonly logger: Logger,
   ) {}
 
-  /** A draft has no target and no boundaries; it changes no price. */
   async announce(promotion: PromotionView, now: Date): Promise<void> {
     if (promotion.status !== 'active') return;
 
     await this.settle(
-      this.publish('promotion.changed', { promotionId: promotion.id }),
+      this.queue.publish('promotion.changed', { promotionId: promotion.id }),
       promotion.id,
     );
 
@@ -52,14 +47,8 @@ export class PromotionAnnouncer {
     ]);
   }
 
-  /**
-   * The event goes first and the boundary removal follows. Removing the delayed
-   * jobs is hygiene: a boundary job carries `{ promotionId }` and its handler
-   * recomputes from PostgreSQL, so one that fires for a cancelled promotion
-   * reads the cancelled row and publishes the base price.
-   */
   async announceCancellation(promotionId: number): Promise<void> {
-    await this.settle(this.publish('promotion.changed', { promotionId }), promotionId);
+    await this.settle(this.queue.publish('promotion.changed', { promotionId }), promotionId);
     await this.settle(this.scheduler.cancel(promotionId), promotionId);
   }
 

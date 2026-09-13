@@ -1,13 +1,6 @@
 import { z } from 'zod';
 
-/**
- * The body of `POST /api/products`. Strict, so an unknown field is a `400`
- * rather than a silently dropped one (ADR-0008).
- *
- * Every bound here also exists in the database — `sku` is unique, price and
- * stock are `CHECK (>= 0)` — because a boundary that agrees with the schema is
- * a better error message, not a substitute for the constraint.
- */
+/** The body of `POST /api/products`. */
 export const createProductInput = z.strictObject({
   sku: z.string().trim().min(1).max(64),
   name: z.string().trim().min(1).max(200),

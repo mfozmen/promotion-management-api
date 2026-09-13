@@ -5,9 +5,9 @@ import { FindProductQuery } from './modules/storefront/queries/find-product-quer
 import { ListProductsQuery } from './modules/storefront/queries/list-products-query.js';
 import { ReadModelReadinessQuery } from './modules/storefront/queries/read-model-readiness-query.js';
 import { productReadRoutes } from './modules/storefront/http/product-read-routes.js';
-import { ProductRepository } from './modules/catalog/db/product-repository.js';
-import { CreateProductCommand } from './modules/catalog/commands/create-product-command.js';
-import { productRoutes } from './modules/catalog/http/product-routes.js';
+import { ProductRepository } from './modules/product/db/product-repository.js';
+import { CreateProductCommand } from './modules/product/commands/create-product-command.js';
+import { productRoutes } from './modules/product/http/product-routes.js';
 import { PromotionRepository } from './modules/promotion/db/promotion-repository.js';
 import { PromotionAnnouncer } from './modules/promotion/domain/promotion-announcer.js';
 import { CreatePromotionCommand } from './modules/promotion/commands/create-promotion-command.js';
@@ -22,7 +22,7 @@ import { httpLogger } from './shared/http/http-logger.js';
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
 
-export function createApp({ logger, db, publish, scheduler, products }: AppDependencies): Express {
+export function createApp({ logger, db, queue, scheduler, products }: AppDependencies): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');
@@ -46,9 +46,9 @@ export function createApp({ logger, db, publish, scheduler, products }: AppDepen
   // what it calls and nothing it could reach around.
   const catalog = new ProductRepository(db);
   const promotions = new PromotionRepository(db);
-  const announcer = new PromotionAnnouncer(publish, scheduler, logger);
+  const announcer = new PromotionAnnouncer(queue, scheduler, logger);
 
-  api.use('/products', productRoutes(new CreateProductCommand(catalog, publish, logger)));
+  api.use('/products', productRoutes(new CreateProductCommand(catalog, queue, logger)));
   api.use(
     '/promotions',
     promotionRoutes({

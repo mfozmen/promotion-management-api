@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { chunkProcess } from '@src/modules/ingestion/events/chunk-process.js';
-import { productUpserted } from '@src/modules/catalog/events/product-upserted.js';
+import { productUpserted } from '@src/modules/product/events/product-upserted.js';
 import { promotionChanged } from '@src/modules/promotion/events/promotion-changed.js';
 import { eventRegistry } from '@src/events/event-registry.js';
 import { readModelRebuild } from '@src/modules/storefront/events/readmodel-rebuild.js';

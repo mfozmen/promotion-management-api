@@ -1,14 +1,6 @@
 import { z } from 'zod';
 
-/**
- * `productId` and `category` are both optional and at most one may be given:
- * neither means a draft, one means an active promotion, and both is the
- * contradiction the table's own check rejects.
- *
- * `endsAt` is compared against the request's own clock only to reject a window
- * that is already over before it reaches the database; whether a stored
- * promotion is running is PostgreSQL's to decide.
- */
+/** `productId` and `category` are both optional and at most one may be given: neither means a draft, one means an active promotion, and both is the contradiction the table's own check rejects. */
 export const createPromotionInput = z
   .strictObject({
     name: z.string().trim().min(1).max(200),
