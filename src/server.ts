@@ -1,14 +1,21 @@
 import { createApp } from './app.js';
+import { loadConfig } from './shared/config.js';
+import { runMigrations } from './shared/db/migrate.js';
 import { createQueues } from './shared/queue.js';
 import { parseShutdownTimeout, shutdown } from './shared/shutdown.js';
 
-const port = Number(process.env.PORT) || 3000;
+const config = loadConfig();
 const shutdownTimeoutMs = parseShutdownTimeout(process.env.SHUTDOWN_TIMEOUT_MS);
-const app = createApp();
-const queues = createQueues(process.env.REDIS_URL ?? 'redis://127.0.0.1:6379');
 
-const server = app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+// Before the first request rather than beside it: the health check is what `up --wait`
+// waits on, so it must not answer in front of a schema that is not there yet.
+await runMigrations(config.DATABASE_URL);
+
+const app = createApp();
+const queues = createQueues(config.REDIS_URL);
+
+const server = app.listen(config.PORT, () => {
+  console.log(`Server listening on port ${config.PORT}`);
 });
 
 process.on('SIGTERM', () => {

@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+uploads
+.git
+.github
+.claude
+.husky
+tests
+docs
+*.md
+.env
+.env.*
