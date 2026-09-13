@@ -71,4 +71,30 @@ describe('demo seed', () => {
       .where(eq(promotions.name, 'Demo electronics flash sale'));
     expect(sales).toEqual({ rows: 1 });
   });
+
+  it('takes back a row an import had claimed', async () => {
+    await seed();
+    await db()
+      .update(products)
+      .set({ basePriceCents: 79_990, ingestJobId: 42, ingestSourceOffset: 512 })
+      .where(eq(products.sku, 'DEMO-0004'));
+
+    await seed();
+
+    const [reclaimed] = await db()
+      .select({
+        basePriceCents: products.basePriceCents,
+        ingestJobId: products.ingestJobId,
+        ingestSourceOffset: products.ingestSourceOffset,
+      })
+      .from(products)
+      .where(eq(products.sku, 'DEMO-0004'));
+    // The provenance goes with the price. Leaving it would have the row name an ingestion job
+    // whose values are gone, and #16's offset guard would then decline to re-apply them.
+    expect(reclaimed).toEqual({
+      basePriceCents: 1200,
+      ingestJobId: null,
+      ingestSourceOffset: null,
+    });
+  });
 });

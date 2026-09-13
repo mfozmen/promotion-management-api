@@ -19,11 +19,16 @@ ON CONFLICT ("sku") DO UPDATE SET
   "category" = excluded."category",
   "base_price_cents" = excluded."base_price_cents",
   "stock_quantity" = excluded."stock_quantity",
+  -- The demo row is not the vendor's any more, so it stops naming the job that wrote it. Left
+  -- behind, the pair would point at an ingestion job whose values this statement just replaced.
+  "ingest_job_id" = NULL,
+  "ingest_source_offset" = NULL,
   "updated_at" = now()
 WHERE
   ("products"."name", "products"."category", "products"."base_price_cents", "products"."stock_quantity")
   IS DISTINCT FROM
-  (excluded."name", excluded."category", excluded."base_price_cents", excluded."stock_quantity");
+  (excluded."name", excluded."category", excluded."base_price_cents", excluded."stock_quantity")
+  OR "products"."ingest_job_id" IS NOT NULL;
 
 -- Deleted and re-inserted rather than upserted: `promotions_no_overlapping_active_category`
 -- excludes a second active row over the same category and overlapping window, so a second run

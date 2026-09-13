@@ -20,7 +20,8 @@ export async function buildSchemaDdl(migrationsFolder: string): Promise<string> 
   const migrations = await Promise.all(
     journal.entries.map(async ({ tag }) => {
       const sql = await readFile(join(migrationsFolder, `${tag}.sql`), 'utf8');
-      return `-- ${tag}.sql\n${sql.replaceAll(/\s*--> statement-breakpoint/g, '').trim()}\n`;
+      const body = sql.replaceAll('\r\n', '\n').replaceAll(/\s*--> statement-breakpoint/g, '');
+      return `-- ${tag}.sql\n${body.trim()}\n`;
     }),
   );
 

@@ -986,6 +986,17 @@ replace that matches nothing, reports success, and ships a document saying the
 opposite of what its commit message claims; that one shipped twice before it
 was noticed.
 
+13.8 A new top-level TypeScript directory joins `tsconfig.json`'s `include`, or
+nothing type-checks it. `eslint .` walks the whole tree and gives the opposite
+impression: lint is clean while `tsc --noEmit` never opens the file, so a wrong
+import specifier or a wrong signature is found by running the script, in front
+of whoever ran it. `tsc --noEmit --listFiles` answers the question.
+
+Evidence: `scripts/` arrived carrying two files while `include` still read
+`["src", "tests"]`; `--listFiles` counted none of them.
+
+---
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
