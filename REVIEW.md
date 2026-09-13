@@ -97,7 +97,11 @@ an invariant.
 
 2.5 A concurrency claim in a comment or a PR description must have a test that
 runs the operations in parallel and asserts the invariant afterwards. "Should be
-fine" is not a test.
+fine" is not a test. Writing the test is also how the claim gets checked, not just
+the code: the rule catches a wrong description as often as a wrong mechanism.
+
+Evidence: a README said two concurrent demo seeds left the loser aborting on 23P01, and
+the test this rule demanded showed neither run fails.
 
 2.6 A `WHERE` clause on a nullable column states its `NULL` branch explicitly.
 `NULL` compared with anything is `NULL`, not `TRUE`, and a row-value
@@ -1085,6 +1089,13 @@ made the other side's claim false while touching none of its lines.
 
 Evidence: the queue story added a `SIGTERM` handler while this branch's ADR
 said, thirty lines from anything either side edited, that the process had none.
+
+13.10 A new top-level TypeScript directory joins `tsconfig.json`'s `include`,
+or nothing type-checks it; `eslint .` walks the whole tree and gives the opposite
+impression. `tsc --noEmit --listFiles` answers the question.
+
+Evidence: `scripts/` arrived while `include` still read `["src", "tests"]`, so
+`--listFiles` counted nothing in it while `eslint .` walked it clean.
 
 ## 13b. The rulebook learns
 
