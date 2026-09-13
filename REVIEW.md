@@ -521,7 +521,9 @@ parallel. Shared mutable fixtures across files are a finding.
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
 the tree mirrors `src/`, one test file per source file, with the same name
 (`x.ts` → `x.test.ts`) and the export's name as the top-level `describe`.
-Nothing at `tests/` root, no per-module top-level directories. ADR-0008.
+Nothing at `tests/` root, no per-module top-level directories. A test of a
+tree-wide property with no source file (`migration-journal.test.ts`) is named
+for the property, at the path of what it guards. ADR-0008.
 
 7.8 **A test imports its subject through the `@src/*` alias, production code
 never does.** `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'`
@@ -720,8 +722,9 @@ prose, so a rename had nothing to follow.
 never for a kind of syntax: `models/`, `types/`, `interfaces/`, `classes/`,
 `utils/`, `helpers/` are findings. The tree is in ADR-0008.
 
-8c.8 The one exception to 8c.7: `domain/dto/` holds the types, `domain/`
-holds only the functions. No other directory is split by syntax. ADR-0008.
+8c.8 The one exception to 8c.7: `domain/dto/` holds every shape — type
+aliases, interfaces, zod schemas, message payloads — and `domain/` holds only
+the functions. No other directory is split by syntax. ADR-0008.
 
 8c.9 An interface is the noun of its role (`Discount`), an implementation is
 the variant plus that noun (`fixedDiscount`), the record of them the plural
