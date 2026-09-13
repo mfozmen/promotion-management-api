@@ -5,6 +5,7 @@ import { loadConfig } from './shared/config.js';
 import { runMigrations } from './shared/db/migrate.js';
 import { GracefulShutdown } from './shared/graceful-shutdown.js';
 import { logger } from './shared/logger.js';
+import { ProductReadModel } from './modules/product/db/product-read-model.js';
 import { createReadModelClient } from './shared/read-model-client.js';
 import { EventQueue } from './shared/queue/event-queue.js';
 
@@ -13,7 +14,10 @@ const config = loadConfig();
 // The health check `up --wait` waits on must not answer in front of a missing schema.
 await runMigrations(config.DATABASE_URL);
 
-const app = createApp(logger, createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB));
+const app = createApp(
+  logger,
+  new ProductReadModel(createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB)),
+);
 const queue = EventQueue.connect(
   config.REDIS_URL,
   config.REDIS_QUEUE_DB,

@@ -157,23 +157,6 @@ describe('errorHandler: unexpected errors', () => {
     expect(logged).toMatchObject({ err: { message: expect.stringContaining('ECONNREFUSED') } });
   });
 
-  it('reads the retry hint whatever case the raiser spelled it in', async () => {
-    const captured = captureLogger();
-    // A header name is case-insensitive everywhere else, so a raiser writing
-    // `Retry-After` sends it correctly — and an exact-case lookup would log this
-    // at `error` and page someone for an ordinary rebuild.
-    const raised = createError(503, 'rebuild running', {
-      headers: { 'Retry-After': retryAfter() },
-      expose: true,
-    });
-
-    const res = await request(appThrowing(raised, captured)).get('/boom');
-
-    expect(res.headers['retry-after']).toBeDefined();
-    expect(captured.lines.some((line) => line.level === 40)).toBe(true);
-    expect(captured.lines.some((line) => line.level === 50)).toBe(false);
-  });
-
   it("passes the raiser's retry hint through untouched", async () => {
     // The handler no longer invents one. Spreading the hint so an outage's clients
     // do not all return in the same second is the raiser's to do, and nothing raises

@@ -2,6 +2,7 @@ import { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
+import { ProductReadModel } from '@src/modules/product/db/product-read-model.js';
 import { logger as rootLogger } from '@src/shared/logger.js';
 import {
   seedProducts,
@@ -12,7 +13,7 @@ import {
 } from '../../../redis.js';
 
 const redis = useTestRedis();
-const app = () => createApp(rootLogger, redis());
+const app = () => createApp(rootLogger, new ProductReadModel(redis()));
 
 /** A product the reader would accept. The base price follows the effective one
  *  unless a case sets it, because a price below its base with no promotion is a
@@ -294,7 +295,7 @@ describe('a rebuild that has removed a product the index still lists', () => {
     const res = await request(app()).get('/api/products');
 
     expect(res.status).toBe(500);
-    // Masked: the writer's own words are for the operator, not the caller.
+    // Masked: the raiser's words are the operator's.
     expect(res.body.error.message).toBe('Internal server error');
     // Not 503: retrying cannot fix a key the writer wrote wrong.
     expect(res.headers['retry-after']).toBeUndefined();
@@ -313,21 +314,16 @@ describe('a rebuild that has removed a product the index still lists', () => {
     expect(res.headers['retry-after']).toBeUndefined();
   });
 
-  it('calls that product a rebuild on the detail route, not a missing product', async () => {
+  it('answers 404 on the detail route for a member whose entry is gone', async () => {
     await seedProducts(redis(), [product({ id: 1 })]);
     await redis().unlink('product:1');
 
-    const res = await request(app()).get('/api/products/1');
-
-    // The listing calls this state a rebuild in progress. A 404 for the same
-    // state is cacheable, and says a product that exists does not.
-    expect(res.status).toBe(503);
-    expect(res.body.error.message).toBe('This product is mid-rebuild or orphaned');
-    expect(res.headers['retry-after']).toBeDefined();
+    // The listing drops such a member; the detail route has no entry to render
+    // and says so. Telling it apart from a product that never existed needs a
+    // rebuild to exist first, and that is issue #12's to decide.
+    expect((await request(app()).get('/api/products/1')).status).toBe(404);
   });
-});
 
-describe('when Redis cannot be reached', () => {
   it('answers 503 with a retry hint rather than a server fault', async () => {
     const unreachable = new Redis({
       host: '127.0.0.1',
@@ -339,7 +335,9 @@ describe('when Redis cannot be reached', () => {
     });
     unreachable.connect().catch(() => undefined);
 
-    const res = await request(createApp(rootLogger, unreachable)).get('/api/products');
+    const res = await request(createApp(rootLogger, new ProductReadModel(unreachable))).get(
+      '/api/products',
+    );
     unreachable.disconnect();
 
     expect(res.status).toBe(503);
@@ -383,7 +381,7 @@ describe('a read-model entry the writer left incomplete', () => {
     const res = await request(app()).get('/api/products/1');
 
     expect(res.status).toBe(500);
-    // Masked: the writer's own words are for the operator, not the caller.
+    // Masked: the raiser's words are the operator's.
     expect(res.body.error.message).toBe('Internal server error');
   });
 

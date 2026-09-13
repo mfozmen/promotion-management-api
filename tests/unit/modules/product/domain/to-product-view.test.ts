@@ -23,18 +23,12 @@ describe('toProductView', () => {
   });
 
   it('refuses a promotion with an id and no name', () => {
-    // The writer writes the pair together, so half of it is a writer bug. It
-    // used to default the name to empty, which renders a shopper a discount
-    // attributed to a promotion with no title.
     expect(() => toProductView({ ...stored, promotionId: '3' })).toThrow();
     expect(() => toProductView({ ...stored, promotionId: '3', promotionName: '' })).toThrow();
   });
 
   it('reads an empty pair as no promotion, because Redis has no null', () => {
-    // Probed against ioredis: HSET serialises both null and undefined to ''.
-    // A writer building the hash from a row whose promotion columns are NULL
-    // therefore writes '' for both, and refusing that would 500 every product
-    // without a promotion — which on a listing is the whole page.
+    // ioredis stores null and undefined as '' (ADR-0006).
     const view = toProductView({ ...stored, promotionId: '', promotionName: '' });
 
     expect(view.promotion).toBeNull();
@@ -56,21 +50,14 @@ describe('toProductView', () => {
   });
 
   it('refuses a discount with no source, which is what tolerating an empty pair let through', () => {
-    // The strict schema caught this for free: '' failed the digits check, so a
-    // discounted product whose promotion columns were empty was refused. Now
-    // that '' reads as no promotion, nothing but this stops a lower effective
-    // price being served with nothing to attribute it to.
+    // ADR-0006: no promotion means no discount.
     expect(() =>
       toProductView({ ...stored, promotionId: '', promotionName: '', effectivePriceCents: '9000' }),
     ).toThrow();
   });
 
   it('accepts a promotion whose discount floored to zero, so tightening this refine to `<` fails here', () => {
-    // `PercentageDiscount` floors, so any value worth less than a cent of the
-    // base discounts nothing, and the row it writes is identical field for
-    // field to a cancelled promotion the recompute failed to clear. Only the
-    // recompute's own HDEL separates them, which is why the rule beside this
-    // one is `===` and not `<`.
+    // A floored-to-zero discount is a real product, so this rule is `===`.
     const view = toProductView({ ...stored, promotionId: '3', promotionName: 'Winter sale' });
 
     expect(view.promotion).toEqual({ id: 3, name: 'Winter sale' });

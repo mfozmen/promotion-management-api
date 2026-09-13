@@ -304,17 +304,12 @@ cancel-then-read race, and must bring the stampede lock and the ordering
 argument with it.
 
 5.8 **A Redis `ReplyError` is not proof of a permanent fault.** `-LOADING`,
-`-OOM`, `-BUSY`, `-MISCONF` and `-READONLY` all arrive in the same class as
-`-WRONGTYPE`, so a classifier that maps the class to a `500` answers a restart
-with a status nothing retries. Classify on the error string, and let anything
-unrecognised be the retryable answer — but know what that costs. A permanent
-fault read as retryable (`-NOAUTH` and `-NOPERM` after a credential rotation,
-`-ERR syntax error` against a server too old for the command) is retried for
-ever and logged at `warn` rather than `error`, so nothing pages and the reply
-string in that line is the only thing that ends it. The tie-break still goes
-that way, because the opposite guess answers an outage with a status nothing
-retries at all — but a prefix list of "permanent" codes is not the fix either:
-`-ERR max number of clients reached` is transient and would poison it.
+`-OOM`, `-BUSY`, `-MISCONF` and `-READONLY` arrive in the same class as
+`-WRONGTYPE`, so classify on the error string and let an unrecognised reply be
+the retryable answer.
+
+Evidence: classifying on the class answered a Redis restart with a 500 that
+nothing retries.
 
 ---
 
@@ -433,17 +428,14 @@ walk further. A `ZRANGE` without `LIMIT`, an `SMEMBERS` on a large set, or an
 
 Evidence: this rule stated the cost without the `offset` term, and the
 storefront listing shipped an unbounded `page` past a review that read the
-rule and agreed with it (PR #76). The wrong half was the half a reviewer
+rule and agreed with it. The wrong half was the half a reviewer
 would lean on.
 
 6.22 **Measure what you claim.** Any change to a storefront route, the event
 handler or the chunk processor reports the `e2e-tester` numbers in the PR:
 requests per second, p50, p99, peak RSS. "Should be faster" without a number is
-a finding. `e2e-tester` runs when the owner asks for one, not on every push, so
-a PR that has had no run says which numbers it is waiting on and names the run
-it will quote; what this rule forbids is a performance claim with no number
-behind it, not a PR that has not been measured yet. Stated because the rule read
-as requiring a run nobody may start, which is a trigger that cannot fire.
+a finding. A PR with no run yet names the numbers it is
+waiting on; what this forbids is a performance claim with no number behind it.
 
 ---
 
@@ -589,42 +581,19 @@ evening (PR #29); then eleven test files red at once when the alias met a
 workspace whose projects did not carry it (PR #50).
 
 7.9 **A test that fakes a dependency's failure asserts the shape that
-dependency actually produces, checked against the real one once.** Run the
-failure against the real library or server, look at what comes back, and build
-the double from that. The passing shape is the one development shows you; the
-failing shape is the one nobody looks at, so it is the one a double gets wrong.
+dependency actually produces.** Run the failure against the real library once
+and build the double from what comes back, because the failing shape is the one
+nobody looks at.
 
 Evidence: `pipeline.exec()` resolves with `[[Error, null]]` rather than
-rejecting — for a dead connection too — so a double that rejected proved a
-branch ioredis never reaches, and the route answered `500` in production while
-the test stayed green (PR #76).
+rejecting, so a double that rejected proved a branch ioredis never reaches.
 
 7.10 **When you relax a validator, name what it was detecting and say where
-that detection now lives.** A strict rule is often doing two jobs, input
-validation and impossible-state detection, and usually only the first is
-written down. Relaxing it for the first spends the second, and nothing fails,
-because what was removed was the failure.
+that detection now lives.** A strict rule is often doing two jobs, and relaxing
+it for the first silently spends the second.
 
-Evidence: reading `''` as "no promotion" — which a writer must be allowed to
-write, since Redis has no null — retired the check that a discounted price
-names its promotion, and the one silently wrong price this layer could serve
-became a `200` (PR #76).
-
-Both of these are one family with 7.4b. A test's picture of the world is built
-from the same assumption as the code it tests, so it agrees with the code and
-neither has asked the thing outside both — the library, the writer, the
-server. Fixtures on that same PR modelled a product the writer cannot produce,
-a base of 10 000 beside an effective 9 000 with no promotion, and reader and
-fixture confirmed each other for as long as nobody asked what writes the hash.
-
-**Break the thing the test names and watch it fail.** That is what keeps
-catching this family, because a mutation is the thing outside both: it asks
-the test a question the code did not supply the answer to. Three times on one
-pull request — a double that rejected where the library resolves, fixtures
-that agreed with the reader about an impossible product, and an ordering case
-whose two orders came out in the same sequence so a scorer reading the wrong
-column passed it. Each was written carefully and each was wrong; none of them
-was caught by reading it again.
+Evidence: reading `''` as "no promotion" retired the check that a discounted
+price names its promotion, and nothing failed.
 
 ---
 
@@ -648,11 +617,6 @@ human, and it is the whole body: no code, no field-level breakdown (ADR-0009).
 fields or identifiers it concerns. It never reproduces a stored value, and it
 never repeats a free-form value the caller sent: a value is not an identifier
 and there is nothing to fix by seeing it again, so a 404 does not echo the path.
-
-This binds every message that reaches a response, not only the ones a
-middleware writes. A handler's own 4xx message crosses as written, unbounded and
-uninspected, so a message naming a row the caller
-never saw is a finding wherever it was built.
 
 This binds every message that reaches a response, not only the ones a
 middleware writes. A handler's own 4xx message crosses as written: the envelope

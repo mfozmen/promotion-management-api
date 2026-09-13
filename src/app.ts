@@ -1,7 +1,7 @@
 import express, { type Express } from 'express';
 import createError from 'http-errors';
 import type { Logger } from 'pino';
-import type { Redis } from 'ioredis';
+import { ProductReadModel } from './modules/product/db/product-read-model.js';
 import { productReadRoutes } from './modules/product/http/product-read-routes.js';
 import { errorHandler } from './shared/http/error-handler.js';
 import { httpLogger } from './shared/http/http-logger.js';
@@ -9,10 +9,8 @@ import { httpLogger } from './shared/http/http-logger.js';
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
 
-/** The read model is required rather than optional: the storefront routes are
- *  the application, and an optional client is how the wiring vanished in a
- *  merge with every test still green (ADR-0006). */
-export function createApp(logger: Logger, readModel: Redis): Express {
+/** The read model is required: the storefront routes are the application. */
+export function createApp(logger: Logger, readModel: ProductReadModel): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');

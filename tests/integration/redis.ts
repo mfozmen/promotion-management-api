@@ -1,8 +1,5 @@
 import { Redis } from 'ioredis';
-import { ALL_PRODUCTS } from '@src/modules/product/db/all-products-key.js';
-import { categoryKey } from '@src/modules/product/db/category-key.js';
-import { productKey } from '@src/modules/product/db/product-key.js';
-import { READY_KEY } from '@src/modules/product/db/ready-key.js';
+import { ProductReadModel } from '@src/modules/product/db/product-read-model.js';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 
 /** A logical database of its own, so a run cannot disturb the read model or
@@ -57,7 +54,7 @@ export type SeedProduct = SeedFields & SeedPromotion;
 export async function seedProducts(redis: Redis, products: readonly SeedProduct[]): Promise<void> {
   const pipeline = redis.pipeline();
   for (const product of products) {
-    pipeline.hset(productKey(product.id), {
+    pipeline.hset(ProductReadModel.productKey(product.id), {
       id: String(product.id),
       sku: product.sku,
       name: product.name,
@@ -71,9 +68,13 @@ export async function seedProducts(redis: Redis, products: readonly SeedProduct[
       pricingRulesVersion: '1789238046',
       updatedAt: '2026-09-12T00:00:00.000Z',
     });
-    pipeline.zadd(categoryKey(product.category), product.effectivePriceCents, String(product.id));
-    pipeline.zadd(ALL_PRODUCTS, product.effectivePriceCents, String(product.id));
+    pipeline.zadd(
+      ProductReadModel.categoryKey(product.category),
+      product.effectivePriceCents,
+      String(product.id),
+    );
+    pipeline.zadd(ProductReadModel.ALL_PRODUCTS, product.effectivePriceCents, String(product.id));
   }
-  pipeline.set(READY_KEY, '1');
+  pipeline.set(ProductReadModel.READY_KEY, '1');
   await pipeline.exec();
 }

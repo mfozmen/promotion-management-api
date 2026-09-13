@@ -1,21 +1,20 @@
 import { Router } from 'express';
-import type { Redis } from 'ioredis';
 import { validate } from '../../../shared/http/request-validator.js';
 import createError from 'http-errors';
-import { findProduct } from '../db/find-product.js';
-import { listProducts } from '../db/list-products.js';
+import { ProductReadModel } from '../db/product-read-model.js';
 import { detailParams, type DetailParams } from '../domain/dto/detail-params.js';
 import { listQuery, type ListQuery } from '../domain/dto/list-query.js';
 import { requireReadModel } from './require-read-model.js';
 
-export function productReadRoutes(redis: Redis): Router {
+export function productReadRoutes(readModel: ProductReadModel): Router {
   const router = Router();
-  router.use(requireReadModel(redis));
+  router.use(requireReadModel(readModel));
 
   router.get('/', validate({ query: listQuery }), (req, res, next) => {
     const { category, order, page, pageSize } = req.query as unknown as ListQuery;
 
-    listProducts(redis, { category, order, page, pageSize })
+    readModel
+      .list({ category, order, page, pageSize })
       .then(({ items, total }) => {
         res.json({ items, page, pageSize, total });
       })
@@ -25,7 +24,8 @@ export function productReadRoutes(redis: Redis): Router {
   router.get('/:id', validate({ params: detailParams }), (req, res, next) => {
     const { id } = req.params as unknown as DetailParams;
 
-    findProduct(redis, id)
+    readModel
+      .find(id)
       .then((product) => {
         if (product === undefined) {
           throw createError(404, 'Product not found');

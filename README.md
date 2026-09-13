@@ -64,17 +64,15 @@ npm run test:cov # needs a PostgreSQL and that Redis, see below
 npm run lint
 ```
 
-The product read tests use the compose Redis on database 9 and PostgreSQL through the same stack, so `docker compose up -d --wait` has to be running; `TEST_REDIS_URL` and `TEST_DATABASE_URL` override the defaults. A run reporting `no tests` with 0 % coverage is the integration project failing to reach PostgreSQL rather than an empty suite.
-
 `npm run dev` starts the API on `PORT` (default `3100`); `GET http://localhost:3100/api/health` should answer `{"status":"ok"}`. Read its logs on the terminal: under `tsx watch` a redirect such as `npm run dev > out.log` swallows them, so use `npx tsx src/server.ts > out.log` when you need them in a file.
 
 The suite is split into layers, so the one that needs nothing can run anywhere:
 
-| Layer                              | Command                    | Needs                                 | Runs                        |
-| ---------------------------------- | -------------------------- | ------------------------------------- | --------------------------- |
-| unit (`tests/unit/`)               | `npm test`                 | nothing                               | pre-commit hook, everywhere |
-| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL and the Redis on 6399 | CI, before every push       |
-| both, with coverage                | `npm run test:cov`         | the same two                          | CI (the 100 % gate)         |
+| Layer                              | Command                    | Needs                                                                                                            | Runs                        |
+| ---------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing                                                                                                          | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | PostgreSQL, the compose Redis (database 9) and, for the queue and shutdown tests only, a throwaway Redis on 6399 | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | the same two                                                                                                     | CI (the 100 % gate)         |
 
 The integration tests run against a real PostgreSQL and a real Redis, never a mock. Point them at one with
 `TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
