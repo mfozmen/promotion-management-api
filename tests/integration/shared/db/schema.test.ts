@@ -1,12 +1,17 @@
 import { eq, sql } from 'drizzle-orm';
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  ingestionChunks,
-  ingestionJobs,
-  products,
-  promotions,
-  reconcilerState,
-} from '@src/shared/db/schema.js';
+import { products } from '@src/modules/catalog/db/schema/products.js';
+import { chunkStatus } from '@src/modules/ingestion/db/schema/chunk-status.js';
+import { ingestionStatus } from '@src/modules/ingestion/db/schema/ingestion-status.js';
+import { pricingRuleType } from '@src/modules/pricing/db/schema/pricing-rule-type.js';
+import { pricingRules } from '@src/modules/pricing/db/schema/pricing-rules.js';
+import { promotionDiscountType } from '@src/modules/promotion/db/schema/promotion-discount-type.js';
+import { promotionStatus } from '@src/modules/promotion/db/schema/promotion-status.js';
+import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
+import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
+import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
+import { reconcilerState } from '@src/workers/reconciler/db/schema/reconciler-state.js';
 import { sqlStateOf, useTestDatabase } from '../../db.js';
 
 const EXCLUSION_VIOLATION = '23P01';
@@ -429,5 +434,51 @@ describe('ingestion_chunks', () => {
       status: 'pending',
       lastError: null,
     });
+  });
+
+  // Every enum the modules declare is the enum the migrations created. Drizzle generates
+  // migrations from these declarations, so a hand-edited migration and a moved file are
+  // both ways for the two to drift apart with nothing else noticing.
+  it.each([
+    [promotionStatus, 'promotion_status'],
+    [promotionDiscountType, 'promotion_discount_type'],
+    [pricingRuleType, 'pricing_rule_type'],
+    [ingestionStatus, 'ingestion_status'],
+    [chunkStatus, 'chunk_status'],
+  ])('declares $1 with the values the database has', async (declared, name) => {
+    const { rows } = await db().execute<{ value: string }>(
+      sql`select enumlabel as value from pg_enum
+          join pg_type on pg_type.oid = pg_enum.enumtypid
+          where pg_type.typname = ${name} order by enumsortorder`,
+    );
+
+    expect(rows.map((row) => row.value)).toEqual([...declared.enumValues]);
+  });
+
+  // The checks and indexes each table declares are the ones the database has. Drizzle
+  // evaluates that second argument lazily, so nothing else in the suite reads it: a check
+  // dropped from a declaration would leave the migration's constraint in place today and
+  // silently disappear on the next generated migration.
+  it.each([
+    [products, 'products'],
+    [promotions, 'promotions'],
+    [ingestionJobs, 'ingestion_jobs'],
+    [pricingRules, 'pricing_rules'],
+  ])('declares the checks and indexes $1 has', async (table, name) => {
+    const config = getTableConfig(table);
+    const declared = [
+      ...config.checks.map((check) => check.name),
+      ...config.indexes.map((index) => index.config.name),
+    ].sort();
+
+    const { rows } = await db().execute<{ name: string }>(
+      sql`select conname as name from pg_constraint
+          where conrelid = ${name}::regclass and contype = 'c'
+          union all
+          select indexname as name from pg_indexes
+          where tablename = ${name} and indexname not like '%_pkey'`,
+    );
+
+    expect(rows.map((row) => row.name).sort()).toEqual(expect.arrayContaining(declared));
   });
 });
