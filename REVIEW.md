@@ -806,7 +806,7 @@ ways in one section: "at most one active promotion per product", "at most one
 applied promotion", and "product level wins". No single name ran through the
 prose, so a rename had nothing to follow.
 
-8c.7 Directories are named for a role (`domain/`, `db/`, `http/`, `jobs/`),
+8c.7 Directories are named for a role (`domain/`, `db/`, `http/`, `events/`),
 never for a kind of syntax: `models/`, `types/`, `interfaces/`, `classes/`,
 `utils/`, `helpers/` are findings. The tree is in ADR-0008.
 

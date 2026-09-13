@@ -1,19 +1,13 @@
 import type { Redis } from 'ioredis';
-import { toProductView } from '../domain/to-product-view.js';
 import { ReadModelUnavailable } from './read-model-unavailable.js';
 
-interface Page {
-  category?: string;
-  order: 'asc' | 'desc';
-  page: number;
-  pageSize: number;
-}
-
-/** The storefront's whole view of Redis: the keys it reads, the commands it
- *  sends and what a failure of one means (ADR-0006). */
+/** The storefront's gateway to Redis: which keys it reads and what a failed
+ *  command means. It holds no opinion about what any of it is for — a miss is
+ *  an empty hash here, and a 404 only where the use case says so (ADR-0008). */
 export class ProductReadModel {
   static readonly ALL_PRODUCTS = 'products:all';
   static readonly READY_KEY = 'readmodel:ready';
+
   constructor(private readonly redis: Redis) {}
 
   static productKey(id: number): string {
@@ -24,82 +18,67 @@ export class ProductReadModel {
     return `category:${category}`;
   }
 
-  /** False until a rebuild has published the key; unreachable is the same
-   *  answer to a client as unbuilt, so the caller gets one of them or a 503. */
   async isReady(): Promise<boolean> {
     return (await this.reached(this.redis.exists(ProductReadModel.READY_KEY))) === 1;
   }
 
-  async find(id: number) {
+  async hash(id: number): Promise<Record<string, string>> {
     const key = ProductReadModel.productKey(id);
-    const hash = await this.reached(this.redis.hgetall(key), key);
 
-    return Object.keys(hash).length === 0 ? undefined : toProductView(hash);
+    return this.reached(this.redis.hgetall(key), key);
   }
 
-  /** One ZRANGE for the page and one ZCARD for the total, then a single
-   *  pipeline of HGETALLs: three round trips whatever the page size. With REV,
-   *  Redis expects the maximum first. */
-  async list({ category, order, page, pageSize }: Page) {
-    const key =
-      category === undefined
-        ? ProductReadModel.ALL_PRODUCTS
-        : ProductReadModel.categoryKey(category);
-    // Named to an operator only when we composed it, never when a caller did.
-    const ours = category === undefined ? ProductReadModel.ALL_PRODUCTS : undefined;
-    const offset = (page - 1) * pageSize;
-
-    const [ids, total] = await this.reached(
-      Promise.all([
-        order === 'asc'
-          ? this.redis.zrange(key, '-inf', '+inf', 'BYSCORE', 'LIMIT', offset, pageSize)
-          : this.redis.zrange(key, '+inf', '-inf', 'BYSCORE', 'REV', 'LIMIT', offset, pageSize),
-        this.redis.zcard(key),
-      ]),
-      ours,
+  /** With REV, Redis expects the maximum first. */
+  async page(key: string, order: 'asc' | 'desc', offset: number, size: number) {
+    return this.reached(
+      order === 'asc'
+        ? this.redis.zrange(key, '-inf', '+inf', 'BYSCORE', 'LIMIT', offset, size)
+        : this.redis.zrange(key, '+inf', '-inf', 'BYSCORE', 'REV', 'LIMIT', offset, size),
     );
+  }
 
+  async count(key: string): Promise<number> {
+    return this.reached(this.redis.zcard(key));
+  }
+
+  /** One pipeline whatever the page size, never one round trip per product. */
+  async hashes(ids: readonly string[]): Promise<Record<string, string>[]> {
     const pipeline = this.redis.pipeline();
     for (const id of ids) pipeline.hgetall(ProductReadModel.productKey(Number(id)));
     // `exec` is typed nullable: ioredis answers null for a transaction a WATCH
     // aborted, and a pipeline has no WATCH.
     const replies = (await this.reached(pipeline.exec())) ?? [];
-    for (const [index, [error]] of replies.entries()) {
+
+    return replies.map(([error, hash], index) => {
       if (error !== null) {
         throw ProductReadModel.classify(error, ProductReadModel.productKey(Number(ids[index])));
       }
-    }
 
-    // A member whose hash is gone is dropped rather than taking the page with
-    // it (ADR-0006).
-    const present = replies
-      .map(([, hash]) => hash as Record<string, string>)
-      .filter((hash) => Object.keys(hash).length > 0);
-
-    return { items: present.map(toProductView), total };
+      return hash as Record<string, string>;
+    });
   }
 
   /** Only `WRONGTYPE` is the writer's doing; every other reply, and anything
-   *  that is not an error at all, is a reason to come back (REVIEW.md 5.8). */
-  private static classify(error: unknown, key?: string): unknown {
+   *  that is not an error at all, is a reason to come back (REVIEW.md 5.8).
+   *  The key is named only when this class composed it, never when a caller
+   *  handed one in. */
+  private static classify(error: unknown, ourKey?: string): unknown {
     if (!(error instanceof Error) || !error.message.startsWith('WRONGTYPE')) {
       return new ReadModelUnavailable('The read model cannot be reached', error);
     }
-    if (key === undefined) return error;
+    if (ourKey === undefined) return error;
 
-    const named = new Error(`${error.message} at ${key}`);
+    const named = new Error(`${error.message} at ${ourKey}`);
     named.name = error.name;
 
     return named;
   }
-  /** Wraps the reply and never the parse that follows it. A direct command
-   *  rejects with the same shapes a pipeline resolves with, so both go through
-   *  one classifier. */
-  private async reached<T>(reply: Promise<T>, key?: string): Promise<T> {
+
+  private async reached<T>(reply: Promise<T>, ourKey?: string): Promise<T> {
     try {
       return await reply;
     } catch (error) {
-      throw ProductReadModel.classify(error, key);
+      throw ProductReadModel.classify(error, ourKey);
     }
   }
 }

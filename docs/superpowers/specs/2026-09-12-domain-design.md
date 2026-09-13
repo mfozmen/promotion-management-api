@@ -693,13 +693,13 @@ Target layout: a file appears here before it exists on disk, and lands with the 
 src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
-    product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
+    product/     http/product-read-routes.ts, queries/ (one class per use case), db/product-read-model.ts, domain/
     promotion/
       domain/    effective-price-calculator.ts (EffectivePriceCalculator: discounts injected, the lookup inline in calculate, the input guard a private method), percentage-discount.ts and fixed-discount.ts (one Discount class each, formula and value check together), candidate-selection.ts (runs the engine over already-loaded rules, pure)
         dto/     promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), discount.ts (the Discount interface: valueError + discountCents) — REVIEW.md 8c.8
       db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
-      jobs/      scheduling.ts
+      events/    scheduling.ts
     pricing/
       domain/    base-price-calculator.ts (compiles the rules, owns the engine, serialises its runs, prices a row), base-price-calculator-cache.ts (caches a compiled calculator; the query that feeds it is the caller's)
         dto/     pricing-rule-row.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8

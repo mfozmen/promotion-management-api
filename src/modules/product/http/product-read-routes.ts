@@ -1,35 +1,37 @@
 import { Router } from 'express';
 import { validate } from '../../../shared/http/request-validator.js';
-import createError from 'http-errors';
-import { ProductReadModel } from '../db/product-read-model.js';
 import { detailParams, type DetailParams } from '../domain/dto/detail-params.js';
 import { listQuery, type ListQuery } from '../domain/dto/list-query.js';
+import type { FindProductQuery } from '../queries/find-product-query.js';
+import type { ListProductsQuery } from '../queries/list-products-query.js';
+import type { ProductReadModel } from '../db/product-read-model.js';
 import { requireReadModel } from './require-read-model.js';
 
-export function productReadRoutes(readModel: ProductReadModel): Router {
+interface Queries {
+  readModel: ProductReadModel;
+  find: FindProductQuery;
+  list: ListProductsQuery;
+}
+
+/** Each route validates, calls one `execute` and serialises. Nothing here
+ *  branches on what the read model answered (ADR-0008). */
+export function productReadRoutes({ readModel, find, list }: Queries): Router {
   const router = Router();
   router.use(requireReadModel(readModel));
 
   router.get('/', validate({ query: listQuery }), (req, res, next) => {
-    const { category, order, page, pageSize } = req.query as unknown as ListQuery;
-
-    readModel
-      .list({ category, order, page, pageSize })
-      .then(({ items, total }) => {
-        res.json({ items, page, pageSize, total });
+    list
+      .execute(req.query as unknown as ListQuery)
+      .then((page) => {
+        res.json(page);
       })
       .catch(next);
   });
 
   router.get('/:id', validate({ params: detailParams }), (req, res, next) => {
-    const { id } = req.params as unknown as DetailParams;
-
-    readModel
-      .find(id)
+    find
+      .execute((req.params as unknown as DetailParams).id)
       .then((product) => {
-        if (product === undefined) {
-          throw createError(404, 'Product not found');
-        }
         res.json(product);
       })
       .catch(next);
