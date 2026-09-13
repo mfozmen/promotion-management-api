@@ -3,7 +3,10 @@ import express, { type Express } from 'express';
 import request from 'supertest';
 import { errorHandler } from '@src/shared/http/error-handler.js';
 import { httpLogger } from '@src/shared/http/http-logger.js';
-import { HttpError } from '@src/shared/http/http-error.js';
+import createError from 'http-errors';
+
+/** The raiser owns the hint now, so the test writes one rather than importing it. */
+const retryAfter = (): string => '5';
 import { captureLogger, type CapturedLogger } from '../../capture-logger.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
@@ -20,42 +23,46 @@ function appThrowing(error: unknown, captured: CapturedLogger = captureLogger())
 
 describe('errorHandler', () => {
   it.each([
-    [400, 'VALIDATION_ERROR' as const, 'Invalid request body'],
-    [404, 'NOT_FOUND' as const, 'Product not found'],
-    [409, 'CONFLICT' as const, 'An active promotion already covers this product'],
-    [429, 'BACKPRESSURE' as const, 'Too many pending imports'],
-  ])('answers %i with its code and message', async (status, code, message) => {
-    const res = await request(appThrowing(new HttpError(code, message))).get('/boom');
+    [400, 'Invalid request body'],
+    [404, 'Product not found'],
+    [409, 'An active promotion already covers this product'],
+    [429, 'Too many pending imports'],
+  ])('answers %i with the message its raiser wrote', async (status, message) => {
+    // A 4xx is exposed by default, so the raiser's words reach the caller and the
+    // status carries which failure it was. There is no code field to disagree with it.
+    const res = await request(appThrowing(createError(status, message))).get('/boom');
 
     expect(res.status).toBe(status);
     expect(res.type).toBe('application/json');
-    expect(res.body).toEqual({ error: { code, message } });
+    expect(res.body).toEqual({ error: { message } });
   });
 
   it('never returns the message of a 5xx a handler raised', async () => {
     // Written for an operator, and this one carries a credential and a host.
-    const leaky = new HttpError('INTERNAL', 'password hunter2 rejected by 10.0.0.5');
+    const leaky = createError(500, 'password hunter2 rejected by 10.0.0.5');
     const res = await request(appThrowing(leaky)).get('/boom');
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
     expect(res.text).not.toContain('hunter2');
     expect(res.text).not.toContain('10.0.0.5');
   });
 
-  it('answers a designed 5xx with our own message, not the operator prose', async () => {
+  it('answers a designed 5xx with the public wording its raiser vouched for', async () => {
+    // `expose: true` is the raiser saying these words are for a client, so the
+    // words have to be written for one. Operator prose does not get the flag.
     const res = await request(
       appThrowing(
-        new HttpError('READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', [
-          { path: 'host', message: '10.0.0.5' },
-        ]),
+        createError(503, 'The read model is not ready yet; retry shortly', {
+          headers: { 'retry-after': retryAfter() },
+          expose: true,
+        }),
       ),
     ).get('/boom');
 
     expect(res.status).toBe(503);
     expect(res.body).toEqual({
       error: {
-        code: 'READ_MODEL_NOT_READY',
         // Not "Internal server error": a 503 tells a human to retry.
         message: 'The read model is not ready yet; retry shortly',
       },
@@ -68,41 +75,39 @@ describe('errorHandler', () => {
   it('gives a 5xx code with no public wording nothing to say', async () => {
     const res = await request(
       appThrowing(
-        new HttpError('INTERNAL', 'upstream 10.0.0.5 refused', [
-          { path: 'sql', message: 'select 1' },
-        ]),
+        createError(500, 'upstream 10.0.0.5 refused', {
+          details: [{ path: 'sql', message: 'select 1' }],
+        }),
       ),
     ).get('/boom');
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
     expect(res.text).not.toContain('10.0.0.5');
     expect(res.text).not.toContain('select 1');
   });
 
   it('logs a handler-raised 5xx as a server fault, with its message', async () => {
     const captured = captureLogger();
-    await request(appThrowing(new HttpError('INTERNAL', 'the wheels came off'), captured)).get(
-      '/boom',
-    );
+    await request(appThrowing(createError(500, 'the wheels came off'), captured)).get('/boom');
 
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
       error: { message: 'the wheels came off' },
     });
   });
 
-  it('cannot be given a status that disagrees with its code', () => {
-    // The pairing was wrong in three directions across three commits. It is not
-    // a rule any more: `new HttpError(404, 'CONFLICT', …)` does not compile, and
-    // the status is whatever the code says it is.
-    expect(new HttpError('CONFLICT', 'x').status).toBe(409);
-    expect(new HttpError('READ_MODEL_NOT_READY', 'x').status).toBe(503);
+  it('masks a 5xx by default and exposes a 4xx, without anyone deciding', () => {
+    // The library's own rule, and the reason we keep none of our own: a message
+    // written for an operator is withheld because nobody remembered to withhold it.
+    expect(createError(500, 'x').expose).toBe(false);
+    expect(createError(409, 'x').expose).toBe(true);
+    expect(createError(503, 'x', { expose: true }).expose).toBe(true);
   });
 
   it('bounds each detail message, not just how many there are', async () => {
-    const raised = new HttpError('VALIDATION_ERROR', 'Invalid request body', [
-      { path: 'body.sku', message: 'x'.repeat(5_000) },
-    ]);
+    const raised = createError(400, 'Invalid request body', {
+      details: [{ path: 'body.sku', message: 'x'.repeat(5_000) }],
+    });
 
     const res = await request(appThrowing(raised)).get('/boom');
 
@@ -117,7 +122,7 @@ describe('errorHandler', () => {
     // producer. This is its test, next to the code it bounds.
     const details = Array.from({ length: 21 }, (_, i) => ({ path: `body.f${i}`, message: 'bad' }));
     const res = await request(
-      appThrowing(new HttpError('VALIDATION_ERROR', 'Invalid request body', details)),
+      appThrowing(createError(400, 'Invalid request body', { details: details })),
     ).get('/boom');
 
     expect(res.body.error.details).toHaveLength(20);
@@ -126,7 +131,7 @@ describe('errorHandler', () => {
   it('includes details when the error carries them', async () => {
     const details = [{ path: 'page', message: 'Too small' }];
     const res = await request(
-      appThrowing(new HttpError('VALIDATION_ERROR', 'Invalid request query', details)),
+      appThrowing(createError(400, 'Invalid request query', { details: details })),
     ).get('/boom');
 
     expect(res.body.error.details).toEqual(details);
@@ -134,11 +139,11 @@ describe('errorHandler', () => {
 
   it('logs the rejection with the correlation id', async () => {
     const captured = captureLogger();
-    await request(appThrowing(new HttpError('CONFLICT', 'Overlap'), captured))
+    await request(appThrowing(createError(409, 'Overlap'), captured))
       .get('/boom')
       .set('x-request-id', 'trace-1');
 
-    const rejected = captured.lines.find((line) => line.code === 'CONFLICT');
+    const rejected = captured.lines.find((line) => line.level === 40);
     expect(rejected).toMatchObject({ status: 409, reqId: 'trace-1' });
   });
 });
@@ -150,7 +155,7 @@ describe('errorHandler: unexpected errors', () => {
     );
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
     expect(res.text).not.toContain('ECONNREFUSED');
     expect(res.text).not.toContain('at ');
   });
@@ -167,7 +172,10 @@ describe('errorHandler: unexpected errors', () => {
 
   it('logs a retriable 5xx as a condition, not a fault, and joins it to the response', async () => {
     const captured = captureLogger();
-    const raised = new HttpError('READ_MODEL_NOT_READY', 'rebuild running');
+    const raised = createError(503, 'rebuild running', {
+      headers: { 'retry-after': retryAfter() },
+      expose: true,
+    });
     // The real `Error.cause`, not the third constructor argument, which is
     // `details`: `serializeError` reads `err.cause` and would never see it there.
     raised.cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
@@ -178,13 +186,13 @@ describe('errorHandler: unexpected errors', () => {
     // would otherwise write one alertable line per request. The two top-level fields are
     // what join the line to the response the client read.
     const logged = captured.lines.find((line) => line.level === 40);
-    expect(logged).toMatchObject({ code: 'READ_MODEL_NOT_READY', status: 503 });
+    expect(logged).toMatchObject({ status: 503 });
     expect(captured.lines.some((line) => line.level === 50)).toBe(false);
   });
 
   it('bounds a 4xx message, so a handler cannot mirror a long id back', async () => {
     const res = await request(
-      appThrowing(new HttpError('NOT_FOUND', `Product ${'9'.repeat(4_000)} not found`)),
+      appThrowing(createError(404, `Product ${'9'.repeat(4_000)} not found`)),
     ).get('/boom');
 
     expect(res.status).toBe(404);
@@ -192,9 +200,9 @@ describe('errorHandler: unexpected errors', () => {
   });
 
   it('tells a client when to come back on the two codes that mean come back later', async () => {
-    const res = await request(appThrowing(new HttpError('BACKPRESSURE', 'queue is full'))).get(
-      '/boom',
-    );
+    const res = await request(
+      appThrowing(createError(429, 'queue is full', { headers: { 'retry-after': retryAfter() } })),
+    ).get('/boom');
 
     expect(res.status).toBe(429);
     // A band, not a constant: every client that met the outage retrying in the
@@ -204,20 +212,19 @@ describe('errorHandler: unexpected errors', () => {
     expect(after).toBeLessThanOrEqual(10);
   });
 
-  it('spreads the retry hint across clients rather than synchronising them', async () => {
-    const hints = new Set<string>();
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const res = await request(appThrowing(new HttpError('BACKPRESSURE', 'queue is full'))).get(
-        '/boom',
-      );
-      hints.add(String(res.headers['retry-after']));
-    }
+  it("passes the raiser's retry hint through untouched", async () => {
+    // The handler no longer invents one. Spreading the hint so an outage's clients
+    // do not all return in the same second is the raiser's to do, and nothing raises
+    // a retriable error yet — the story that does owns the jitter (ADR-0009).
+    const res = await request(
+      appThrowing(createError(429, 'queue is full', { headers: { 'retry-after': '7' } })),
+    ).get('/boom');
 
-    expect(hints.size).toBeGreaterThan(1);
+    expect(res.headers['retry-after']).toBe('7');
   });
 
   it('sends no retry hint on an error retrying cannot fix', async () => {
-    const res = await request(appThrowing(new HttpError('NOT_FOUND', 'nope'))).get('/boom');
+    const res = await request(appThrowing(createError(404, 'nope'))).get('/boom');
 
     expect(res.headers['retry-after']).toBeUndefined();
   });
@@ -235,7 +242,10 @@ describe('errorHandler: unexpected errors', () => {
       `upsert failed: ${driverError.message} [${driverError.query}] [${driverError.params[0]}]`,
       { cause: driverError },
     );
-    const raised = new HttpError('READ_MODEL_NOT_READY', 'rebuild running');
+    const raised = createError(503, 'rebuild running', {
+      headers: { 'retry-after': retryAfter() },
+      expose: true,
+    });
     raised.cause = wrapped;
 
     await request(appThrowing(raised, captured)).get('/boom');
@@ -250,7 +260,7 @@ describe('errorHandler: unexpected errors', () => {
     const res = await request(appThrowing('something went wrong', captured)).get('/boom');
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
       error: { type: 'string' },
     });
@@ -294,13 +304,27 @@ describe('errorHandler: after the response has started', () => {
 
 describe('errorHandler: exposed client errors body-parser did not raise', () => {
   it('keeps the status of any other exposed client error', async () => {
-    const teapot = Object.assign(new Error('I am a teapot'), { status: 418, expose: true });
+    // The library's own duck type, which body-parser satisfies: `status` and
+    // `statusCode` agreeing, plus a boolean `expose`.
+    const teapot = Object.assign(new Error('I am a teapot'), {
+      status: 418,
+      statusCode: 418,
+      expose: true,
+    });
     const res = await request(appThrowing(teapot)).get('/boom');
 
     expect(res.status).toBe(418);
-    expect(res.body).toEqual({
-      error: { code: 'BAD_REQUEST', message: 'Request could not be processed' },
-    });
+    expect(res.body).toEqual({ error: { message: 'I am a teapot' } });
+  });
+
+  it('answers 500 to an error that only half looks like one', async () => {
+    // `status` without `statusCode` is not the library's shape, and guessing at a
+    // half-shaped error is how a thrown object's own message reaches a client.
+    const halfShaped = Object.assign(new Error('leaky 10.0.0.5'), { status: 418, expose: true });
+    const res = await request(appThrowing(halfShaped)).get('/boom');
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
   });
 
   it('never relabels a server fault as the caller mistake', async () => {
@@ -308,7 +332,7 @@ describe('errorHandler: exposed client errors body-parser did not raise', () => 
     const res = await request(appThrowing(pretender)).get('/boom');
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
   });
 
   it.each([
@@ -320,7 +344,7 @@ describe('errorHandler: exposed client errors body-parser did not raise', () => 
     const res = await request(appThrowing(err)).get('/boom');
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
   });
 
   it('ignores an exposed error with no status', async () => {
@@ -336,13 +360,13 @@ describe('errorHandler: mounted without the http logger', () => {
   it('still answers, instead of throwing inside the error handler', async () => {
     const app = express();
     app.get('/boom', (_req, _res, next) => {
-      next(new HttpError('CONFLICT', 'Overlap'));
+      next(createError(409, 'Overlap'));
     });
     app.use(errorHandler);
 
     const res = await request(app).get('/boom');
 
     expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Overlap' } });
+    expect(res.body).toEqual({ error: { message: 'Overlap' } });
   });
 });

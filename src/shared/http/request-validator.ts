@@ -1,8 +1,7 @@
 import type { RequestHandler } from 'express';
-import type { ZodError } from 'zod';
-import { HttpError } from './http-error.js';
+import type { ZodError, ZodObject } from 'zod';
+import createError from 'http-errors';
 import { MAX_DETAILS } from './max-details.js';
-import type { RequestSchemas } from './request-schemas.js';
 
 const PARTS = ['body', 'query', 'params'] as const;
 
@@ -62,7 +61,11 @@ const shownKeys = (keys: readonly string[]): string =>
  * nested object declares `z.strictObject(...)` itself or a field misspelled
  * inside it is dropped in silence (ADR-0009).
  */
-export function validate(schemas: RequestSchemas): RequestHandler {
+export function validate(schemas: {
+  body?: ZodObject;
+  query?: ZodObject;
+  params?: ZodObject;
+}): RequestHandler {
   const strict = PARTS.flatMap((part) => {
     const schema = schemas[part];
 
@@ -74,11 +77,9 @@ export function validate(schemas: RequestSchemas): RequestHandler {
       const result = schema.safeParse(req[part]);
       if (!result.success) {
         next(
-          new HttpError(
-            'VALIDATION_ERROR',
-            `Invalid request ${part}`,
-            toDetails(result.error, part),
-          ),
+          createError(400, `Invalid request ${part}`, {
+            details: toDetails(result.error, part),
+          }),
         );
 
         return;

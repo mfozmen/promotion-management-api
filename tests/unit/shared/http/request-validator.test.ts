@@ -54,7 +54,6 @@ describe('validate', () => {
       .send({ sku: 'SKU-1', basePriceCents: 1999, basePrice: 19.99 });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
     // A key they typed is an identifier they can act on; a value they sent is
     // not (REVIEW.md 8.3b).
     expect(res.body.error.details).toContainEqual({
@@ -91,7 +90,6 @@ describe('validate', () => {
     const res = await request(app).post('/products');
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 
   it('rejects an empty string where a value is required', async () => {
@@ -187,7 +185,7 @@ describe('validate — how much one request can cost', () => {
 
 describe('validate — a schema with client-controlled keys', () => {
   it('truncates a caller key that reaches the path, not only one in the message', async () => {
-    // A request part cannot itself be a key bag — `RequestSchemas` takes a
+    // A request part cannot itself be a key bag — `validate` takes a
     // `ZodObject` and `validate` calls `.strict()` on it, so `z.record` does not
     // compile as a part. Nested inside one it does, and that is the only way a
     // caller's own key reaches `path`.
@@ -223,7 +221,6 @@ describe('validate — mounted without the http logger', () => {
       .send({ sku: 'SKU-1', basePriceCents: 1, oops: 1 });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
     expect(res.body.error.details[0].message).toContain('oops');
   });
 });
@@ -257,7 +254,6 @@ describe('validate — query', () => {
     const res = await request(app).get(`/products?${query}`);
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
     expect(res.body.error.message).toBe('Invalid request query');
   });
 });
