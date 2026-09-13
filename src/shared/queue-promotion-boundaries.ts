@@ -1,19 +1,21 @@
+import type { PromotionBoundary } from '../modules/promotion/domain/dto/promotion-boundary.js';
+import type { EventBus } from './event-bus.js';
 import type { PromotionBoundaries } from './promotion-boundaries.js';
-import {
-  removePromotionBoundaries,
-  schedulePromotionBoundary,
-  type Queues,
-} from './queue.js';
 
-/**
- * The one implementation of `PromotionBoundaries`, over the BullMQ delayed jobs
- * in `queue.js`. The port exists so a handler can be tested without a broker;
- * this is what the running process passes it (REVIEW.md 12.1).
- */
-export function queuePromotionBoundaries(queues: Queues): PromotionBoundaries {
-  return {
-    schedule: (promotionId, boundary, at, now) =>
-      schedulePromotionBoundary(queues, promotionId, boundary, at, now),
-    remove: (promotionId) => removePromotionBoundaries(queues, promotionId),
-  };
+/** The one implementation of `PromotionBoundaries`, over the event bus's delayed jobs. */
+export class QueuePromotionBoundaries implements PromotionBoundaries {
+  constructor(private readonly bus: EventBus) {}
+
+  async schedule(
+    promotionId: number,
+    boundary: PromotionBoundary,
+    at: Date,
+    now: Date,
+  ): Promise<unknown> {
+    return this.bus.schedulePromotionBoundary(promotionId, boundary, at, now);
+  }
+
+  async remove(promotionId: number): Promise<unknown> {
+    return this.bus.removePromotionBoundaries(promotionId);
+  }
 }

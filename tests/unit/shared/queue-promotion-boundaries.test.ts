@@ -1,44 +1,47 @@
 import { describe, expect, it } from 'vitest';
-import type { Queues } from '@src/shared/queue.js';
-import { queuePromotionBoundaries } from '@src/shared/queue-promotion-boundaries.js';
+import type { EventBus } from '@src/shared/event-bus.js';
+import { QueuePromotionBoundaries } from '@src/shared/queue-promotion-boundaries.js';
 
 /**
- * The adapter is the whole gap between a handler and BullMQ, and it is the one
- * piece `src/server.ts` cannot prove because that file is excluded from
- * coverage. So the deterministic job id and the delay are pinned here.
+ * This adapter is the gap between a handler and the event bus, and `src/server.ts`
+ * is the one place that wires it — a file excluded from coverage, so nothing but
+ * this test says the wiring passes what it claims to.
+ *
+ * The job id and the delay are the bus's contract rather than the adapter's, and
+ * `event-bus.test.ts` pins those against a real Redis.
  */
-const recordingQueues = () => {
-  const added: { id?: string; delay?: number }[] = [];
-  const removed: string[] = [];
-  const events = {
-    add: (_name: string, _payload: unknown, opts: { jobId?: string; delay?: number }) => {
-      added.push({ id: opts.jobId, delay: opts.delay });
-      return Promise.resolve({ id: opts.jobId });
+function recordingBus() {
+  const scheduled: { promotionId: number; boundary: string; at: Date; now: Date }[] = [];
+  const removed: number[] = [];
+  const bus = {
+    schedulePromotionBoundary: (promotionId: number, boundary: string, at: Date, now: Date) => {
+      scheduled.push({ promotionId, boundary, at, now });
+      return Promise.resolve({});
     },
-    remove: (id: string) => {
-      removed.push(id);
-      return Promise.resolve(1);
+    removePromotionBoundaries: (promotionId: number) => {
+      removed.push(promotionId);
+      return Promise.resolve({ activate: 1, expire: 1 });
     },
-  };
-  return { queues: { events, ingestion: events } as unknown as Queues, added, removed };
-};
+  } as unknown as EventBus;
+  return { bus, scheduled, removed };
+}
 
-describe('queuePromotionBoundaries', () => {
-  it('schedules an activate for the gap between now and the start', async () => {
-    const { queues, added } = recordingQueues();
+describe('QueuePromotionBoundaries', () => {
+  it('passes the boundary, the instant and the clock through untouched', async () => {
+    const { bus, scheduled } = recordingBus();
     const now = new Date('2026-09-13T00:00:00.000Z');
     const at = new Date('2026-09-13T01:00:00.000Z');
 
-    await queuePromotionBoundaries(queues).schedule(7, 'activate', at, now);
+    await new QueuePromotionBoundaries(bus).schedule(7, 'activate', at, now);
 
-    expect(added).toEqual([{ id: 'promo:7:activate', delay: 3_600_000 }]);
+    expect(scheduled).toEqual([{ promotionId: 7, boundary: 'activate', at, now }]);
   });
 
-  it('removes both boundary jobs for a promotion', async () => {
-    const { queues, removed } = recordingQueues();
+  it('asks the bus to drop both boundary jobs for a promotion', async () => {
+    const { bus, removed } = recordingBus();
 
-    await queuePromotionBoundaries(queues).remove(7);
+    await new QueuePromotionBoundaries(bus).remove(7);
 
-    expect(removed).toEqual(['promo:7:activate', 'promo:7:expire']);
+    expect(removed).toEqual([7]);
   });
 });

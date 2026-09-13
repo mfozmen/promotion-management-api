@@ -2,10 +2,10 @@ import { createApp } from './app.js';
 import { loadConfig } from './shared/config.js';
 import { createDb, createPool } from './shared/db/client.js';
 import { runMigrations } from './shared/db/migrate.js';
+import { EventBus } from './shared/event-bus.js';
 import { logger } from './shared/logger.js';
 import { queueEnqueue } from './shared/queue-enqueue.js';
-import { queuePromotionBoundaries } from './shared/queue-promotion-boundaries.js';
-import { createQueues } from './shared/queue.js';
+import { QueuePromotionBoundaries } from './shared/queue-promotion-boundaries.js';
 import { parseShutdownTimeout, shutdown } from './shared/shutdown.js';
 
 const config = loadConfig();
@@ -16,7 +16,7 @@ const shutdownTimeoutMs = parseShutdownTimeout(process.env.SHUTDOWN_TIMEOUT_MS);
 await runMigrations(config.DATABASE_URL);
 
 const pool = createPool(config.DATABASE_URL);
-const queues = createQueues(config.REDIS_URL);
+const bus = EventBus.connect(config.REDIS_URL);
 
 // Every dependency the routes need is passed here, because `createApp` mounts a
 // route only when it has them: an omission is a 404 in production and a green
@@ -25,8 +25,8 @@ const queues = createQueues(config.REDIS_URL);
 const app = createApp({
   logger,
   db: createDb(pool),
-  enqueue: queueEnqueue(queues),
-  boundaries: queuePromotionBoundaries(queues),
+  enqueue: queueEnqueue(bus),
+  boundaries: new QueuePromotionBoundaries(bus),
 });
 
 const server = app.listen(config.PORT, () => {
@@ -38,7 +38,7 @@ const server = app.listen(config.PORT, () => {
 // the sockets close, which otherwise hold the loop open until SIGKILL.
 process.on('SIGTERM', () => {
   const startedAt = Date.now();
-  void shutdown(server, queues, shutdownTimeoutMs)
+  void shutdown(server, bus, shutdownTimeoutMs)
     .then(async (path) => {
       await pool.end();
       logger.info({ path, durationMs: Date.now() - startedAt }, 'shutdown complete');

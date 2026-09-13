@@ -10,6 +10,8 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Express 5
 - TypeScript (strict mode)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
+- BullMQ on Redis 7 (event bus; see [ADR-0003](./ADR.md))
+- zod (payload validation at the queue boundary)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
 - SonarCloud (static analysis / quality gate)
@@ -35,9 +37,10 @@ It is one verb rather than two because a one-shot migration service cannot be wa
 
 For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
 
-Tests and checks:
+Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
 
 ```bash
+docker run -d --rm -p 6399:6379 redis:7-alpine
 npm test
 npm run test:cov # needs a PostgreSQL, see below
 npm run lint
@@ -84,11 +87,24 @@ Stop the stack with `docker compose down`, or `docker compose down -v` to drop t
 
 ### Configuration
 
-`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. `npm run dev` and `npm start` read `.env` through Node's `--env-file-if-exists`, so CI, which passes the environment directly and has no `.env`, is unaffected. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
+`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `SHUTDOWN_TIMEOUT_MS` is the one variable `src/shared/config.ts` does not parse: `src/server.ts` reads it directly (ADR-0003). `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
 
 The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. Issue #19 adds the remaining containers (event-handler, ingestion-worker, reconciler) and the `monitoring` profile on top of it.
 
-BullMQ uses Redis logical database 1; database 0 is reserved for the read model, so queue maintenance and read-model rebuilds cannot destroy each other (ADR-0007). `npm run dev` opens the queue connections at startup against `REDIS_URL` but serves without a Redis there: connection errors are logged and every enqueue fails at its 2 s bound rather than hanging. `SIGTERM` closes the HTTP server first and the queues last, waiting at most `SHUTDOWN_TIMEOUT_MS` (default 10 s, `0` exits immediately) for open connections (ADR-0003).
+### The queue
+
+BullMQ uses Redis logical database 1, the `REDIS_QUEUE_DB` default, while
+database 0 holds the read model, so queue maintenance and read-model rebuilds
+cannot destroy each other (ADR-0007). `src/shared/queue.ts` takes that number as
+a constant rather than from `src/shared/config.ts`, which nothing calls yet.
+
+`npm run dev` opens the queue connections at startup against `REDIS_URL`
+(default `redis://127.0.0.1:6379`), but it starts and serves without a Redis
+there: connection errors are logged and every enqueue fails at its 2 s bound
+rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the
+HTTP server first and the queues last, and waits at most `SHUTDOWN_TIMEOUT_MS`
+(default 10 s, `0` exits immediately) for open connections before closing the
+queues anyway (ADR-0003).
 
 ## Project structure
 

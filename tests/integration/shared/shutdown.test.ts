@@ -2,7 +2,7 @@ import { connect } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
-import { createQueues } from '@src/shared/queue.js';
+import { EventBus } from '@src/shared/event-bus.js';
 import { SHUTDOWN_TIMEOUT_MS, parseShutdownTimeout, shutdown } from '@src/shared/shutdown.js';
 
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
@@ -33,21 +33,21 @@ describe('shutdown', () => {
 
   it('uses the default bound when the caller passes none', async () => {
     const { server } = await listening();
-    const queues = createQueues(redisUrl);
+    const queues = EventBus.connect(redisUrl);
 
     await expect(shutdown(server, queues)).resolves.toBe('drained');
   });
 
   it('drains when nothing is holding the server open', async () => {
     const { server } = await listening();
-    const queues = createQueues(redisUrl);
+    const queues = EventBus.connect(redisUrl);
 
     await expect(shutdown(server, queues, 5_000)).resolves.toBe('drained');
   });
 
   it('forces the exit when a request holds the server past the bound', async () => {
     const { server, port } = await listening();
-    const queues = createQueues(redisUrl);
+    const queues = EventBus.connect(redisUrl);
 
     // A half-sent request: the connection is active, not idle, so `server.close`
     // waits for it and would wait for ever. This is the hang the bound exists for.

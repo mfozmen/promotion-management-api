@@ -1,20 +1,24 @@
 import { describe, expect, it } from 'vitest';
+import type { EventBus } from '@src/shared/event-bus.js';
 import { queueEnqueue } from '@src/shared/queue-enqueue.js';
-import type { Queues } from '@src/shared/queue.js';
 
 describe('queueEnqueue', () => {
-  it('puts the event on the queue its catalogue entry names', async () => {
-    const added: { name: string; payload: unknown }[] = [];
-    const events = {
-      add: (name: string, payload: unknown) => {
-        added.push({ name, payload });
+  it('publishes the event and hands the handler back nothing to act on', async () => {
+    // Which queue an event lands on is the bus's catalogue, asserted in
+    // `event-bus.test.ts`. What this owns is that a handler's `Enqueue` reaches
+    // `publish`, and that the job it returns does not leak to the caller — a
+    // handler able to read a job id would start depending on one.
+    const published: { name: string; payload: unknown }[] = [];
+    const bus = {
+      publish: (name: string, payload: unknown) => {
+        published.push({ name, payload });
         return Promise.resolve({ id: '1' });
       },
-    };
-    const queues = { events, ingestion: events } as unknown as Queues;
+    } as unknown as EventBus;
 
-    await queueEnqueue(queues)('promotion.changed', { promotionId: 7 });
+    const result = await queueEnqueue(bus)('promotion.changed', { promotionId: 7 });
 
-    expect(added).toEqual([{ name: 'promotion.changed', payload: { promotionId: 7 } }]);
+    expect(published).toEqual([{ name: 'promotion.changed', payload: { promotionId: 7 } }]);
+    expect(result).toBeUndefined();
   });
 });

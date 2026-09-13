@@ -1,4 +1,4 @@
-import { closeQueues, type Queues } from './queue.js';
+import type { EventBus } from './event-bus.js';
 
 /** `server.close` waits for every open connection, so one long request can hold
  *  the process open until the orchestrator escalates to `SIGKILL`. Past this the
@@ -14,7 +14,7 @@ export function parseShutdownTimeout(raw: string | undefined): number {
 
 export async function shutdown(
   server: { close: (onClosed: () => void) => void },
-  queues: Queues,
+  bus: EventBus,
   timeoutMs: number = SHUTDOWN_TIMEOUT_MS,
 ): Promise<'drained' | 'forced'> {
   let timer: NodeJS.Timeout | undefined;
@@ -25,6 +25,6 @@ export async function shutdown(
     }),
   ]);
   clearTimeout(timer);
-  await closeQueues(queues);
+  await bus.close();
   return drained ? 'drained' : 'forced';
 }

@@ -475,7 +475,7 @@ immediately (if `startsAt` has passed) or delayed until `startsAt` with
 `jobId = promo:{id}:activate`, and always a delayed job until `endsAt` with
 `jobId = promo:{id}:expire`. Cancel removes both by job id and enqueues an
 immediate `promotion.changed`. Delayed jobs persist in Redis across restarts;
-the reconciler's boundary sweep covers a lost one.
+the reconciler's boundary sweep (section 9) covers a lost one.
 
 Emission happens after the PostgreSQL commit. A crash between commit and
 enqueue leaves the read model stale until the reconciler repairs it; this is
@@ -623,7 +623,7 @@ Automatic:
 - **Stalled recovery**: BullMQ stalled detection with `lockDuration` sized to the time budget; a crashed worker's job is re-run and the lease lets the next worker claim it.
 - **Checkpoint resume**: the compare-and-set `next_offset` means a retry continues, never restarts, and two workers cannot both advance one chunk.
 - **Backpressure**: `429` on new imports above `INGESTION_MAX_WAITING`.
-- **Category-scoped reconciler** (`reconcile.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`/`ends_at` fell between the previous successful sweep and now (the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
+- **Category-scoped reconciler** (`reconcile.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`, `ends_at` or `cancelled_at` fell between the previous successful sweep and now (`cancelled_at` because a cancel whose `promotion.changed` was lost need have no boundary of its own in the window, ADR-0003; the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
 - **Cold start**: the API enqueues `readmodel.rebuild {}` when `readmodel:ready` is missing and answers `503` on storefront routes until it exists.
 - **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: always` brings it back.
 - **Handler isolation**: every handler catches, logs with the job id and rethrows so BullMQ records the failure; nothing crashes the process.
@@ -695,7 +695,7 @@ src/
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
-  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
+  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, events.ts (event schemas, queue routing), queue.ts (BullMQ queues), shutdown.ts, logger.ts (pino, request ids)
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
   unit/          effective-price, csv-lines, ingestion-rules, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
