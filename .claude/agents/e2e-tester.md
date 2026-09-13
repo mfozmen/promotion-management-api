@@ -35,15 +35,26 @@ a server you launched by hand.
    docker compose up -d --wait   # exits non-zero if any service is unhealthy
    ```
 
-3. **The host port is 3000**, published by the compose file. Every health check
+   There is no migration command to run afterwards and you should not look for
+   one. The `api` container applies the migrations in its own entrypoint before
+   it serves, so `--wait` is waiting on a healthcheck that cannot pass in front
+   of an unmigrated schema. Verified by running it: from empty volumes,
+   `up -d --wait` returned 0 with the six tables and `__drizzle_migrations`
+   in place and `/health`
+   answering. Drizzle's migrations table applies only pending rows, so a fresh
+   volume and a warm one both end `up` current.
+
+3. **The host port is 3100**, published by the compose file. Every health check
    and every measurement uses it. Only one run can hold it at a time, which is
    deliberate: two runs measuring the same machine at once produce numbers
    neither of them can trust, so runs serialise. If another session holds the
    port, ask that session to finish rather than starting a second stack.
-4. Wait until `curl -sf localhost:3000/api/health` returns 200, at most 30
-   seconds. If it never does, print `docker compose logs --tail 40 api` and
+4. Wait until `curl -sf localhost:3100/health` returns 200, at most 30
+   seconds. That is the path the application serves today and the one the
+   container's own healthcheck calls; it becomes `/api/health` when PR #30
+   lands, and this line moves with it. If it never does, print `docker compose logs --tail 40 api` and
    FAIL.
-5. **If something else holds port 3000, stop and say so; never kill it.** The
+5. **If something else holds port 3100, stop and say so; never kill it.** The
    process you did not start may be another run mid-measurement or a server the
    owner is using, and you cannot tell an orphan from a live server. Reaping one
    is a person's decision, not yours.

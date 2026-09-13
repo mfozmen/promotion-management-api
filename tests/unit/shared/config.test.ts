@@ -23,7 +23,7 @@ describe('loadConfig', () => {
   it('parses a valid environment and applies the spec defaults', () => {
     expect(loadConfig(validEnv)).toEqual({
       ...validEnv,
-      PORT: 3000,
+      PORT: 3100,
       UPLOAD_DIR: './uploads',
       REDIS_READ_MODEL_DB: 0,
       REDIS_QUEUE_DB: 1,
