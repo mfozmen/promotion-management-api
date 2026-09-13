@@ -4,6 +4,8 @@ import { Redis } from 'ioredis';
 import { eventRegistry } from '@src/events/event-registry.js';
 import { eventRouting } from '@src/events/event-routing.js';
 import { EventQueue } from '@src/shared/queue/event-queue.js';
+import { SweepBoundariesCommand } from '@src/modules/reconciler/commands/sweep-boundaries-command.js';
+import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-scheduler.js';
 import { logger } from '@src/shared/logger.js';
 import { randomUUID } from 'node:crypto';
 
@@ -121,6 +123,43 @@ describe('EventQueue', () => {
     expect(first.id).toBe('promo:5:activate');
     expect(second.id).toBe(first.id);
     expect(await bus.inspect('promotions').getDelayedCount()).toBe(1);
+  });
+
+  it('stores the boundary jobs the scheduler schedules, under the ids it removes them by', async () => {
+    // ADR-0007 promises this test catches a BullMQ that tightens the colon rule.
+    // `promo:{id}:{boundary}` splits in three by luck rather than by method, and
+    // every other test of the scheduler uses a double that validates no id at all.
+    const scheduler = new PromotionScheduler(bus);
+    const now = new Date();
+    const at = new Date(now.getTime() + 86_400_000);
+
+    const activate = await scheduler.schedule(11, 'activate', at, now);
+    const expire = await scheduler.schedule(11, 'expire', at, now);
+
+    expect([activate.id, expire.id]).toEqual(['promo:11:activate', 'promo:11:expire']);
+
+    await scheduler.cancel(11);
+
+    // Not the removal count: BullMQ's script returns `1` for a key that was not
+    // there, so a count cannot tell a removal from a miss — which is what a
+    // `cancel` building a different id from `schedule` would look like.
+    expect(await bus.inspect('promotions').getJob('promo:11:activate')).toBeUndefined();
+    expect(await bus.inspect('promotions').getJob('promo:11:expire')).toBeUndefined();
+  });
+
+  it('accepts the id the boundary sweep builds, which BullMQ parses rather than stores', async () => {
+    // A custom id containing colons must split in exactly three, so an ISO timestamp
+    // in the third part throws on every publish — a sweep that repairs nothing and
+    // never advances its watermark. The rule is BullMQ's; the shape is ours.
+    const since = new Date('2026-09-14T02:50:00.000Z');
+
+    const job = await bus.publish(
+      'promotion.changed',
+      { promotionId: 5 },
+      { jobId: SweepBoundariesCommand.jobId(5, since) },
+    );
+
+    expect(job.id).toBe(`sweep:5:${String(since.getTime())}`);
   });
 
   it.each([

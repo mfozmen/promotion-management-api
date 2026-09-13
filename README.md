@@ -63,8 +63,8 @@ and the three workers, the only ones that close a queue — are given
 `stop_grace_period: 15s` so a worker's bound can be reached and logged: Docker's default grace is
 also 10 s, which would kill the process at the same moment as the warning explaining why the stop
 is slow (ADR-0003). The projection arrives with issue #12, the chunk processor
-with #105, and the reconciler's boundary sweep with #18, in its own pull request under
-`src/workers/reconciler/`. They carry no healthcheck for the same reason: until a worker has
+with #105, and the reconciler's boundary sweep is already
+written, in `src/modules/reconciler/`, waiting on the schedule that calls it. They carry no healthcheck for the same reason: until a worker has
 work, a check could only confirm the process is alive, which `up --wait` already does. All three
 run under `restart: unless-stopped`, as `postgres`, `redis` and `api` do — a worker that exits is
 restarted, one you stop by hand stays stopped. The `tools` browsers and the test stores set no
@@ -140,7 +140,10 @@ The integration tests run against a real PostgreSQL and a real Redis, never a mo
 the `test` profile's two stores — `TEST_DATABASE_URL`
 `postgres://postgres:postgres@127.0.0.1:55432/promotion` and `TEST_REDIS_URL`
 `redis://127.0.0.1:6399/9` — so after `npm run up` the suite needs no override; CI sets both
-explicitly against its own services. Each host is `127.0.0.1` rather than `localhost` because Node
+explicitly against its own services. The queue and shutdown tests read a third variable,
+`QUEUE_TEST_REDIS_URL` (default `redis://127.0.0.1:6399`, the same store), which names the server and
+no logical database: those two files select the indexes in code, because what they exercise is the
+read-model/queue split itself. CI leaves it at that default. Each host is `127.0.0.1` rather than `localhost` because Node
 resolves `localhost` to `::1` first and compose publishes IPv4 only. Pointing
 `TEST_DATABASE_URL` at the application's own server
 (`postgres://promo:promo@127.0.0.1:5432/promotion`) works and puts the clones in the
@@ -181,7 +184,11 @@ delayed boundary jobs, `products` carries `product.upserted`, `ingestion` carrie
 announcements, or a full read-model rebuild, from sitting in front of a flash
 sale's `promotion.changed`: each queue gets its own worker, so two events that
 need different priority get different consumers rather than a priority number
-inside one queue (ADR-0003).
+inside one queue (ADR-0003). No worker consumes any of them yet: `src/workers/`
+is empty, so the reconciler's boundary sweep
+(`src/modules/reconciler/commands/sweep-boundaries-command.ts`, PR #111) runs
+only when something calls it. The worker services story brings the entry points
+and the schedule.
 
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
@@ -207,7 +214,7 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 
 ## Database schema
 
-The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), `0002_active_promotions.sql` creates the `active_promotions` view, and `0003_promotion_list_indexes.sql` adds the two `(product_id, id)` and `(category, id)` btree indexes the admin promotion list filters and orders on — the GiST exclusion indexes cannot serve it, being partial on `status = 'active'`. Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/workers/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
+The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), `0002_active_promotions.sql` creates the `active_promotions` view, `0003_promotion_list_indexes.sql` adds the two `(product_id, id)` and `(category, id)` btree indexes the admin promotion list filters and orders on — the GiST exclusion indexes cannot serve it, being partial on `status = 'active'` — and `0004_promotion_boundary_indexes.sql` adds four partial btree indexes on `starts_at`, `ends_at`, `cancelled_at` and `created_at` for the reconciler's boundary sweep, each skipping the rows that sweep never reads (`status <> 'draft'`, and `cancelled_at is not null` for its own), and `0005_reconciler_watermark_milliseconds.sql` narrows `reconciler_state.last_boundary_sweep_at` to `timestamp (3) with time zone`, so the watermark holds only the milliseconds the sweep's compare-and-set can send back (ADR-0007). Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/modules/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver selects from it instead of restating the predicate (ADR-0004). The admin reads do not: `GET /api/promotions` and `GET /api/promotions/:id` have to show drafts, scheduled and expired promotions too, which the view by definition does not hold, so they project a five-valued `state` from the same half-open window in SQL (one `sql` fragment in `src/modules/promotion/db/promotion-repository.ts`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
 
