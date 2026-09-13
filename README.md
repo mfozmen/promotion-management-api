@@ -45,16 +45,30 @@ command each. Each waits on all three of `postgres`, `redis` and `api` being hea
 that matters is `api`, the only process that migrates, because waiting on the stores alone would
 let a worker connect before the schema exists.
 
-**They start, connect and wait — none of them consumes anything yet.** Each logs the queues it
-holds and says that no consumer is registered, so an idle queue is not mistaken for a drained
-one. The projection arrives with issue #12, the chunk processor with #105, and the reconciler's
-boundary sweep with #18, in its own pull request under `src/workers/reconciler/`. They carry no healthcheck for the same reason: until a worker has
-work, a check could only confirm the process is alive, which `up --wait` already does.
+**They start, connect and wait — none of them consumes anything yet.** Each logs that it holds a
+producer handle on every queue and that no consumer is registered, so an idle queue is not
+mistaken for a drained one; no worker holds a subset of the queues. On `docker compose stop` each
+closes the queue within `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s, the same bound `api` uses) and exits
+anyway if it has not closed by then. The projection arrives with issue #12, the chunk processor
+with #105, and the reconciler's boundary sweep with #18, in its own pull request under
+`src/workers/reconciler/`. They carry no healthcheck for the same reason: until a worker has
+work, a check could only confirm the process is alive, which `up --wait` already does. All three
+run under `restart: unless-stopped`, like every other service here — a worker that exits is
+restarted, one you stop by hand stays stopped.
 
 `ingestion-worker` is capped at 256 MiB and half a CPU, which is the case study's own
 constraint rather than a setting: Scenario A's claim is that a 500 000-row import survives that
-cap, and the measurement is taken against it. `tests/unit/docs/compose-workers.test.ts` parses
-the compose file and fails if the cap goes missing.
+cap, and the measurement is taken against it. It also runs with
+`NODE_OPTIONS=--max-old-space-size=192`, because V8 otherwise picks a heap ceiling _above_ the
+container limit (`docker run -m 256m node:22-alpine` reports 259 MB) and the cap would arrive as
+an unexplained `SIGKILL` instead of a heap error the import can catch; move one number and move
+the other.
+
+`api` and `ingestion-worker` share a named `uploads` volume mounted at `/app/uploads`: `api`
+writes the uploaded file there and the worker reads it back by `file_ref`, so the two have to be
+on the same host. Nothing writes to it yet — the upload endpoint and chunk worker arrive with
+issue #16. `tests/unit/docs/compose-workers.test.ts` parses the compose file and fails if the
+cap, the heap ceiling under it or the shared mount goes missing.
 
 ## Develop
 
@@ -132,7 +146,7 @@ migration fails the build. It reads the success line rather than the exit code b
 `drizzle-kit generate` exits 0 even when it fails and writes nothing; `git add -AN` is what
 makes an untracked new migration visible to the diff (ADR-0003).
 
-Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data` and `redis-data` volumes as well. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
+Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data`, `redis-data` and `uploads` volumes as well. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
 
 ### Configuration
 

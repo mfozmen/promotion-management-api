@@ -74,15 +74,46 @@ describe('the worker services', () => {
 
   it('gives the ingestion worker the same upload volume the api writes to', async () => {
     // `api` streams the upload to a file and the worker reads it back by `file_ref`; without a
-    // shared volume that read is an ENOENT the day the chunk processor lands.
-    const mounts = async (name: string): Promise<unknown> =>
-      ((await services())[name]?.['volumes'] as string[] | undefined)?.find((mount) =>
-        mount.endsWith(':/app/uploads'),
-      );
+    // shared volume that read is an ENOENT the day the chunk processor lands. The target is
+    // taken from each service's own `UPLOAD_DIR`, so a changed directory cannot leave the mount
+    // behind while this stays green.
+    const mount = async (name: string): Promise<string | undefined> => {
+      const service = (await services())[name] ?? {};
+      const dir = (service['environment'] as Record<string, string>)['UPLOAD_DIR'];
 
-    expect(await mounts('ingestion-worker')).toBeDefined();
-    expect(await mounts('ingestion-worker')).toBe(await mounts('api'));
+      return (service['volumes'] as string[] | undefined)?.find((entry) =>
+        entry.endsWith(`:${String(dir)}`),
+      );
+    };
+
+    expect(await mount('ingestion-worker')).toBeDefined();
+    expect(await mount('ingestion-worker')).toBe(await mount('api'));
   });
+
+  it('creates the upload directory for the user the image runs as', async () => {
+    // A named volume takes its ownership from the image's directory. Without one, Docker makes
+    // the mountpoint root-owned and `USER node` gets EACCES on the first upload — a shared
+    // volume that reads as correctly configured and cannot be written to.
+    const dockerfile = await readFile(new URL('../../../Dockerfile', import.meta.url), 'utf8');
+    const [, owner] = /chown (\S+) \/app\/uploads/.exec(dockerfile) ?? [];
+
+    expect(dockerfile.indexOf('mkdir -p /app/uploads')).toBeLessThan(dockerfile.indexOf('USER '));
+    expect(owner).toBe(`${/USER (\S+)/.exec(dockerfile)?.[1] ?? ''}:node`);
+  });
+
+  it.each([...WORKERS, 'api'])(
+    '%s is given longer to stop than it is given to drain',
+    async (name) => {
+      // Docker's default grace period is 10 s and the drain budget defaults to 10 s: the timeout
+      // that exists to log why a stop is taking so long would race the SIGKILL that ends it.
+      const service = (await services())[name] ?? {};
+      const grace = Number(String(service['stop_grace_period']).replace('s', ''));
+      const environment = service['environment'] as Record<string, string>;
+      const drainMs = Number(/:-(\d+)}/.exec(environment['SHUTDOWN_DRAIN_TIMEOUT_MS'] ?? '')?.[1]);
+
+      expect(grace * 1000).toBeGreaterThan(drainMs);
+    },
+  );
 
   it('gives the limit to the ingestion worker alone', async () => {
     // The other two carry no cap on purpose: the case study names one for the import only, and

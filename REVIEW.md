@@ -808,9 +808,10 @@ argument itself was deleted and the status derived from the code.
 
 This reaches the data a line logs, not only the arguments a function takes: a
 worker logged `queues: ['promotions', 'catalog']` where no `catalog` queue
-exists, and the array was a bare string literal, so nothing but a reader could
-catch it. Annotating it `QueueName[]` moved the finding from prose review to the
-build.
+exists. The array was a bare string literal, so only a reader could catch it —
+and it was also a claim the code did not make, since the queue is opened on all
+four. Both went away with the array: the line says what the process does, and
+the one name it still carries is typed to the three services that exist.
 
 8c.6 The same thing is called the same thing everywhere: the class, the file,
 the test file, the directory, the error code, the ADR and the design spec. A

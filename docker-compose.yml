@@ -46,12 +46,14 @@ services:
   api:
     build: .
     restart: unless-stopped
+    stop_grace_period: 15s
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
       REDIS_URL: redis://redis:6379
       REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
       REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
       SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
+      UPLOAD_DIR: /app/uploads
     ports:
       - '127.0.0.1:3100:3100'
     volumes:
@@ -79,6 +81,7 @@ services:
   event-handler:
     build: .
     restart: unless-stopped
+    stop_grace_period: 15s
     command: ['node', 'dist/workers/event-handler.js']
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
@@ -99,6 +102,7 @@ services:
   ingestion-worker:
     build: .
     restart: unless-stopped
+    stop_grace_period: 15s
     command: ['node', 'dist/workers/ingestion-worker.js']
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
@@ -106,6 +110,7 @@ services:
       REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
       REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
       SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
+      UPLOAD_DIR: /app/uploads
       NODE_OPTIONS: --max-old-space-size=192
     volumes:
       - uploads:/app/uploads
@@ -127,6 +132,7 @@ services:
   reconciler:
     build: .
     restart: unless-stopped
+    stop_grace_period: 15s
     command: ['node', 'dist/workers/reconciler.js']
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}

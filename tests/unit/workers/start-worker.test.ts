@@ -75,7 +75,10 @@ describe('startWorker', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     vi.useRealTimers();
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('did not close'));
+    expect(warn).toHaveBeenCalledWith(
+      { worker: 'event-handler' },
+      expect.stringContaining('no close within'),
+    );
     expect(exit).toHaveBeenCalledWith(0);
   });
 

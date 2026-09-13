@@ -4,12 +4,11 @@ import { loadConfig } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 import { EventQueue } from '../shared/queue/event-queue.js';
 
-/**
- * Every worker process, minus its name: connect, say what is and is not happening, and close
- * the queue on SIGTERM. The three entry points differ in a string, so they are two lines each
- * and this is the file that is tested.
- */
-export function startWorker(name: string): void {
+/** The three services in `docker-compose.yml`; a name that is not one of them is not a worker. */
+type WorkerName = 'event-handler' | 'ingestion-worker' | 'reconciler';
+
+/** Every worker process, minus its name: connect, say what is happening, close on SIGTERM. */
+export function startWorker(name: WorkerName): void {
   const config = loadConfig();
   const queue = EventQueue.connect(
     config.REDIS_URL,
@@ -27,12 +26,16 @@ export function startWorker(name: string): void {
   );
 
   process.once('SIGTERM', () => {
-    void stop(queue, config.SHUTDOWN_DRAIN_TIMEOUT_MS);
+    void stop(name, queue, config.SHUTDOWN_DRAIN_TIMEOUT_MS);
   });
 }
 
 /** Bounded: Redis is often what is already gone at shutdown, and `close()` then never settles. */
-async function stop(queue: Pick<EventQueue<never>, 'close'>, timeoutMs: number): Promise<void> {
+async function stop(
+  name: WorkerName,
+  queue: Pick<EventQueue<never>, 'close'>,
+  timeoutMs: number,
+): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   try {
     const closed = await Promise.race([
@@ -41,10 +44,10 @@ async function stop(queue: Pick<EventQueue<never>, 'close'>, timeoutMs: number):
         timer = setTimeout(() => resolve(false), timeoutMs);
       }),
     ]);
-    if (!closed) logger.warn(`the queue did not close within ${String(timeoutMs)}ms; exiting`);
+    if (!closed) logger.warn({ worker: name }, `no close within ${String(timeoutMs)}ms; exiting`);
     process.exit(0);
   } catch (error: unknown) {
-    logger.error({ err: error }, 'queue close failed');
+    logger.error({ worker: name, err: error }, 'queue close failed');
     process.exit(1);
   } finally {
     clearTimeout(timer);
