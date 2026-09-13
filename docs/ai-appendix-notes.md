@@ -129,8 +129,11 @@ rewritten.
     404 withheld the path and body-parser messages were replaced, but zod
     quoted the rejected key back and a test asserted it. The first draft of
     the field-name exception then had no length bound, so a multi-kilobyte
-    key would have come straight back in the error body; 8.3c caps it at 64
-    characters and truncates rather than omits.
+    key would have come straight back in the error body; 8.3c capped it at 64
+    characters and truncated rather than omitting. Both rules were later
+    deleted with the field they governed: the owner removed `details` from the
+    response entirely, so a rejection names the part that failed and nothing
+    else, and the mirror the rules bounded no longer exists to bound.
   - 13b (the rulebook learns, commit `2a2f479`): each of the findings above
     became a rule only because someone happened to notice; 13b makes turning
     a recurring finding into a rule (and fixing a rule that never fires) the
