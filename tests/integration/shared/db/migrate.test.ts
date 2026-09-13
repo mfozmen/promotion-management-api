@@ -50,12 +50,11 @@ describe('runMigrations', () => {
     );
   });
 
-  // The migrator takes the single most recently applied row and applies every journal entry
-  // with a later timestamp; it never compares the hash it stores. So a migration merged out
-  // of order — generated before a sibling that merged first — is skipped silently, on this
-  // boot and every boot after, while `up --wait` still reports success. Counting is what
-  // catches it: a skipped migration is a missing row.
-  it('applies every migration in the journal, not only those after the newest applied one', async () => {
+  // Every journal entry left a row, so nothing in this set was skipped. It is the weaker
+  // half of the guard and cannot fail while the journal is ordered — the condition that
+  // makes the migrator skip is asserted in tests/unit/shared/db/migration-journal.test.ts,
+  // where it is visible.
+  it('records one row per journal entry', async () => {
     const journal = JSON.parse(
       await readFile(`${MIGRATIONS_FOLDER}/meta/_journal.json`, 'utf8'),
     ) as { entries: unknown[] };

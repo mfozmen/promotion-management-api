@@ -59,9 +59,6 @@ services:
     networks:
       - promotion
     healthcheck:
-      # node rather than curl or wget: the alpine image has neither, and this one answers
-      # only after the entrypoint has migrated, which is what makes `up --wait` mean
-      # "migrated and serving" instead of "a process exists".
       test:
         [
           'CMD',
@@ -72,9 +69,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 12
-      # A migration-duration budget, not a boot budget: the first passing check ends the
-      # start period, so a large one is free, and a migration marked unhealthy mid-run gets
-      # torn down and restarts from zero.
       start_period: 180s
 
   adminer:
