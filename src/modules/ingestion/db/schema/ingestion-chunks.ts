@@ -9,12 +9,12 @@ export const ingestionChunks = pgTable(
       .notNull()
       .references(() => ingestionJobs.id),
     chunkIndex: integer('chunk_index').notNull(),
-    startOffset: bigint('start_offset', { mode: 'number' }).notNull(), // first line, inclusive
-    endOffset: bigint('end_offset', { mode: 'number' }).notNull(), // after the last newline, exclusive
-    nextOffset: bigint('next_offset', { mode: 'number' }).notNull(), // durable checkpoint
-    leaseUntil: timestamp('lease_until', { withTimezone: true }), // expired means re-claimable
-    attempts: integer('attempts').notNull().default(0), // claims, budget hand-offs included
-    failures: integer('failures').notNull().default(0), // only errors, and they drive 'failed'
+    startOffset: bigint('start_offset', { mode: 'number' }).notNull(),
+    endOffset: bigint('end_offset', { mode: 'number' }).notNull(),
+    nextOffset: bigint('next_offset', { mode: 'number' }).notNull(),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    failures: integer('failures').notNull().default(0),
     rowsProcessed: integer('rows_processed').notNull().default(0),
     rowsRejected: integer('rows_rejected').notNull().default(0),
     status: chunkStatus('status').notNull().default('pending'),
