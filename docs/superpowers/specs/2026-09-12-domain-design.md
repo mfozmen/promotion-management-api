@@ -469,7 +469,7 @@ dead-letter queue, visible in Bull Board and the admin endpoints).
 | `promotions`  | `promotion.changed` | `{ promotionId }`                    | create (with a target), assign, cancel, delayed activate/expire, reconciler | product target: recompute 1; category target: keyset-scan the category by id in batches of 1 000, recompute, pipeline                                                                               |
 | `maintenance` | `readmodel.rebuild` | `{ category?: string }`              | cold start, admin, reconciler                                               | stream the scope's products from PostgreSQL and recompute each (the delete is part of that write, ADR-0003); `SCAN`+`UNLINK` only ids PostgreSQL no longer has; full rebuild sets `readmodel:ready` |
 | `maintenance` | `reconciler.run`    | `{}` (repeatable, every 5 min)       | reconciler worker schedule                                                  | see section 9                                                                                                                                                                                       |
-| `ingestion`   | `ingestion.chunk`   | `{ jobId, chunkIndex }`              | import registration, resume, time-budget hand-off                           | process the chunk from its checkpoint (section 7)                                                                                                                                                   |
+| `ingestion`   | `chunk.process`     | `{ jobId, chunkIndex }`              | import registration, resume, time-budget hand-off                           | process the chunk from its checkpoint (section 7)                                                                                                                                                   |
 
 Scheduling of promotion boundaries happens when a promotion first becomes
 `active`, which is either create-with-target or `assign`; a draft schedules
@@ -505,7 +505,7 @@ one batch and never duplicates rows.
    (default 4 MiB, ≈ 40 000 rows), each boundary moved forward to the next
    `0x0A`. Chunk 0 starts after the header line (and a UTF-8 BOM, if any).
    Insert the job and its chunk rows in one transaction.
-4. Enqueue one `ingestion.chunk` job per chunk and answer
+4. Enqueue one `chunk.process` job per chunk and answer
    `202 { jobId, chunksTotal }`. Duplicate jobs for a chunk are harmless: the
    lease makes every extra invocation return immediately.
 
@@ -571,7 +571,7 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    ids.
 5. **Budget**: after each batch, if `elapsed > budgetMs` (default 60 s),
    **release** the chunk (`set status = 'pending', lease_until = null where
-... and next_offset = $seen`), enqueue a fresh `ingestion.chunk` job for it
+... and next_offset = $seen`), enqueue a fresh `chunk.process` job for it
    and return. The checkpoint is already durable, so the next invocation
    resumes at `next_offset`. A crash between release and enqueue leaves a
    `pending` chunk without a job; the reconciler's orphan sweep (section 9)
@@ -632,7 +632,7 @@ Automatic:
 - **Backpressure**: `429` on new imports above `INGESTION_MAX_WAITING`.
 - **Product entry write**: the recompute writes `HSET product:{id}` and `HDEL product:{id} promotionId promotionName` when it finds no promotion, in the same `MULTI` as the `ZADD`s and in that order. `HSET` does not remove a field, so a cancelled promotion otherwise keeps a well-formed pair beside a restored base price and the storefront names a finished sale; and a reader that sees the price restored before the pair is cleared gets a discounted price with no promotion, which the storefront refuses for the whole page (ADR-0006).
 - **Cold start**: the storefront routes answer `503` while `readmodel:ready` is missing. Enqueuing `readmodel.rebuild {}` on that condition is **not built yet** — the read-model worker story owns it, along with unlinking the key before its sweep and setting it last, which is what stops a Redis restart reloading the flag and the stale hashes it certified together. Until then a cold start waits for something to start the rebuild, and nothing does.
-- **Category-scoped reconciler** (`reconciler.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`, `ends_at` or `cancelled_at` fell between the previous successful sweep and now (`cancelled_at` because a cancel whose `promotion.changed` was lost need have no boundary of its own in the window, ADR-0003; the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
+- **Category-scoped reconciler** (`reconciler.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`, `ends_at` or `cancelled_at` fell between the previous successful sweep and now (`cancelled_at` because a cancel whose `promotion.changed` was lost need have no boundary of its own in the window, ADR-0003; the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `chunk.process` job (idempotent thanks to the claim).
 - **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: always` brings it back.
 - **Handler isolation**: every handler catches, logs with the job id and rethrows so BullMQ records the failure; nothing crashes the process.
 

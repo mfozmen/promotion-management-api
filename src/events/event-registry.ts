@@ -1,5 +1,5 @@
 import { productUpserted } from '../modules/catalog/events/product-upserted.js';
-import { ingestionChunk } from '../modules/ingestion/events/ingestion-chunk.js';
+import { chunkProcess } from '../modules/ingestion/events/chunk-process.js';
 import { promotionChanged } from '../modules/promotion/events/promotion-changed.js';
 import { readmodelRebuild } from '../modules/product/events/readmodel-rebuild.js';
 import { reconcilerRun } from './reconciler-run.js';
@@ -10,5 +10,5 @@ export const eventRegistry = {
   'promotion.changed': promotionChanged,
   'readmodel.rebuild': readmodelRebuild,
   'reconciler.run': reconcilerRun,
-  'ingestion.chunk': ingestionChunk,
+  'chunk.process': chunkProcess,
 } as const;

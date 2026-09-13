@@ -116,7 +116,7 @@ The compose file holds the two stores, the `api` service built from this reposit
 Four queues, one per urgency class, and `eventRouting` maps an event to one of
 them — the caller never picks. `promotions` carries `promotion.changed` and the
 delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
-`ingestion.chunk`, and `maintenance` carries `readmodel.rebuild` and
+`chunk.process`, and `maintenance` carries `readmodel.rebuild` and
 `reconciler.run`. The partition is what keeps a 500 000-row import's ~500
 announcements, or a full read-model rebuild, from sitting in front of a flash
 sale's `promotion.changed`: each queue gets its own worker, so two events that

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ingestionChunk } from '@src/modules/ingestion/events/ingestion-chunk.js';
+import { chunkProcess } from '@src/modules/ingestion/events/chunk-process.js';
 import { productUpserted } from '@src/modules/catalog/events/product-upserted.js';
 import { promotionChanged } from '@src/modules/promotion/events/promotion-changed.js';
 import { eventRegistry } from '@src/events/event-registry.js';
@@ -10,7 +10,7 @@ import { reconcilerRun } from '@src/events/reconciler-run.js';
 describe('eventRegistry', () => {
   it('names exactly the events the design table lists', () => {
     expect(Object.keys(eventRegistry).sort()).toEqual([
-      'ingestion.chunk',
+      'chunk.process',
       'product.upserted',
       'promotion.changed',
       'readmodel.rebuild',
@@ -24,7 +24,7 @@ describe('eventRegistry', () => {
       'promotion.changed': promotionChanged,
       'readmodel.rebuild': readmodelRebuild,
       'reconciler.run': reconcilerRun,
-      'ingestion.chunk': ingestionChunk,
+      'chunk.process': chunkProcess,
     });
   });
 });
