@@ -180,7 +180,7 @@ assertions.
    scale with the page size: a list of 100 that issues 101 statements is a
    FAIL whatever its p99 says.
 10. **Cache stampede** on both caches the design has, the Redis read model
-    (ADR-0006) and the 60 s pricing rule set (ADR-0005). Expire the hot key or
+    (ADR-0006) and the 60 s promotion rule set the resolver caches (ADR-0004). Expire the hot key or
     sit on the TTL boundary, then run `autocannon -c 100` against it. Observe
     one rebuild rather than a hundred: PostgreSQL statement count during the
     window near one, and one `select` from `pricing_rules` per worker per
