@@ -9,6 +9,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Node.js 22
 - Express 5
 - TypeScript (strict mode)
+- PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
 - Vitest + Supertest (testing)
 - ESLint + Prettier
 - SonarCloud (static analysis / quality gate)
@@ -18,50 +19,98 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
-- Docker with the Compose plugin (PostgreSQL 16 and Redis 7 run locally from `docker-compose.yml`)
+- Docker with the Compose plugin (PostgreSQL 16, Redis 7 and the `api` image built from this repository's `Dockerfile` all run locally from `docker-compose.yml`)
 
 ## Getting started
 
 ```bash
 npm ci
-cp .env.example .env          # placeholders only; .env is gitignored
-docker compose up -d --wait   # PostgreSQL on 5432, Redis on 6379, both healthy
-npm run dev
+cp .env.example .env       # placeholders only; .env is gitignored
+docker compose up -d --wait --wait-timeout 300   # PostgreSQL, Redis and the api, all healthy
 ```
+
+That one command is the whole boot. `api` migrates before it listens, so `--wait` returns only once the schema is current and the application is answering on http://127.0.0.1:3100 — there are no tables, constraints, the `active_promotions` view or seeded `ingestion` pricing rules to install by hand, and no `DATABASE_URL` to get right: the service composes it from the same `POSTGRES_*` variables `postgres` reads. Every `up` is safe, because Drizzle's migrations table applies only what it has not already recorded.
+
+It is one verb rather than two because a one-shot migration service cannot be waited on: `--wait` means "running, or healthy where a healthcheck exists", and a one-shot is neither for long, so it reports green over a migration still installing and red over one that finished. A long-lived service with a healthcheck has no such gap — the check cannot answer in front of a missing schema. ADR-0003 holds the measurements.
+
+For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
 
 Tests and checks:
 
 ```bash
 npm test
-npm run test:cov
+npm run test:cov # needs a PostgreSQL, see below
 npm run lint
 ```
+
+The suite is split into layers, so the one that needs nothing can run anywhere:
+
+| Layer                              | Command                    | Needs           | Runs                        |
+| ---------------------------------- | -------------------------- | --------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing         | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | real PostgreSQL | CI (the 100 % gate)         |
+
+The integration tests run against a real PostgreSQL, never a mock. Point them at one with
+`TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
+default is not the compose server: `docker-compose.yml` publishes 5432 with the `.env`
+credentials, so either reuse it with
+`TEST_DATABASE_URL=postgres://promo:promo@localhost:5432/promotion`, or keep the harness's
+template and clone databases out of the compose volume with a throwaway server:
+
+```bash
+docker run -d --rm --name pma-db-test -p 55432:5432 \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=promotion postgres:16-alpine
+```
+
+The integration project's `globalSetup` applies `src/shared/db/migrations/*.sql` to a template
+database once; each test file then clones that template, so files stay isolated and can run in
+parallel. The template is named after the checkout and clones carry a timestamp, so several
+worktrees can share one server without dropping each other's databases. Run one integration
+suite per worktree at a time, though: the template is rebuilt at the start of each run, so two
+runs in the same checkout would pull it out from under each other. Regenerate the
+migrations with `npm run db:generate` after changing `src/shared/db/schema/`, and apply
+them to a running database with `DATABASE_URL=... npm run db:migrate` (drizzle-kit reads
+`DATABASE_URL`, not `TEST_DATABASE_URL`, and falls back to
+`postgres://postgres:postgres@localhost:5432/promotion` when it is unset, which is not the
+compose server's role). CI's "No schema drift" step runs `npm run db:generate < /dev/null`,
+checks the tool's own success line, then `git add -AN src/shared/db/migrations` and
+`git diff --exit-code src/shared/db/migrations`, so a schema change committed without its
+migration fails the build. It reads the success line rather than the exit code because
+`drizzle-kit generate` exits 0 even when it fails and writes nothing; `git add -AN` is what
+makes an untracked new migration visible to the diff (ADR-0003, commit `c14fa50`).
 
 Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data` and `redis-data` volumes as well.
 
 ### Configuration
 
-`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — but nothing calls it yet, so `npm run dev` currently starts without checking anything. The first module that opens a connection wires it in. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432 and 6379 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL` or `REDIS_URL` to match. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
+`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
 
-The compose file holds the two stores and a browser for each behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. Issue #19 adds the application containers (api, event-handler, ingestion-worker, reconciler), the migration step and the `monitoring` profile on top of it, so that a single `docker compose up` brings the whole stack up. Its `api` service must publish the fixed host port 3000 and answer `/api/health`: that is what `.claude/agents/e2e-tester.md` brings up and measures against, and the port is fixed so two runs cannot measure the same machine at once. Nothing publishes 3000 until then.
+The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. Issue #19 adds the remaining containers (event-handler, ingestion-worker, reconciler) and the `monitoring` profile on top of it.
 
 ## Project structure
 
 ```
-src/    application source code
+src/    application source code (src/shared/db holds the Drizzle schema, client and SQL migrations)
 tests/  automated tests (unit, integration, e2e), each layer mirroring src/
 docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
 
-Inside a layer the tree mirrors `src/`, one test file per source file. Tests import their subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.config.ts` `resolve.alias`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias, the last six having moved off relative specifiers in `ba5c2ca` (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time; PR #50, commit `75130b7`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+
+## Database schema
+
+The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with #36, ADR-0004), and `0002_active_promotions.sql` creates the `active_promotions` view. [`src/shared/db/schema/`](./src/shared/db/schema) is the Drizzle mirror used by queries, one file per table, per enum and one for the view, with the barrel `schema.ts` beside the directory rather than in it, so drizzle-kit does not scan the re-exports and register the view twice (commits `1aaaffc`, `10b326c`, PR #50). Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003, commits `489bc27`, `ba5c2ca`, `888e632`). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree (commit `10b326c`).
+
+`active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver (#36) and the admin reads will select from it instead of restating the predicate (ADR-0004, commit `1aaaffc`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed (commit `2142664`). It is not an endpoint; no route exposes it.
 
 ## API
 
-| Method | Path      | Description                               |
-| ------ | --------- | ----------------------------------------- |
-| GET    | `/health` | Liveness probe, returns `{"status":"ok"}` |
+| Method | Path      | Description                                                    |
+| ------ | --------- | -------------------------------------------------------------- |
+| GET    | `/health` | Liveness probe, returns `{"status":"ok"}`; no query parameters |
 
-Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`); the scaffold health route still sits at `/health` and moves with the `api` service in issue #19.
+Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`); the health route is at `/health` today — it is what the compose healthcheck calls (`eb71ecd`) — and the dependency-checking `/api/health` arrives with PR #30. Until that merges, nothing should poll `/api/health`.
 
 ## Development workflow
 
