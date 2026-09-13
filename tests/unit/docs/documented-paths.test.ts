@@ -1,7 +1,20 @@
 import { readFile, stat } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
-const DOCUMENTS = ['ADR.md', 'README.md', 'CONTRIBUTING.md', 'REVIEW.md'];
+const DOCUMENTS = [
+  'ADR.md',
+  'README.md',
+  'CONTRIBUTING.md',
+  'REVIEW.md',
+  'CLAUDE.md',
+  'docs/superpowers/specs/2026-09-12-domain-design.md',
+  'docs/superpowers/specs/2026-09-12-infrastructure-design.md',
+  '.claude/agents/architecture-critic.md',
+  '.claude/agents/docs-scribe.md',
+  '.claude/agents/e2e-tester.md',
+  '.claude/agents/impact-analyzer.md',
+  '.claude/agents/test-case-generator.md',
+];
 const ROOTS = ['src/', 'tests/', 'docs/', '.claude/', '.github/'];
 
 const BACKTICKED = /`([^`\s]+)`/g;
@@ -18,6 +31,7 @@ const NAMED_BUT_ABSENT = new Map([
     'evidence of a name that reads as an instruction, never a file here',
   ],
   ['src/shared/db/schema/', 'where the table schemas were before they moved into their modules'],
+  ['src/modules/vendor/', 'a module the agent triggers name before it is written'],
 ]);
 
 function isTemplate(path: string): boolean {
@@ -45,10 +59,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-// Every stale path found this week described structure rather than behaviour — a renamed
-// class, a moved file, a deleted barrel — so the suite stayed green through all of them, and
-// two careful readings passed over the same four. Testing each path against the tree found
-// them at once.
+// A stale path describes structure rather than behaviour, so nothing else here goes red on it.
 describe('the documents', () => {
   it.each(DOCUMENTS)('name only paths that exist, in %s', async (document) => {
     const missing: string[] = [];
