@@ -1,8 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-// `127.0.0.1`, not `localhost`: Node resolves `localhost` to `::1` first and compose
-// publishes on IPv4 only, so the connection is refused by an address nothing is listening
-// on while the server sits on the same port one family over.
+// `127.0.0.1`, not `localhost`: Node tries `::1` first and compose publishes IPv4 only.
 const baseUrl =
   process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:55432/promotion';
 

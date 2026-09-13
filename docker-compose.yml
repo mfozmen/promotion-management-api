@@ -103,9 +103,6 @@ services:
     profiles: [test]
     environment:
       POSTGRES_PASSWORD: postgres
-      # The harness connects here to create and drop its template; without it the
-      # server answers on the port and the first query fails 3D000. Applied on an
-      # empty data directory only, so an existing container needs `rm -sfv`.
       POSTGRES_DB: promotion
     ports:
       - '127.0.0.1:55432:5432'
