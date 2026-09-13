@@ -50,7 +50,7 @@ Test cases
 - Precondition: `GET /api/products`
 - Given: a freshly started storefront whose catalogue has not been built yet
 - When: the shopper opens a category list
-- Then: the request is refused with 503 and the code `READ_MODEL_NOT_READY`; no empty list and no prices are shown; when the catalogue is ready the same request returns the category's products
+- Then: the request is refused with 503 and a `Retry-After` telling the shopper's client when to come back; no empty list and no prices are shown; when the catalogue is ready the same request returns the category's products
 - Measure: none
 
 ### shopper-8
@@ -113,5 +113,5 @@ Test cases
 - Precondition: `GET /api/products/:id`
 - Given: a freshly started storefront whose catalogue has not been built yet
 - When: the shopper opens a product straight from a link
-- Then: the request is refused with 503 and the code `READ_MODEL_NOT_READY`; no price is shown; when the catalogue is ready the same link shows the product and its effective price
+- Then: the request is refused with 503 and a `Retry-After` telling the shopper's client when to come back; no price is shown; when the catalogue is ready the same link shows the product and its effective price
 - Measure: none
