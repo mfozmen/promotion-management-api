@@ -17,6 +17,27 @@ rule violated is a FAIL.
 The diff range. Default: `git diff main...HEAD`. If the caller names a PR,
 use `gh pr diff <n>`.
 
+## Re-running on a later head
+
+A pull request is reviewed many times. **After the first pass, review the delta,
+not the branch.** The caller names the commit you last reported on; if it does
+not, ask for it rather than re-deriving the whole branch.
+
+- Diff `<last-reviewed>..HEAD`, and read the earlier report's findings beside it.
+- A finding you raised before is closed when the delta closes it, and open
+  otherwise. Do not re-derive it from scratch, and do not re-report a finding
+  the caller has already routed elsewhere.
+- Re-check an untouched conclusion only when the delta gives you a reason to:
+  a renamed symbol, a changed rule, a claim the new commits contradict.
+- Say in the report which range you reviewed and which findings you carried
+  forward. A pass that silently re-reviewed everything costs the same as the
+  first one and hides what actually changed.
+
+**A verdict is about this pull request.** A finding that can only be fixed by
+code in another story is not a blocker here: name it once, say which issue owns
+it, and do not raise it again on the next head. Repeating it makes every round
+red for something this branch cannot close.
+
 ## Method
 
 1. **Inventory the change.** List every changed file and, inside each, every

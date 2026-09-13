@@ -19,6 +19,27 @@ The design to attack: a spec under `docs/`, an ADR entry in `ADR.md`, a plan,
 or a branch diff. If given a diff, first reconstruct the design it implies.
 Read `ADR.md` and the case study summary in `README.md` for context.
 
+## Re-running on a later head
+
+A pull request is reviewed many times. **After the first pass, review the delta,
+not the branch.** The caller names the commit you last reported on; if it does
+not, ask for it rather than re-deriving the whole branch.
+
+- Diff `<last-reviewed>..HEAD`, and read the earlier report's findings beside it.
+- A finding you raised before is closed when the delta closes it, and open
+  otherwise. Do not re-derive it from scratch, and do not re-report a finding
+  the caller has already routed elsewhere.
+- Re-check an untouched conclusion only when the delta gives you a reason to:
+  a renamed symbol, a changed rule, a claim the new commits contradict.
+- Say in the report which range you reviewed and which findings you carried
+  forward. A pass that silently re-reviewed everything costs the same as the
+  first one and hides what actually changed.
+
+**A verdict is about this pull request.** A finding that can only be fixed by
+code in another story is not a blocker here: name it once, say which issue owns
+it, and do not raise it again on the next head. Repeating it makes every round
+red for something this branch cannot close.
+
 ## Attack checklist
 
 Work through every item and state PASS, RISK or FAIL with a sentence of
