@@ -21,6 +21,16 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
 
+  // body-parser puts the malformed body and the parser's position into the
+  // message of the 400 it raises, and marks it `expose`. The caller already
+  // knows what it sent; the log keeps the detail.
+  if ((err as { type?: unknown }).type === 'entity.parse.failed') {
+    req.log.warn({ status: err.status, reason: err.message }, 'request rejected');
+    res.status(err.status).json({ error: { message: 'Invalid JSON body' } });
+
+    return;
+  }
+
   // `expose` is the library's answer to what a client may read — false for a 5xx
   // unless the raiser said otherwise — so a message written for an operator
   // cannot reach a caller by being forgotten about.
