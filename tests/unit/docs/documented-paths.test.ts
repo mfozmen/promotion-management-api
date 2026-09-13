@@ -1,4 +1,5 @@
 import { readFile, stat } from 'node:fs/promises';
+import { glob } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 const DOCUMENTS = [
@@ -30,6 +31,12 @@ const NAMED_BUT_ABSENT = new Map([
   ['src/modules/vendor/', 'a module the agent triggers name before it is written'],
 ]);
 
+/** `Foo.bar` in a document: a member of one of our own exported declarations. */
+const MEMBER = /`([A-Z][A-Za-z0-9]*)\.([a-zA-Z][A-Za-z0-9_]*)`/g;
+
+/** An `ADR-00NN` citation anywhere in the documents. */
+const CITATION = /\bADR-(\d{4})\b/g;
+
 function isTemplate(path: string): boolean {
   return path.includes('*') || path.includes('<') || path.includes('{');
 }
@@ -55,6 +62,24 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * Where each exported declaration lives. A name the tree does not export is not ours —
+ * `JSON.parse` and `Promise.all` fall out here rather than needing an exemption.
+ */
+async function exportedDeclarations(): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+
+  for await (const file of glob('src/**/*.ts')) {
+    const text = await readFile(file, 'utf8');
+    for (const [, name] of text.matchAll(
+      /export (?:abstract )?(?:class|const|function|type|interface) ([A-Za-z_$][\w$]*)/g,
+    )) {
+      if (name) found.set(name, text);
+    }
+  }
+  return found;
+}
+
 describe('the documents', () => {
   it.each(DOCUMENTS)('name only paths that exist, in %s', async (document) => {
     const missing: string[] = [];
@@ -70,6 +95,64 @@ describe('the documents', () => {
     const counted = await Promise.all(DOCUMENTS.map(documentedPaths));
 
     expect(counted.flat().length).toBeGreaterThan(40);
+  });
+
+  it('name only members their declaration actually has', async () => {
+    // A rename is reliable in the code and unreliable in the prose about it: three times in
+    // one day a document kept calling a method by the name it had before the refactor, and
+    // the path check above could not see it because no path had changed.
+    const declarations = await exportedDeclarations();
+    const missing: string[] = [];
+
+    for (const document of DOCUMENTS) {
+      const text = await readFile(document, 'utf8');
+      for (const [, owner, member] of text.matchAll(MEMBER)) {
+        const source = owner === undefined ? undefined : declarations.get(owner);
+        if (source !== undefined && member !== undefined && !source.includes(member)) {
+          missing.push(`${document}: ${owner}.${member}`);
+        }
+      }
+    }
+
+    expect(missing).toEqual([]);
+  });
+
+  it('cite only ADRs that exist', async () => {
+    // A renumber leaves every citation pointing one record off, and each one still reads
+    // like a valid reference.
+    const records = new Set(
+      [...(await readFile('ADR.md', 'utf8')).matchAll(/^## ADR-(\d{4}):/gm)].map(([, n]) => n),
+    );
+    const dangling: string[] = [];
+
+    for (const document of DOCUMENTS) {
+      const text = await readFile(document, 'utf8');
+      for (const [, number] of text.matchAll(CITATION)) {
+        if (number !== undefined && !records.has(number))
+          dangling.push(`${document}: ADR-${number}`);
+      }
+    }
+
+    expect({ records: records.size, dangling }).toEqual({ records: records.size, dangling: [] });
+  });
+
+  it('checks enough names and citations that an empty pattern could not pass', async () => {
+    const declarations = await exportedDeclarations();
+    let members = 0;
+    let citations = 0;
+
+    for (const document of DOCUMENTS) {
+      const text = await readFile(document, 'utf8');
+      members += [...text.matchAll(MEMBER)].filter(([, owner]) =>
+        owner === undefined ? false : declarations.has(owner),
+      ).length;
+      citations += [...text.matchAll(CITATION)].length;
+    }
+
+    expect({ members: members > 5, citations: citations > 20 }).toEqual({
+      members: true,
+      citations: true,
+    });
   });
 
   it('keeps every exemption earned: a path that exists again needs no excuse', async () => {
