@@ -6,7 +6,6 @@ import { runMigrations } from './shared/db/migrate.js';
 import { GracefulShutdown } from './shared/graceful-shutdown.js';
 import { logger } from './shared/logger.js';
 import { EventQueue } from './shared/queue/event-queue.js';
-import { serializeError } from './shared/serialize-error.js';
 
 const config = loadConfig();
 
@@ -34,7 +33,7 @@ process.on('SIGTERM', () => {
       process.exit(0);
     })
     .catch((error: unknown) => {
-      logger.error({ error: serializeError(error) }, 'shutdown failed');
+      logger.error({ err: error }, 'shutdown failed');
       process.exit(1);
     });
 });

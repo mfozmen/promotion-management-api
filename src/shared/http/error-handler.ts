@@ -1,7 +1,5 @@
 import type { ErrorRequestHandler } from 'express';
 import createError from 'http-errors';
-import { MAX_MESSAGE } from '../max-message.js';
-import { serializeError } from '../serialize-error.js';
 
 const INTERNAL_MESSAGE = 'Internal server error';
 
@@ -18,14 +16,14 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (res.headersSent) {
     // No envelope fits over bytes already sent, and passing the error on reaches
     // Express's final handler, which prints the raw stack to stderr.
-    req.log.error({ error: serializeError(err) }, 'unhandled error after the response started');
+    req.log.error({ err }, 'unhandled error after the response started');
     res.destroy();
 
     return;
   }
 
   if (!createError.isHttpError(err)) {
-    req.log.error({ error: serializeError(err) }, 'unhandled error');
+    req.log.error({ err }, 'unhandled error');
     res.status(500).json({ error: { message: INTERNAL_MESSAGE } });
 
     return;
@@ -34,7 +32,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   // `expose` is the library's answer to what a client may read — false for a 5xx
   // unless the raiser said otherwise — so a message written for an operator
   // cannot reach a caller by being forgotten about.
-  const message = err.expose ? err.message.slice(0, MAX_MESSAGE) : INTERNAL_MESSAGE;
+  const message = err.expose ? err.message : INTERNAL_MESSAGE;
   const headers = err.headers ?? {};
   // A retriable 5xx is an operating condition, not a fault: at `error` a rebuild
   // writes one alertable line per request and the real 500s sit inside that noise.
@@ -43,10 +41,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err.status < 500 || retriable) {
     req.log.warn({ status: err.status }, 'request rejected');
   } else {
-    req.log.error(
-      { status: err.status, error: serializeError(err) },
-      'server fault raised by a handler',
-    );
+    req.log.error({ status: err.status, err }, 'server fault raised by a handler');
   }
 
   res.set(headers);

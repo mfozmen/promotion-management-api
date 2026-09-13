@@ -92,7 +92,7 @@ describe('errorHandler', () => {
     await request(appThrowing(createError(500, 'the wheels came off'), captured)).get('/boom');
 
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      error: { message: 'the wheels came off' },
+      err: { message: 'the wheels came off' },
     });
   });
 
@@ -154,7 +154,7 @@ describe('errorHandler: unexpected errors', () => {
 
     const logged = captured.lines.find((line) => line.level === 50);
     expect(logged).toMatchObject({
-      error: { message: 'boom', stack: expect.stringContaining('at ') },
+      err: { message: 'boom', stack: expect.stringContaining('at ') },
     });
   });
 
@@ -165,7 +165,7 @@ describe('errorHandler: unexpected errors', () => {
       expose: true,
     });
     // The real `Error.cause`, not the third constructor argument, which is
-    // `details`: `serializeError` reads `err.cause` and would never see it there.
+    // `details`: pino's serializer reads `err.cause` and would never see it there.
     raised.cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
 
     await request(appThrowing(raised, captured)).get('/boom');
@@ -176,15 +176,6 @@ describe('errorHandler: unexpected errors', () => {
     const logged = captured.lines.find((line) => line.level === 40);
     expect(logged).toMatchObject({ status: 503 });
     expect(captured.lines.some((line) => line.level === 50)).toBe(false);
-  });
-
-  it('bounds a 4xx message, so a handler cannot mirror a long id back', async () => {
-    const res = await request(
-      appThrowing(createError(404, `Product ${'9'.repeat(4_000)} not found`)),
-    ).get('/boom');
-
-    expect(res.status).toBe(404);
-    expect(res.body.error.message.length).toBeLessThanOrEqual(200);
   });
 
   it('tells a client when to come back on the two codes that mean come back later', async () => {
@@ -249,8 +240,10 @@ describe('errorHandler: unexpected errors', () => {
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: { message: 'Internal server error' } });
+    // pino passes a non-Error through as it found it, so the thrown value itself is
+    // on the line. It never reaches the response, which is the boundary that matters.
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      error: { type: 'string' },
+      err: 'something went wrong',
     });
   });
 

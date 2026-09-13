@@ -256,11 +256,11 @@ describe('EventQueue', () => {
       );
       expect(Date.now() - startedAt).toBeLessThan(EventQueue.OPERATION_TIMEOUT_MS * 3);
       expect(errors).toHaveBeenCalled();
-      // What the line carries, not just that there is one (ADR-0010).
+      // What the line carries, not just that there is one (ADR-0010). pino's own
+      // serializer builds the shape from `err`, so that is the key to assert on.
       for (const [fields] of errors.mock.calls) {
-        expect(fields).toHaveProperty('error.type');
-        expect(fields).toHaveProperty('error.message');
-        expect(fields).not.toHaveProperty('err');
+        expect(fields).toHaveProperty('err.name');
+        expect(fields).toHaveProperty('err.message');
       }
     } finally {
       errors.mockRestore();

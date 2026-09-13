@@ -2,7 +2,6 @@ import { Queue, type Job, type JobsOptions } from 'bullmq';
 import type { z, ZodType } from 'zod';
 import type { QueueName } from './queue-name.js';
 import { logger } from '../logger.js';
-import { serializeError } from '../serialize-error.js';
 
 type Registry = Record<string, ZodType>;
 
@@ -49,7 +48,7 @@ export class EventQueue<R extends Registry> {
     for (const queue of Object.values(queues)) {
       // An `error` event with no listener is an uncaught exception.
       queue.on('error', (error: Error) => {
-        logger.error({ queue: queue.name, error: serializeError(error) }, 'queue error');
+        logger.error({ queue: queue.name, err: error }, 'queue error');
       });
     }
     return new EventQueue(queues, registry, routing);
@@ -103,7 +102,7 @@ export class EventQueue<R extends Registry> {
       clearTimeout(timer);
       // The loser still settles, and an unhandled rejection would take the process down.
       work.catch((error: unknown) => {
-        logger.error({ operation, error: serializeError(error) }, 'queue operation failed');
+        logger.error({ operation, err: error }, 'queue operation failed');
       });
     }
   }
