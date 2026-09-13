@@ -332,12 +332,15 @@ src/modules/<module>/
   http/          routes, handlers, request schemas (zod)
   jobs/          BullMQ processors
 src/shared/
-  db/schema/     one file per table
+  config.ts
+  db/            client, migrator, migrations (one journal, owned by api — ADR-0003)
   http/          error type, error handler, request validator, logger
 tests/
   unit/          mirrors src/, one test file per source file
   integration/   real PostgreSQL and Redis
 ```
+
+**`shared/` is infrastructure only.** Nothing under `src/shared/` carries a business noun in its name: configuration, the database client and migrator, HTTP plumbing and the logger live there; `promotions`, `products`, `pricing_rules` do not. A table's Drizzle definition belongs to the module that owns the table, in `src/modules/<module>/db/schema/<table>.ts`, and `drizzle.config.ts` reads every module's `db/schema/`. The migrations stay in one place under `shared/db/`, because there is one journal and one process applies it (ADR-0003). Two consequences: a table two modules read is owned by one of them and imported by the other (`pricing_rules` belongs to `pricing`; the promotion resolver imports it for its precedence rule), and a table everything references is its own module (`products` becomes a `catalog` module that `promotion` and `pricing` may import, while those two still import nothing from each other). Without this rule `shared/` is where every table lands because it is the path of least resistance, and it grows into the one directory the module split was meant to prevent.
 
 `domain/dto/` is the one directory named for what it holds rather than for a job. With types and functions at one level a reader could not tell a data shape from the logic over it without opening the file; the split is taken for that reason and for nothing else — `http/`, `db/` and `jobs/` are not divided further. Promotion and pricing are separate modules that import nothing from each other (ADR-0004, ADR-0005).
 
@@ -353,5 +356,6 @@ tests/
 ### Consequences
 
 - More files, each short; the tree is the index, and a file name answers "what is this" without opening it.
+- `src/shared/db/schema/` today holds every table. It is emptied into the modules (`catalog`, `promotion`, `pricing`, `ingestion`) in one pull request after PR #39 merges, so that #39 does not carry a third batch; until then this line is the record of the gap.
 - The promotion module was written before the naming rules and does not yet match them: `discount-calculator.ts`, `discount-calculators.ts`, `discount-calculator-for.ts`, `effective-price.ts` and `pricing-input-error.ts` still carry the old names. They are renamed in PR #39 (`discount.ts`, `discounts.ts`, `discount-for.ts`, `calculate-effective-price.ts`, with `pricing-input-error.ts` folded into the last as the private `validateBasePriceAndDiscount`, since it serves one caller) rather than grandfathered, because an exception survives longer than the reason for it. Until that merges, this line is the record of the gap.
-- `REVIEW.md` 7.7, 8c.2, 8c.3, 8c.7, 8c.8 and 8c.9 carry the enforceable form, one sentence each with a pointer here; the reasoning lives in this record only, so a change here changes them in the same pull request.
+- `REVIEW.md` 7.7, 8c.2, 8c.3, 8c.7, 8c.8, 8c.9 and 8c.10 carry the enforceable form, one sentence each with a pointer here; the reasoning lives in this record only, so a change here changes them in the same pull request.

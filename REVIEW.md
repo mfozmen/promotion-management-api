@@ -728,6 +728,11 @@ the variant plus that noun (`fixedDiscount`), the record of them the plural
 (`discounts`). A function starts with a verb (`calculateEffectivePrice`); one
 named for its return value (`effectivePrice`) is a finding. ADR-0008.
 
+8c.10 `src/shared/` is infrastructure: a file there whose name carries a
+business noun (`promotions.ts`, `pricing-rules.ts`) is a finding; it belongs to
+the module that owns it, under `db/schema/`. Migrations are the exception and
+stay in `shared/db/`. ADR-0008.
+
 ---
 
 ## 9. Failure handling and operations
