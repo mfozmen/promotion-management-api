@@ -25,7 +25,7 @@ const withoutPriorities = (node: unknown): unknown => {
   );
 };
 
-/** An empty `all` evaluates true and an empty `any` never fires; both are well-formed. ADR-0005. */
+/** Both `{all:[]}` and `{any:[]}` are well-formed and fire on every row. ADR-0005. */
 const hasEmptyGroup = (node: unknown): boolean => {
   if (Array.isArray(node)) return node.some(hasEmptyGroup);
   if (node === null || typeof node !== 'object') return false;
