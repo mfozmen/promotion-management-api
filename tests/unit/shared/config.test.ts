@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { loadConfig } from '../../../src/shared/config.js';
+import { loadConfig } from '@src/shared/config.js';
 
 const validEnv = {
   DATABASE_URL: 'postgres://promo:promo@localhost:5432/promotion',
