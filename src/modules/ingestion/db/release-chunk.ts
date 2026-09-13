@@ -11,10 +11,20 @@ import { ingestionChunks } from './schema/ingestion-chunks.js';
  * done nothing — the import would stall for a lease duration on every budget
  * window instead of continuing in the next one.
  *
- * `status = 'running'` in the `WHERE` is what keeps it from resurrecting a chunk
- * that finished: releasing is giving back what you hold, never reopening.
+ * `status = 'running'` in the `WHERE` keeps it from resurrecting a chunk that
+ * finished, and `lease_until` keeps it from releasing one somebody else holds.
+ * Both matter: an invocation that ran past its lease inside a single batch is no
+ * longer the holder, and its own batch can still commit — the winner has not moved
+ * `next_offset` yet — so it reaches this hand-off and would hand back a chunk
+ * another invocation is working. Releasing is giving back what you hold, and
+ * holding is proved rather than assumed from the status.
  */
-export async function releaseChunk(db: Db, jobId: number, chunkIndex: number): Promise<void> {
+export async function releaseChunk(
+  db: Db,
+  jobId: number,
+  chunkIndex: number,
+  leaseUntil: Date,
+): Promise<void> {
   await db
     .update(ingestionChunks)
     .set({ status: 'pending', leaseUntil: sql`null` })
@@ -23,6 +33,7 @@ export async function releaseChunk(db: Db, jobId: number, chunkIndex: number): P
         eq(ingestionChunks.jobId, jobId),
         eq(ingestionChunks.chunkIndex, chunkIndex),
         eq(ingestionChunks.status, 'running'),
+        eq(ingestionChunks.leaseUntil, leaseUntil),
       ),
     );
 }

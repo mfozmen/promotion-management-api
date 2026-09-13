@@ -109,7 +109,7 @@ export class ChunkProcessor {
         // Between batches is the only safe place to stop: the checkpoint is
         // committed, so the next invocation resumes from it having lost nothing.
         if (this.now() - startedAt >= this.budgetMs && endOffset < claimed.endOffset) {
-          await releaseChunk(this.db, jobId, chunkIndex);
+          await releaseChunk(this.db, jobId, chunkIndex, claimed.leaseUntil);
           await this.reenqueue({ jobId, chunkIndex });
           return { claimed: true, exhausted: true, rowsProcessed, rowsRejected };
         }

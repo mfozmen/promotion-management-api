@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { claimChunk } from '@src/modules/ingestion/db/claim-chunk.js';
 import { releaseChunk } from '@src/modules/ingestion/db/release-chunk.js';
@@ -41,36 +41,70 @@ describe('releaseChunk', () => {
     // and the job it just enqueued finds the chunk busy and returns having done
     // nothing — the import would stall for a lease duration per budget window.
     const jobId = await jobWithChunk();
-    await claimChunk(db(), jobId, 0, 90_000);
+    const claimed = await claimChunk(db(), jobId, 0, 90_000);
 
-    await releaseChunk(db(), jobId, 0);
+    await releaseChunk(db(), jobId, 0, claimed!.leaseUntil);
 
     expect(await claimChunk(db(), jobId, 0, 90_000)).not.toBeNull();
   });
 
   it('leaves the checkpoint where it is, so the next claim resumes there', async () => {
     const jobId = await jobWithChunk();
-    await claimChunk(db(), jobId, 0, 90_000);
+    const claimed = await claimChunk(db(), jobId, 0, 90_000);
     await db()
       .update(ingestionChunks)
       .set({ nextOffset: 400, rowsProcessed: 12 })
       .where(eq(ingestionChunks.jobId, jobId));
 
-    await releaseChunk(db(), jobId, 0);
+    await releaseChunk(db(), jobId, 0, claimed!.leaseUntil);
 
     const row = await chunkRow(jobId);
     expect(row?.nextOffset).toBe(400);
     expect(row?.rowsProcessed).toBe(12);
   });
 
+  it('does not release a lease another invocation holds', async () => {
+    // The invocation that ran over its lease is not the holder any more. Its own
+    // batch can still commit — the winner has not moved `next_offset` yet — and it
+    // then reaches the budget hand-off and releases a chunk somebody else is
+    // working. Releasing is giving back what you hold, and holding has to be
+    // proved rather than assumed from the status.
+    const jobId = await jobWithChunk();
+    const overrun = await claimChunk(db(), jobId, 0, 1);
+    await db()
+      .update(ingestionChunks)
+      .set({ leaseUntil: sql`now() - interval '1 second'` })
+      .where(eq(ingestionChunks.jobId, jobId));
+    const holder = await claimChunk(db(), jobId, 0, 90_000);
+
+    await releaseChunk(db(), jobId, 0, overrun!.leaseUntil);
+
+    const row = await chunkRow(jobId);
+    expect(row?.status).toBe('running');
+    expect(row?.leaseUntil?.getTime()).toBe(holder!.leaseUntil?.getTime());
+  });
+
+  it('releases when the caller is the holder', async () => {
+    const jobId = await jobWithChunk();
+    const claimed = await claimChunk(db(), jobId, 0, 90_000);
+
+    await releaseChunk(db(), jobId, 0, claimed!.leaseUntil);
+
+    expect((await chunkRow(jobId))?.status).toBe('pending');
+  });
+
   it('does not resurrect a chunk that finished', async () => {
     const jobId = await jobWithChunk();
     await db()
       .update(ingestionChunks)
-      .set({ status: 'done', nextOffset: 1000 })
+      .set({ status: 'done', nextOffset: 1000, leaseUntil: sql`now() + interval '1 minute'` })
+      .where(eq(ingestionChunks.jobId, jobId));
+    const [held] = await db()
+      .select({ leaseUntil: ingestionChunks.leaseUntil })
+      .from(ingestionChunks)
       .where(eq(ingestionChunks.jobId, jobId));
 
-    await releaseChunk(db(), jobId, 0);
+    await releaseChunk(db(), jobId, 0, held!.leaseUntil!);
 
     expect((await chunkRow(jobId))?.status).toBe('done');
   });

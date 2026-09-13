@@ -5,6 +5,8 @@ export interface ClaimedChunk {
   startOffset: number;
   endOffset: number;
   nextOffset: number;
+  /** The lease this claim took: the holder's proof when it hands the chunk back. */
+  leaseUntil: Date;
   attempts: number;
   failures: number;
 }

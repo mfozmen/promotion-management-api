@@ -18,6 +18,10 @@ import { ingestionChunks } from './schema/ingestion-chunks.js';
  * `next_offset` comes back rather than `start_offset`: a reclaimed chunk resumes
  * at its last committed batch, which is what makes a kill mid-file cost one batch
  * instead of the whole chunk.
+ *
+ * `lease_until` comes back as the holder's proof. There is no separate token: the
+ * lease this statement wrote is unique to this claim because `now()` advances, and
+ * an invocation that cannot show it is not the holder any more.
  */
 export async function claimChunk(
   db: Db,
@@ -29,7 +33,11 @@ export async function claimChunk(
     .update(ingestionChunks)
     .set({
       status: 'running',
-      leaseUntil: sql`now() + make_interval(secs => ${leaseMs / 1000})`,
+      // Truncated to milliseconds because the lease doubles as the holder's proof
+      // and JavaScript's Date cannot hold PostgreSQL's microseconds: an untruncated
+      // lease comes back rounded, never equals the stored value, and the holder
+      // fails to prove it is the holder.
+      leaseUntil: sql`date_trunc('milliseconds', now() + make_interval(secs => ${leaseMs / 1000}))`,
       attempts: sql`${ingestionChunks.attempts} + 1`,
     })
     .where(
@@ -51,9 +59,15 @@ export async function claimChunk(
       startOffset: ingestionChunks.startOffset,
       endOffset: ingestionChunks.endOffset,
       nextOffset: ingestionChunks.nextOffset,
+      leaseUntil: ingestionChunks.leaseUntil,
       attempts: ingestionChunks.attempts,
       failures: ingestionChunks.failures,
     });
 
-  return claimed ?? null;
+  if (claimed === undefined) return null;
+  // The `SET` above writes a lease on every claim, so the column is non-null here
+  // even though it is nullable in the table — a chunk that has never been claimed
+  // has no lease. Narrowing it at the boundary keeps the holder's proof a `Date`
+  // rather than something every caller has to re-check.
+  return { ...claimed, leaseUntil: claimed.leaseUntil as Date };
 }
