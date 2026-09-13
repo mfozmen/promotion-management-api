@@ -1,7 +1,7 @@
 import { createApp } from './app.js';
 import { loadConfig } from './shared/config.js';
 import { runMigrations } from './shared/db/migrate.js';
-import { createQueues } from './shared/queue.js';
+import { EventBus } from './shared/event-bus.js';
 import { parseShutdownTimeout, shutdown } from './shared/shutdown.js';
 
 const config = loadConfig();
@@ -12,7 +12,7 @@ const shutdownTimeoutMs = parseShutdownTimeout(process.env.SHUTDOWN_TIMEOUT_MS);
 await runMigrations(config.DATABASE_URL);
 
 const app = createApp();
-const queues = createQueues(config.REDIS_URL);
+const bus = EventBus.connect(config.REDIS_URL);
 
 const server = app.listen(config.PORT, () => {
   console.log(`Server listening on port ${config.PORT}`);
@@ -20,7 +20,7 @@ const server = app.listen(config.PORT, () => {
 
 process.on('SIGTERM', () => {
   const startedAt = Date.now();
-  void shutdown(server, queues, shutdownTimeoutMs)
+  void shutdown(server, bus, shutdownTimeoutMs)
     .then((path) => {
       console.log(`Shutdown ${path} after ${Date.now() - startedAt} ms`);
       process.exit(0);
