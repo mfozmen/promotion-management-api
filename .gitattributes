@@ -1,6 +1,2 @@
-# The index already holds LF for every tracked text file (verified: git ls-files --eol
-# shows zero CRLF blobs), so this changes no blob. What it changes is a Windows checkout:
-# 118 files stop arriving as CRLF, which is what makes a Node-side text comparison
-# platform-dependent. git diff normalises both sides and never saw it.
 * text=auto eol=lf
 *.docx binary
