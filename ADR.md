@@ -309,3 +309,31 @@ Alarms: the API and workers expose Prometheus metrics (`prom-client`); a `monito
 
 - Full rebuild on any drift: unnecessary load; scoped rebuilds are sufficient.
 - `FLUSHDB` for rebuilds: would erase the queue when it shares the instance.
+
+---
+
+## ADR-0008: Source layout and naming inside a module
+
+**Status:** Accepted — owner decisions of 2026-09-12 and 2026-09-13, enforced by REVIEW.md 8c
+
+### Context
+
+Two modules landed in a day and the reviews kept finding the same three things: several classes and types in one file, directories named for a kind of syntax (`models/`, `utils/`), and exports whose names read as data when they were behaviour. Each was argued once per pull request. The rules in REVIEW.md 8c say what a reviewer rejects; this record says why.
+
+### Decision
+
+- **Modular monolith, directories by role.** One directory per module under `src/modules/`, inside it `domain/`, `db/`, `http/`, `jobs/`, opened only when a file goes in. Promotion and pricing are separate modules that import nothing from each other (ADR-0004, ADR-0005).
+- **One exported declaration per file, named after it.** A file holds one class, interface, type alias or function, and the file name is that name in kebab-case.
+- **`domain/dto/` is the one syntax-named directory.** `domain/` holds only the functions; the types they operate on sit in `domain/dto/`. This contradicts "directories by role" on purpose: with both at one level a reader could not tell a data shape from the logic over it without opening the file.
+- **Behaviour is named as behaviour.** An object implementing an interface carries the interface's role: `percentageDiscountCalculator`, not `percentageDiscount`. A function starts with a verb: `calculateEffectivePrice`, `compileRules`, `priceRow`. A function named for the value it returns (`effectivePrice`) reads as a property and is a finding.
+
+### Consequences
+
+- More files, each short; the tree is the index and a file name is a full answer to "what is this".
+- The promotion module, written before the last two rules, is renamed to match (`percentage-discount-calculator.ts`, `calculate-effective-price.ts`) rather than grandfathered, because an exception survives longer than the reason for it.
+- `REVIEW.md` 8c.2, 8c.7, 8c.8 and 8c.9 carry the enforceable form; a change here changes them in the same pull request.
+
+### Rejected alternatives
+
+- NestJS-style `dto/`, `entities/`, `interfaces/` in every directory: the owner wanted the one split that helps reading, not a taxonomy.
+- A `Calculator` suffix on functions (`effectivePriceCalculator`): a noun again, and a noun is what a function name should not be.
