@@ -335,5 +335,5 @@ Two modules landed in a day and the reviews kept finding the same three things: 
 
 ### Rejected alternatives
 
-- NestJS-style `dto/`, `entities/`, `interfaces/` in every directory: the owner wanted the one split that helps reading, not a taxonomy.
+- The rest of the NestJS taxonomy beside `dto/` — `entities/`, `interfaces/`, `enums/` in every directory: `dto/` is the one split that helps reading, and it is taken; the others sort by syntax again and would put the `domain/` rule back where it started.
 - A `Calculator` suffix on functions (`effectivePriceCalculator`): a noun again, and a noun is what a function name should not be.
