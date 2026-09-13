@@ -3,8 +3,7 @@ import createError from 'http-errors';
 
 const INTERNAL_MESSAGE = 'Internal server error';
 
-/** A custom property, so its shape is checked rather than trusted. The validator is
- *  the only producer and bounds both the count and each message; this returns them. */
+/** A custom property, so its shape is checked rather than trusted. */
 const detailsOf = (err: createError.HttpError): unknown[] | undefined => {
   const found: unknown = (err as { details?: unknown }).details;
 
