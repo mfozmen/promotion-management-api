@@ -28,7 +28,8 @@ const withoutPriorities = (node: unknown): unknown => {
 /**
  * `{"all": []}` is well-formed and evaluates true, so the engine accepts it and
  * the rule fires on every row: a 500 000-row file priced by a rule nobody meant
- * to match, every outcome `ok: true`, nothing rejected for a breaker to see.
+ * to match, every outcome `ok: true`, nothing rejected for a breaker to see. An
+ * empty `any` is the same typo pointing the other way and never fires.
  */
 const hasEmptyGroup = (node: unknown): boolean => {
   if (Array.isArray(node)) return node.some(hasEmptyGroup);
@@ -59,7 +60,7 @@ export async function compileRules(rows: readonly PricingRuleRow[]): Promise<Com
       throw new Error(`${where} has a malformed event: ${event.error.issues[0]?.message}`);
     }
     if (hasEmptyGroup(row.conditions)) {
-      throw new Error(`${where} has an empty all or any, which matches every row`);
+      throw new Error(`${where} has an empty all or any, which matches every row or none`);
     }
     const properties: RuleProperties = {
       // The engine reports a fired rule by name only, so the id travels inside
