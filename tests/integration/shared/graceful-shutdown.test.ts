@@ -20,25 +20,6 @@ describe('GracefulShutdown', () => {
     return { server, port: (server.address() as AddressInfo).port };
   };
 
-  it.each([
-    ['unset', undefined, GracefulShutdown.DEFAULT_TIMEOUT_MS],
-    ['set but empty, the usual compose shape', '', GracefulShutdown.DEFAULT_TIMEOUT_MS],
-    ['not a number', 'abc', GracefulShutdown.DEFAULT_TIMEOUT_MS],
-    ['negative', '-1', GracefulShutdown.DEFAULT_TIMEOUT_MS],
-    ['a deliberate zero', '0', 0],
-    ['a real value', '5000', 5_000],
-    ['padded', ' 5000 ', 5_000],
-  ])('reads the timeout %s', (_label, raw, expected) => {
-    expect(GracefulShutdown.parseTimeout(raw)).toBe(expected);
-  });
-
-  it('uses the default bound when the caller passes none', async () => {
-    const { server } = await listening();
-    const queues = EventBus.connect(redisUrl, QUEUE_DB);
-
-    await expect(new GracefulShutdown(queues).run(server)).resolves.toBe('drained');
-  });
-
   it('drains when nothing is holding the server open', async () => {
     const { server } = await listening();
     const queues = EventBus.connect(redisUrl, QUEUE_DB);

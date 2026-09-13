@@ -27,6 +27,7 @@ describe('loadConfig', () => {
       UPLOAD_DIR: './uploads',
       REDIS_READ_MODEL_DB: 0,
       REDIS_QUEUE_DB: 1,
+      SHUTDOWN_DRAIN_TIMEOUT_MS: 10_000,
       INGESTION_CHUNK_BYTES: 4 * 1024 * 1024,
       INGESTION_BATCH_SIZE: 1000,
       INGESTION_BUDGET_MS: 60_000,
@@ -34,6 +35,19 @@ describe('loadConfig', () => {
       INGESTION_MAX_FAILURES: 3,
       INGESTION_MAX_WAITING: 100,
     });
+  });
+
+  it.each([
+    ['a deliberate zero, which exits immediately', '0', 0],
+    ['a real value', '5000', 5_000],
+  ])('reads the shutdown drain cap from %s', (_label, raw, expected) => {
+    expect(
+      loadConfig({ ...validEnv, SHUTDOWN_DRAIN_TIMEOUT_MS: raw }).SHUTDOWN_DRAIN_TIMEOUT_MS,
+    ).toBe(expected);
+  });
+
+  it.each(['-1', 'abc', '1.5'])('rejects a shutdown drain cap of %s', (raw) => {
+    expect(() => loadConfig({ ...validEnv, SHUTDOWN_DRAIN_TIMEOUT_MS: raw })).toThrow();
   });
 
   it('coerces overrides to numbers', () => {

@@ -5,7 +5,6 @@ import { EventBus } from './shared/event-bus.js';
 import { GracefulShutdown } from './shared/graceful-shutdown.js';
 
 const config = loadConfig();
-const shutdownTimeoutMs = GracefulShutdown.parseTimeout(process.env.SHUTDOWN_TIMEOUT_MS);
 
 // Before the first request rather than beside it: the health check is what `up --wait`
 // waits on, so it must not answer in front of a schema that is not there yet.
@@ -20,7 +19,7 @@ const server = app.listen(config.PORT, () => {
 
 process.on('SIGTERM', () => {
   const startedAt = Date.now();
-  void new GracefulShutdown(bus, shutdownTimeoutMs)
+  void new GracefulShutdown(bus, config.SHUTDOWN_DRAIN_TIMEOUT_MS)
     .run(server)
     .then((path) => {
       console.log(`Shutdown ${path} after ${Date.now() - startedAt} ms`);

@@ -1,19 +1,17 @@
-import { z } from 'zod';
-
-const entityId = z.number().int().positive();
+import { productUpserted } from '../modules/catalog/domain/dto/product-upserted.js';
+import { ingestionChunk } from '../modules/ingestion/domain/dto/ingestion-chunk.js';
+import { promotionChanged } from '../modules/promotion/domain/dto/promotion-changed.js';
+import { readmodelRebuild } from './readmodel-rebuild.js';
+import { reconcileRun } from './reconcile-run.js';
 
 /**
- * The event catalogue: section 6 of the domain design spec. Payloads are strict,
- * so a field has to be added here before it can cross the queue boundary.
+ * The registry: an event name to the schema its producing module owns (ADR-0008).
+ * `readmodel.rebuild` and `reconcile.run` have no module yet.
  */
 export const eventSchemas = {
-  'product.upserted': z.strictObject({ productIds: z.array(entityId).min(1).max(1000) }),
-  'promotion.changed': z.strictObject({ promotionId: entityId }),
-  // The category becomes a `SCAN` prefix, so it is trimmed and never blank.
-  'readmodel.rebuild': z.strictObject({ category: z.string().trim().min(1).optional() }),
-  'reconcile.run': z.strictObject({}),
-  'ingestion.chunk': z.strictObject({
-    jobId: entityId,
-    chunkIndex: z.number().int().nonnegative(),
-  }),
+  'product.upserted': productUpserted,
+  'promotion.changed': promotionChanged,
+  'readmodel.rebuild': readmodelRebuild,
+  'reconcile.run': reconcileRun,
+  'ingestion.chunk': ingestionChunk,
 } as const;

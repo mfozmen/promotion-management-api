@@ -88,11 +88,21 @@ Stop the stack with `docker compose down`, or `docker compose down -v` to drop t
 
 ### Configuration
 
-`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `SHUTDOWN_TIMEOUT_MS` is the one variable `src/shared/config.ts` does not parse: `src/server.ts` reads it directly (ADR-0003). `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
+`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
 
 The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. Issue #19 adds the remaining containers (event-handler, ingestion-worker, reconciler) and the `monitoring` profile on top of it.
 
 ### The queue
+
+Four queues, one per urgency class, and `queueOfEvent` routes an event to one of
+them — the caller never picks. `promotions` carries `promotion.changed` and the
+delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
+`ingestion.chunk`, and `maintenance` carries `readmodel.rebuild` and
+`reconcile.run`. The partition is what keeps a 500 000-row import's ~500
+announcements, or a full read-model rebuild, from sitting in front of a flash
+sale's `promotion.changed`: each queue gets its own worker, so two events that
+need different priority get different consumers rather than a priority number
+inside one queue (ADR-0003).
 
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
@@ -104,7 +114,7 @@ check that they differ mean something.
 (default `redis://127.0.0.1:6379`), but it starts and serves without a Redis
 there: connection errors are logged and every publish fails at its 2 s bound
 rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the
-HTTP server first and the queues last, and waits at most `SHUTDOWN_TIMEOUT_MS`
+HTTP server first and the queues last, and waits at most `SHUTDOWN_DRAIN_TIMEOUT_MS`
 (default 10 s, `0` exits immediately) for open connections before closing the
 queues anyway (ADR-0003).
 

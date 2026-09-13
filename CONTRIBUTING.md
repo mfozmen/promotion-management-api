@@ -17,7 +17,8 @@ src/
     db/         the client and the migrator; migrations/ holds the one journal
     http/       error type, error handler, request validator, logger
     config.ts
-    event-*.ts, queue-*.ts   the event catalogue, its routing map and the BullMQ bus; shared rather than module-owned (ADR-0008)
+    event-schemas.ts, event-name.ts, event-payload.ts, queue-name.ts, queue-of-event.ts, event-bus.ts   the event registry, its routing map and the BullMQ bus (ADR-0008)
+    readmodel-rebuild.ts, reconcile-run.ts   the two payloads whose module does not exist yet
     graceful-shutdown.ts
 tests/
   unit/         mirrors src/, one test file per source file

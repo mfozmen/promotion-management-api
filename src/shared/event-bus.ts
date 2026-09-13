@@ -6,14 +6,7 @@ import { eventSchemas } from './event-schemas.js';
 import type { QueueName } from './queue-name.js';
 import { queueOfEvent } from './queue-of-event.js';
 
-/**
- * The event bus: BullMQ queues on their own Redis logical database, with the
- * retry, backoff and dead-letter policy every job inherits.
- *
- * Holds the queues, so it is a class rather than a set of functions passing them
- * back and forth. `connect` is the only way to build one, because a queue with no
- * `error` listener turns a Redis blip into an uncaught exception.
- */
+/** The producer side of the queues: policy, routing and the boundary job ids. ADR-0003. */
 export class EventBus {
   /** `removeOnFail: false` is what makes the failed set the dead-letter queue. */
   static readonly defaultJobOptions = {
@@ -23,27 +16,17 @@ export class EventBus {
     removeOnFail: false,
   } as const satisfies JobsOptions;
 
-  /**
-   * ioredis reconnects for ever and BullMQ's `add` waits for it, so an unreachable
-   * Redis hangs the request that already committed. The race cancels nothing, so a
-   * timed-out operation may still land: a fast failure, not a known outcome.
-   */
+  /** A timed-out operation may still land: a fast failure, not a known outcome. */
   static readonly OPERATION_TIMEOUT_MS = 2_000;
 
-  /** A different budget from operating on an open connection: a managed
-   *  `rediss://` instance pays DNS and a TLS handshake once. */
+  /** Connecting pays DNS and a TLS handshake that operating on an open socket does not. */
   static readonly CONNECT_TIMEOUT_MS = 10_000;
 
   private constructor(private readonly queues: Record<QueueName, Queue>) {}
 
   /**
-   * `db` is passed rather than fixed at 1, because `config.ts` refuses a
-   * configuration where the queue and the read model share a logical database —
-   * and that refusal means nothing while the value it validates is unreachable.
-   *
-   * `prefix` scopes every key this bus touches. Production takes the default; a
-   * test gives itself a unique one, so a queue-wide count means "this run" rather
-   * than "whatever else shares this Redis".
+   * `db` is passed, not fixed, so `config.ts`'s refusal to share a database with the
+   * read model is reachable. `prefix` scopes every key, so a test's counts are its own.
    */
   static connect(redisUrl: string, db: number, prefix = 'bull'): EventBus {
     const options = {
@@ -52,11 +35,13 @@ export class EventBus {
       prefix,
     };
     const queues = {
-      events: new Queue('events', options),
+      promotions: new Queue('promotions', options),
+      catalog: new Queue('catalog', options),
       ingestion: new Queue('ingestion', options),
+      maintenance: new Queue('maintenance', options),
     };
     for (const queue of Object.values(queues)) {
-      // An `error` event with no listener is an uncaught exception: a Redis blip would kill the process.
+      // An `error` event with no listener is an uncaught exception.
       queue.on('error', (error: Error) => console.error(`queue ${queue.name}:`, error.message));
     }
     return new EventBus(queues);
@@ -103,33 +88,24 @@ export class EventBus {
     const [activate, expire] = await this.bounded(
       `removePromotionBoundaries(${promotionId})`,
       Promise.all([
-        this.queues.events.remove(EventBus.boundaryJobId(promotionId, 'activate')),
-        this.queues.events.remove(EventBus.boundaryJobId(promotionId, 'expire')),
+        this.queues.promotions.remove(EventBus.boundaryJobId(promotionId, 'activate')),
+        this.queues.promotions.remove(EventBus.boundaryJobId(promotionId, 'expire')),
       ]),
     );
     return { activate, expire };
   }
 
-  /**
-   * Reading a queue's state, narrowed to the three reads that have a caller.
-   * Anything that writes stays off this seam: `add` would skip the payload parse
-   * and the timeout, which are the two guarantees `publish` exists to give.
-   */
+  /** Reads only: `add` here would skip the parse and the timeout `publish` exists to give. */
   inspect(name: QueueName): Pick<Queue, 'getJob' | 'getWaitingCount' | 'getDelayedCount'> {
     return this.queues[name];
   }
 
-  /** Closing does not drain: an in-flight operation is rejected with the connection
-   *  under it, so `SIGTERM` stops the producers first. What it buys is the socket,
-   *  which otherwise holds the event loop open until the orchestrator sends KILL. */
+  /** Closing does not drain, so `SIGTERM` stops the producers first; it frees the socket. */
   async close(): Promise<void> {
     await Promise.all(Object.values(this.queues).map((queue) => queue.close()));
   }
 
-  /**
-   * The producer parses before the job is added, so a malformed payload fails in
-   * the request that created it rather than in a worker three retries later.
-   */
+  /** At the producer, so a malformed payload fails in the request that made it. */
   private static parse<N extends EventName>(name: N, payload: EventPayload<N>): EventPayload<N> {
     return eventSchemas[name].parse(payload) as EventPayload<N>;
   }

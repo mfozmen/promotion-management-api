@@ -12,6 +12,7 @@ const QUEUE_DB = 1;
 // Every key this file writes sits under a prefix unique to the run, so a count
 // over a queue means this run's jobs and not a sibling worktree's (REVIEW.md 7.6).
 const PREFIX = `bulltest-${randomUUID().slice(0, 8)}`;
+const QUEUE_NAMES = ['promotions', 'catalog', 'ingestion', 'maintenance'] as const;
 
 /**
  * Cleanup owns its own handles rather than a method on `EventBus`: obliterating a
@@ -20,7 +21,7 @@ const PREFIX = `bulltest-${randomUUID().slice(0, 8)}`;
  */
 async function clearOwnQueues(): Promise<void> {
   const options = { connection: { url: redisUrl, db: QUEUE_DB }, prefix: PREFIX };
-  const queues = [new Queue('events', options), new Queue('ingestion', options)];
+  const queues = QUEUE_NAMES.map((name) => new Queue(name, options));
   try {
     await Promise.all(queues.map((queue) => queue.obliterate({ force: true })));
   } finally {
@@ -60,7 +61,7 @@ describe('EventBus', () => {
     const received: unknown[] = [];
     workers.push(
       new Worker(
-        'events',
+        'catalog',
         async (job: Job) => {
           received.push({ name: job.name, data: job.data });
         },
@@ -73,6 +74,28 @@ describe('EventBus', () => {
     await waitFor(async () => received.length === 1);
     expect(received[0]).toEqual({ name: 'product.upserted', data: { productIds: [11, 22] } });
   });
+
+  it('serves a flash sale ahead of a bulk import that queued 500 announcements first', async () => {
+    // Scenario A colliding with Scenario B. Both passed alone while these shared
+    // one queue: the import's announcements were simply in front.
+    for (let batch = 0; batch < 500; batch += 1) {
+      await bus.publish('product.upserted', { productIds: [batch + 1] });
+    }
+    await bus.publish('promotion.changed', { promotionId: 4242 });
+
+    const firstSeen = new Promise<unknown>((resolve) => {
+      workers.push(
+        new Worker('promotions', async (job: Job) => resolve(job.data), {
+          connection: { url: redisUrl, db: QUEUE_DB },
+          prefix: PREFIX,
+        }),
+      );
+    });
+
+    expect(await firstSeen).toEqual({ promotionId: 4242 });
+    // The import is still waiting, so the sale did not win by arriving late.
+    expect(await bus.inspect('catalog').getWaitingCount()).toBe(500);
+  }, 30_000);
 
   it('applies the retry, backoff and dead-letter defaults to every job', async () => {
     const job = await bus.publish('reconcile.run', {});
@@ -89,7 +112,7 @@ describe('EventBus', () => {
       bus.publish('promotion.changed', { promotionId: 'not-a-number' }),
     ).rejects.toThrow();
 
-    expect(await bus.inspect('events').getWaitingCount()).toBe(0);
+    expect(await bus.inspect('promotions').getWaitingCount()).toBe(0);
   });
 
   it('deduplicates a promotion boundary job by its deterministic id', async () => {
@@ -101,7 +124,7 @@ describe('EventBus', () => {
 
     expect(first.id).toBe('promo:5:activate');
     expect(second.id).toBe(first.id);
-    expect(await bus.inspect('events').getDelayedCount()).toBe(1);
+    expect(await bus.inspect('promotions').getDelayedCount()).toBe(1);
   });
 
   it('enqueues a boundary immediately when its instant has already passed', async () => {
@@ -110,8 +133,8 @@ describe('EventBus', () => {
 
     await bus.schedulePromotionBoundary(6, 'activate', startsAt, now);
 
-    expect(await bus.inspect('events').getDelayedCount()).toBe(0);
-    expect(await bus.inspect('events').getWaitingCount()).toBe(1);
+    expect(await bus.inspect('promotions').getDelayedCount()).toBe(0);
+    expect(await bus.inspect('promotions').getWaitingCount()).toBe(1);
   });
 
   it.each([
@@ -124,25 +147,21 @@ describe('EventBus', () => {
 
     const job = await bus.schedulePromotionBoundary(8, 'expire', at, now);
 
-    expect(await bus.inspect('events').getDelayedCount()).toBe(expected === 'delayed' ? 1 : 0);
-    expect(await bus.inspect('events').getWaitingCount()).toBe(expected === 'waiting' ? 1 : 0);
+    expect(await bus.inspect('promotions').getDelayedCount()).toBe(expected === 'delayed' ? 1 : 0);
+    expect(await bus.inspect('promotions').getWaitingCount()).toBe(expected === 'waiting' ? 1 : 0);
     expect(job.opts.attempts).toBe(3);
     expect(job.opts.backoff).toEqual({ type: 'exponential', delay: 1000 });
   });
 
   it('removes both boundary jobs by id when a promotion is cancelled', async () => {
     const now = new Date('2026-09-12T00:00:00.000Z');
-    await bus.schedulePromotionBoundary(7,
-      'activate',
-      new Date('2026-09-13T00:00:00.000Z'),
-      now,
-    );
+    await bus.schedulePromotionBoundary(7, 'activate', new Date('2026-09-13T00:00:00.000Z'), now);
     await bus.schedulePromotionBoundary(7, 'expire', new Date('2026-09-14T00:00:00.000Z'), now);
-    expect(await bus.inspect('events').getDelayedCount()).toBe(2);
+    expect(await bus.inspect('promotions').getDelayedCount()).toBe(2);
 
     expect(await bus.removePromotionBoundaries(7)).toEqual({ activate: 1, expire: 1 });
 
-    expect(await bus.inspect('events').getDelayedCount()).toBe(0);
+    expect(await bus.inspect('promotions').getDelayedCount()).toBe(0);
   });
 
   it('reports success when a cancelled promotion had no boundary job at all', async () => {
@@ -160,7 +179,7 @@ describe('EventBus', () => {
     });
     workers.push(
       new Worker(
-        'events',
+        'promotions',
         async () => {
           started();
           await mayFinish;
@@ -208,7 +227,7 @@ describe('EventBus', () => {
     expect(failed?.failedReason).toBe('poisoned job');
   }, 40_000);
 
-  it('keeps both queues on the queue database and never writes to the read-model database', async () => {
+  it('keeps every queue on the queue database and never writes to the read-model database', async () => {
     const readModel = new Redis(redisUrl, { db: READ_MODEL_DB });
     const queueDb = new Redis(redisUrl, { db: QUEUE_DB });
     try {
@@ -218,7 +237,7 @@ describe('EventBus', () => {
       await bus.publish('ingestion.chunk', { jobId: 1, chunkIndex: 0 });
 
       expect(await readModel.dbsize()).toBe(0);
-      expect(await queueDb.exists(`${PREFIX}:events:meta`)).toBe(1);
+      expect(await queueDb.exists(`${PREFIX}:catalog:meta`)).toBe(1);
       expect(await queueDb.exists(`${PREFIX}:ingestion:meta`)).toBe(1);
     } finally {
       await Promise.all([readModel.quit(), queueDb.quit()]);
@@ -232,11 +251,11 @@ describe('EventBus', () => {
 
     // What landed before the close is durable; what had not is not, which is why
     // `src/server.ts` stops the HTTP server before it closes the queues.
-    expect(await bus.inspect('events').getJob(queued.id as string)).toBeDefined();
+    expect(await bus.inspect('promotions').getJob(queued.id as string)).toBeDefined();
     await expect(closing.publish('promotion.changed', { promotionId: 78 })).rejects.toThrow(
       /Connection is closed/,
     );
-    expect(await bus.inspect('events').getWaitingCount()).toBe(1);
+    expect(await bus.inspect('promotions').getWaitingCount()).toBe(1);
   });
 
   it('fails an enqueue against an unavailable queue instead of hanging the caller', async () => {
