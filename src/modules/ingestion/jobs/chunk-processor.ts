@@ -7,6 +7,7 @@ import type { BasePriceCalculatorCache } from '../../pricing/domain/base-price-c
 import { checkpointBatch } from '../db/checkpoint-batch.js';
 import { claimChunk } from '../db/claim-chunk.js';
 import { completeJobIfDone } from '../db/complete-job-if-done.js';
+import { refreshJobProgress } from '../db/refresh-job-progress.js';
 import { releaseChunk } from '../db/release-chunk.js';
 import { findIngestionJob } from '../db/find-ingestion-job.js';
 import type { ChunkOutcome } from '../domain/dto/chunk-outcome.js';
@@ -141,8 +142,11 @@ export class ChunkProcessor {
       rowsRejected += batch.rejected;
     }
 
-    // The checkpoint reached the end of the range, so this chunk is done; the
-    // job is completed by whichever chunk was last, and only one call wins.
+    // The checkpoint reached the end of the range, so this chunk is done. Its
+    // counters go up to the job before the status does, or a `completed` job is
+    // readable for an instant reporting that it processed nothing.
+    await refreshJobProgress(this.db, jobId);
+    // The job is completed by whichever chunk was last, and only one call wins.
     await completeJobIfDone(this.db, jobId);
 
     return { claimed: true, rowsProcessed, rowsRejected };
@@ -174,7 +178,8 @@ export class ChunkProcessor {
 
     const priced = await calculator.calculate(parsed.row);
     if (!priced.ok) {
-      if (priced.fault === 'rules') throw new Error(`pricing rules rejected a row: ${priced.reason}`);
+      if (priced.fault === 'rules')
+        throw new Error(`pricing rules rejected a row: ${priced.reason}`);
       return undefined;
     }
 

@@ -19,7 +19,23 @@ import { ingestionJobs } from './schema/ingestion-jobs.js';
 export async function completeJobIfDone(db: Db, jobId: number): Promise<boolean> {
   const completed = await db
     .update(ingestionJobs)
-    .set({ status: 'completed' })
+    .set({
+      status: 'completed',
+      // The counters go in the statement that completes the job, not before it.
+      // A separate refresh is ordered by whichever invocation ran last, and that
+      // is not necessarily the one that finished last: a real 500 000-row run
+      // ended `completed` with `chunks_done = 5` and 441 336 of 500 000 rows,
+      // because the last refresh to execute caught another chunk mid-flight.
+      // This `UPDATE` only matches when every chunk is done, so what it reads is
+      // final by construction.
+      chunksDone: sql`(select count(*) from ${ingestionChunks}
+        where ${ingestionChunks.jobId} = ${jobId} and ${ingestionChunks.status} = 'done')`,
+      rowsProcessed: sql`(select coalesce(sum(${ingestionChunks.rowsProcessed}), 0)
+        from ${ingestionChunks} where ${ingestionChunks.jobId} = ${jobId})`,
+      rowsRejected: sql`(select coalesce(sum(${ingestionChunks.rowsRejected}), 0)
+        from ${ingestionChunks} where ${ingestionChunks.jobId} = ${jobId})`,
+      updatedAt: sql`now()`,
+    })
     .where(
       and(
         eq(ingestionJobs.id, jobId),

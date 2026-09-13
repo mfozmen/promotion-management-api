@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
 import type { Db, Queryable } from '../../../shared/db/client.js';
 import { products } from './schema/products.js';
 import { hasSqlState } from '../../../shared/db/has-sql-state.js';
@@ -72,12 +72,39 @@ export class ProductRepository {
           ingestSourceOffset: sql`excluded.ingest_source_offset`,
           updatedAt: sql`now()`,
         },
+        // Resolution is by where the row came from, not by which write committed
+        // last: chunks are claimed independently, so the order rows are written
+        // is not the order of their offsets (design spec §"not commit order").
+        //
+        // The null branch is named rather than implied. A row-value comparison
+        // against NULL is NULL, not true, so `(a, b) > (c, d)` alone would
+        // silently never update a product created through the API, which has
+        // both provenance columns null. The schema checks the two columns are
+        // null together, so one branch covers both (REVIEW.md 2.6).
+        setWhere: sql`${products.ingestJobId} is null
+          or (excluded.ingest_job_id, excluded.ingest_source_offset)
+             > (${products.ingestJobId}, ${products.ingestSourceOffset})`,
       })
       .returning({ sku: products.sku, id: products.id });
 
     // `RETURNING` follows the order the rows were written, which is not promised to
     // be the order they were given; the caller's order is what the announcement uses.
     const byTheirSku = new Map(stored.map((row) => [row.sku, row.id]));
+
+    // A row the guard skipped returns nothing, and the caller still has to be able
+    // to announce it: the product exists and the read model may not have seen it.
+    // Returning fewer ids than rows would put `undefined` in the announcement,
+    // which the event schema rejects after the batch has already committed. The
+    // extra read happens only when something was skipped, which is the rare path.
+    const skipped = rows.filter((row) => !byTheirSku.has(row.sku)).map((row) => row.sku);
+    if (skipped.length > 0) {
+      const found = await db
+        .select({ sku: products.sku, id: products.id })
+        .from(products)
+        .where(inArray(products.sku, skipped));
+      for (const row of found) byTheirSku.set(row.sku, row.id);
+    }
+
     return rows.map((row) => byTheirSku.get(row.sku)!);
   }
 }

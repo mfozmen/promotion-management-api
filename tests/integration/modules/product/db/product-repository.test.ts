@@ -11,7 +11,9 @@ let sequence = 0;
 /** A distinct SKU per call, so files sharing one database clone do not collide. */
 const sku = () => `SKU-${(sequence += 1)}`;
 
-const product = (overrides: Partial<Parameters<ProductRepository['upsertMany']>[1][number]> = {}) => ({
+const product = (
+  overrides: Partial<Parameters<ProductRepository['upsertMany']>[1][number]> = {},
+) => ({
   sku: sku(),
   name: 'a name',
   category: 'shoes',
@@ -56,8 +58,9 @@ describe('ProductRepository.upsertMany', () => {
     const existing = product({ name: 'old', basePriceCents: 1000, stockQuantity: 5 });
     await new ProductRepository(db()).upsertMany(db(), [existing]);
 
+    // A later row from the same file, so the provenance guard admits it.
     const ids = await new ProductRepository(db()).upsertMany(db(), [
-      { ...existing, name: 'new', basePriceCents: 2500, stockQuantity: 0 },
+      { ...existing, name: 'new', basePriceCents: 2500, stockQuantity: 0, ingestSourceOffset: 999 },
     ]);
 
     const row = await rowFor(existing.sku);
@@ -83,7 +86,9 @@ describe('ProductRepository.upsertMany', () => {
     await new ProductRepository(db()).upsertMany(db(), [existing]);
     const before = (await rowFor(existing.sku))?.updatedAt;
 
-    await new ProductRepository(db()).upsertMany(db(), [{ ...existing, stockQuantity: 99 }]);
+    await new ProductRepository(db()).upsertMany(db(), [
+      { ...existing, stockQuantity: 99, ingestSourceOffset: 999 },
+    ]);
 
     expect((await rowFor(existing.sku))?.updatedAt?.getTime()).toBeGreaterThan(
       before?.getTime() ?? 0,
@@ -103,6 +108,72 @@ describe('ProductRepository.upsertMany', () => {
 
     expect(ids).toHaveLength(1);
     expect((await rowFor(repeated))?.stockQuantity).toBe(2);
+  });
+
+  it('keeps the later row when an earlier chunk arrives after a later one', async () => {
+    // Resolution is by where the row came from, not by which write committed
+    // last: chunks are claimed independently and six were in flight at once on a
+    // real 500 000-row run, so the order rows are written is not the order of
+    // their offsets. The design spec says "not commit order" in those words.
+    const existing = product({ ingestJobId: 5, ingestSourceOffset: 900, name: 'later' });
+    await new ProductRepository(db()).upsertMany(db(), [existing]);
+
+    await new ProductRepository(db()).upsertMany(db(), [
+      { ...existing, ingestJobId: 5, ingestSourceOffset: 100, name: 'earlier' },
+    ]);
+
+    expect((await rowFor(existing.sku))?.name).toBe('later');
+  });
+
+  it('takes a row from a later job over one from an earlier job', async () => {
+    const existing = product({ ingestJobId: 5, ingestSourceOffset: 900, name: 'old import' });
+    await new ProductRepository(db()).upsertMany(db(), [existing]);
+
+    await new ProductRepository(db()).upsertMany(db(), [
+      { ...existing, ingestJobId: 6, ingestSourceOffset: 1, name: 'new import' },
+    ]);
+
+    expect((await rowFor(existing.sku))?.name).toBe('new import');
+  });
+
+  it('overwrites a product that has no provenance, rather than skipping it', async () => {
+    // A product created through the API has both columns null, and a row-value
+    // comparison against NULL is NULL rather than true — so a guard that did not
+    // name the null branch would silently never update a manually created
+    // product from a vendor file (REVIEW.md 2.6). The two columns are written
+    // together and the schema checks it, so one null branch covers both.
+    const [manual] = await db()
+      .insert(products)
+      .values({
+        sku: sku(),
+        name: 'created by hand',
+        category: 'shoes',
+        basePriceCents: 500,
+        stockQuantity: 1,
+      })
+      .returning();
+
+    await new ProductRepository(db()).upsertMany(db(), [
+      product({ sku: manual!.sku, name: 'from the vendor', ingestJobId: 1, ingestSourceOffset: 0 }),
+    ]);
+
+    expect((await rowFor(manual!.sku))?.name).toBe('from the vendor');
+  });
+
+  it('returns an id for every row it was given, including one it did not write', async () => {
+    // The caller announces what it hands back, and a skipped row is still a
+    // product the read model may not have seen. Returning fewer ids than rows
+    // would put `undefined` in the announcement, which the event schema rejects
+    // after the batch has already committed.
+    const existing = product({ ingestJobId: 9, ingestSourceOffset: 900 });
+    await new ProductRepository(db()).upsertMany(db(), [existing]);
+
+    const ids = await new ProductRepository(db()).upsertMany(db(), [
+      { ...existing, ingestSourceOffset: 1 },
+    ]);
+
+    expect(ids).toHaveLength(1);
+    expect(ids[0]).toBe((await rowFor(existing.sku))?.id);
   });
 
   it('writes nothing and returns nothing for an empty batch', async () => {

@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { completeJobIfDone } from '@src/modules/ingestion/db/complete-job-if-done.js';
+import { refreshJobProgress } from '@src/modules/ingestion/db/refresh-job-progress.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { useTestDatabase } from '../../../db.js';
@@ -39,14 +40,47 @@ const finish = (jobId: number, chunkIndex: number) =>
   db()
     .update(ingestionChunks)
     .set({ status: 'done' })
-    .where(
-      and(eq(ingestionChunks.jobId, jobId), eq(ingestionChunks.chunkIndex, chunkIndex)),
-    );
+    .where(and(eq(ingestionChunks.jobId, jobId), eq(ingestionChunks.chunkIndex, chunkIndex)));
 
 const jobRow = async (jobId: number) => {
   const [row] = await db().select().from(ingestionJobs).where(eq(ingestionJobs.id, jobId));
   return row;
 };
+
+describe('refreshJobProgress', () => {
+  it('rolls the chunk counters up to the job, so a finished import does not report nothing', async () => {
+    // Measured on a real 500 000-row run: six chunks holding 500 000 rows between
+    // them, and the job row reading `rows_processed = 0`, `chunks_done = 0`,
+    // `status = completed`. The counters live on the chunks and nothing carried
+    // them up, so the only row an operator reads said the import did nothing.
+    const jobId = await jobWith(2);
+    await db()
+      .update(ingestionChunks)
+      .set({ status: 'done', rowsProcessed: 120, rowsRejected: 3 })
+      .where(and(eq(ingestionChunks.jobId, jobId), eq(ingestionChunks.chunkIndex, 0)));
+    await db()
+      .update(ingestionChunks)
+      .set({ rowsProcessed: 40, rowsRejected: 1 })
+      .where(and(eq(ingestionChunks.jobId, jobId), eq(ingestionChunks.chunkIndex, 1)));
+
+    await refreshJobProgress(db(), jobId);
+
+    const job = await jobRow(jobId);
+    expect(job?.rowsProcessed).toBe(160);
+    expect(job?.rowsRejected).toBe(4);
+    // Only the chunk that finished counts as done; the other is still running.
+    expect(job?.chunksDone).toBe(1);
+  });
+
+  it('counts nothing for a job whose chunks have not started', async () => {
+    const jobId = await jobWith(2);
+
+    await refreshJobProgress(db(), jobId);
+
+    const job = await jobRow(jobId);
+    expect({ done: job?.chunksDone, rows: job?.rowsProcessed }).toEqual({ done: 0, rows: 0 });
+  });
+});
 
 describe('completeJobIfDone', () => {
   it('completes the job once its last chunk is done', async () => {
@@ -55,7 +89,11 @@ describe('completeJobIfDone', () => {
     await finish(jobId, 1);
 
     expect(await completeJobIfDone(db(), jobId)).toBe(true);
-    expect((await jobRow(jobId))?.status).toBe('completed');
+    const job = await jobRow(jobId);
+    expect(job?.status).toBe('completed');
+    // Final counters come from the statement that completes it, so a completed
+    // job never reports fewer rows than its chunks hold.
+    expect(job?.chunksDone).toBe(2);
   });
 
   it('leaves a job running while any chunk is not done', async () => {
