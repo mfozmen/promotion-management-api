@@ -866,6 +866,11 @@ per such invariant; everything else fails on first use by itself.
 
 Evidence: a 149-line validator plus 296 test lines replaced by 37 lines (PR #34).
 
+12.6 Complexity per function stays at 10 or below: ESLint `complexity`
+(cyclomatic, gates `npm run lint`) and Sonar S3776 (cognitive, on the PR). Above
+it, Extract Function or Replace Nested Conditional with Guard Clauses — never a
+disable comment.
+
 12.7 A guard against a failure nothing in this repository can produce today is
 a finding, however careful it is: the branch that adds the producer adds the
 guard, against the real failure. Prose has the same rule — a comment, an ADR
@@ -875,11 +880,6 @@ is deleted, not improved.
 Evidence: an HTTP skeleton scrubbed SQL from driver errors, froze tables
 nothing assigns to and logged a misconfigured client fleet before any route
 queried a database; every open review thread on it was that prose going stale.
-
-12.6 Complexity per function stays at 10 or below: ESLint `complexity`
-(cyclomatic, gates `npm run lint`) and Sonar S3776 (cognitive, on the PR). Above
-it, Extract Function or Replace Nested Conditional with Guard Clauses — never a
-disable comment.
 
 ---
 
