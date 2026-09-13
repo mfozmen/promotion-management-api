@@ -424,19 +424,14 @@ Every endpoint in ADR-0003 to ADR-0007 has to agree on where it is mounted, how 
 
 - **Prefix.** Everything is mounted on an `express.Router()` under `/api`, including the liveness probe, which moves from `GET /health` to `GET /api/health`. No operator surface exists yet; a queue dashboard or a metrics scrape mounts outside the prefix and outside the envelope, because neither is client-facing.
 - **Validation at the boundary.** `validate({ body?, query?, params? })` takes zod object schemas, calls `.strict()` on them once at route construction, and replaces each declared part with the parsed value. An unknown field is a `400`, not a silently ignored client typo. `req.query` is a getter in Express 5, so the parsed value is installed with `Object.defineProperty`.
-- **One error envelope.** `{ error: { code, message, details? } }` and nothing else. `HttpError(code, message, details?)` maps straight through.
 - **Errors are `http-errors`, used as its README documents.** `createError(status, message, properties)`; `expose` decides what a client may read, and it is already `false` for a 5xx unless the raiser says otherwise, so operator prose is withheld because the library withholds it rather than because someone remembered to. `headers` carries a `Retry-After`, `details` is the validator's own property. We keep no error classes and no code-to-status table: the status is the taxonomy, and a second one beside it was wrong in three directions across three commits. A class extending the constructor is allowed only where the same raise — status, message and properties — would be rebuilt at several sites; nothing here raises the same error twice, so none is written.
-- **`details` crosses only when the message does.** Masking the prose of a 5xx and returning its details beside it leaks by the other field, which a test now holds.
 - **`details` is unbounded, and the amplification is accepted with its number.** Measured on the installed zod: the largest body the 100 kB cap allows, made entirely of failing array items, is 9 998 issues and a response of about 900 kB — nine times the request. Accepted rather than capped, because response size is not a cost this API pays: zod has already built the issues by the time they are read, serialising them is cheap, and the bulk vendor path is multipart and never reaches this validator. `path` is unbounded for the same reason, and a caller's own key reaches it only through a `z.record` nested in a request part, which no route declares (REVIEW.md 12.7).
-- **A 5xx never returns its message, whoever raised it.** The raiser's words go to the log; the client reads `SERVER_MESSAGES`, and a 5xx code without an entry answers `500 INTERNAL`.
 - **A foreign error is trusted only when it is marked the http-errors way** — `expose === true` and an integer status in the 4xx range. Anything else is masked as `500 INTERNAL`, message and all.
 - **`100kb` JSON body cap.** Multipart does not pass through this layer, so the vendor upload brings its own bound.
-- **The two codes that mean come back later carry a `Retry-After`**, as a band rather than a fixed number, so a fleet that met one outage does not return in the same second.
 
 ### Consequences
 
 - A client branches on the status, not on a code field: the envelope is `{ error: { message, details? } }`. body-parser's own 4xx messages therefore reach the caller — checked, and each describes the caller's own request ("unsupported charset", a JSON position, "request entity too large") rather than anything of ours.
-- `details` is a list of `{ path, message }`, bounded in count and in the length of each message.
 - The boundary lives in `src/shared/http/`, so a story adds a route rather than an error convention.
 
 ### Trade-offs
@@ -458,19 +453,16 @@ A request does not end at the HTTP response: it emits an event a worker picks up
 - `src/shared/logger.ts` exports the pino root logger and `src/shared/http/http-logger.ts` the `pino-http` middleware, mounted first in `createApp` so every later handler has `req.log`.
 - **Correlation id.** Taken from `x-request-id` only when it matches `^[A-Za-z0-9._-]{1,128}$`, otherwise generated. The header is untrusted input: a newline forges log lines and a CR injects a response header. It is echoed back and bound as `reqId` on every line.
 - **Narrowed serializers.** `req` is `{ id, method, path }` and `res` is `{ statusCode }`, so headers, body and query string are never serialised and no credential reaches a line.
-- **Errors are logged through `serializeError` under an `error` key**, never handed to a logger as an object: pino-http wraps a custom `err` serializer, and the same function would receive an already-flattened object through `req.log` and a real `Error` through the root logger.
 - **The stack goes to the log and never to a response.**
 - **No `console`.** Every line the process emits is JSON with the same fields.
 
 ### Consequences
 
 - A grep on one `reqId` returns the whole request, provided the caller's id is unique, which is the caller's responsibility once it supplies one.
-- A 4xx logs at `warn` with its code and status; anything else logs at `error` with the serialized error, which makes real 500s an alertable signal rather than noise.
+- A 4xx logs at `warn` with its status; anything else logs at `error` under `err`, which makes real 500s an alertable signal rather than noise.
 - The id is the join key the queue boundary will have to carry. It is not implemented: every payload schema is a `z.strictObject`, so an id attached by a producer throws inside `publish`, and adding it is a change to all five contracts.
 
 ### Trade-offs
 
 - A diagnosis needing a request header or query string has to reproduce the request rather than read it back.
 - A caller-supplied id is accepted, not verified to be unique, so a fleet sending one constant id collapses onto a single `reqId`.
-- A deferral logs at `error` with a stack, like a fault. `BACKPRESSURE` and `READ_MODEL_NOT_READY` are operating conditions, so a rebuild or an outage writes one alertable line per request and real 500s sit inside that noise. Accepted while nothing raises either code; the story that raises one owns separating it.
-- `serializeError` copies the message and the stack as it finds them. A driver error composes its message out of the failing statement and the bound row, and the stack repeats that message, so the day a query runs behind a route both reach the log line. No route at this layer touches the database; the first story that queries PostgreSQL owns reducing a driver error against the real shape rather than an imagined one.

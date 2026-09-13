@@ -517,10 +517,7 @@ Evidence: twice in one pull request a control passed review while never firing
 in production. Express prints a raw stack on every environment except `test`,
 which is the one the suite runs in, and a compensating `debug` log line sat
 under a root logger running at `info` while the capture logger in the test ran
-at `trace`. A third time, a test asserted the assignment a shallow
-`Object.freeze` does stop and never the one it does not: the rows inside the
-frozen table stayed writable, and a row's fields are what the response is built
-from. Assert the reachable breach, not the one the control obviously covers.
+at `trace`. Assert the reachable breach, not the one the control obviously covers.
 
 7.5 **Determinism.** Fixed clocks (injected `now` or fake timers), fixed
 fixtures, no random data, no `sleep` to wait for a worker. Poll a condition with
@@ -603,10 +600,9 @@ would have come straight back in the error body.
 8.4 No internal detail escapes to the client: no stack trace, no SQL text, no
 connection string, no secret, in a response. A log line is read by the operator,
 not the caller, so the stack of an unexpected error belongs there — it is the
-only way to diagnose a 500 — and never in the body. Errors are logged through
-one shared whitelist (`serializeError`), under an `error` key; handing a logger
-the error itself, under `err` or any other key, is a finding, and so is a second
-copy of the whitelist.
+only way to diagnose a 500 — and never in the body. An error is logged under
+`err`, where pino's own serializer shapes it; a hand-written whitelist beside
+it is a finding (12.9).
 
 8.5 Handlers log and rethrow; `catch {}` is a finding. A caught error that is
 neither logged nor rethrown is a silent failure.
