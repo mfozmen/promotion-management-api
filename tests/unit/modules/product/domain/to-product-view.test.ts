@@ -65,6 +65,17 @@ describe('toProductView', () => {
     ).toThrow();
   });
 
+  it('accepts a promotion whose discount floored to zero, so tightening this refine to `<` fails here', () => {
+    // `PercentageDiscount` floors, so any value worth less than a cent of the
+    // base discounts nothing, and the row it writes is identical field for
+    // field to a cancelled promotion the recompute failed to clear. Only the
+    // recompute's own HDEL separates them, which is why the rule beside this
+    // one is `===` and not `<`.
+    const view = toProductView({ ...stored, promotionId: '3', promotionName: 'Winter sale' });
+
+    expect(view.promotion).toEqual({ id: 3, name: 'Winter sale' });
+  });
+
   it('accepts a discount that names its promotion', () => {
     const view = toProductView({
       ...stored,

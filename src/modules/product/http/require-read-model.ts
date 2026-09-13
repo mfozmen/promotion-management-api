@@ -22,6 +22,6 @@ export const requireReadModel =
         // The same classifier the four command sites use: the gate runs first
         // on every request, so an exemption here is the rule holding nowhere
         // that matters.
-        next(replyFailure(error as Error));
+        next(replyFailure(error));
       });
   };

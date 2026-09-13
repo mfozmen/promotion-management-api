@@ -45,6 +45,27 @@ describe('GET /api/products', () => {
     expect(res.body).toMatchObject({ page: 1, pageSize: 20, total: 3 });
   });
 
+  it('orders by the price a shopper pays, not the price before the sale', async () => {
+    await seedProducts(redis(), [
+      product({
+        id: 1,
+        basePriceCents: 1_000,
+        effectivePriceCents: 500,
+        promotionId: 7,
+        promotionName: 'Winter sale',
+      }),
+      product({ id: 2, basePriceCents: 800, effectivePriceCents: 800 }),
+    ]);
+
+    const res = await request(app()).get('/api/products?order=asc');
+
+    // Every other ordering case has base equal to effective, so a scorer that
+    // read the base price would pass all of them. Here the two orders
+    // disagree: 1 is the dearer product before its sale and the cheaper one
+    // after it, so scoring by base price returns [2, 1] and fails this.
+    expect(res.body.items.map((item: { id: number }) => item.id)).toEqual([1, 2]);
+  });
+
   it('orders products sharing a price by id as a string, which is not numeric order', async () => {
     // A flash sale flattens many prices to one score, so this is the ordinary
     // Scenario B case rather than an edge one. Redis breaks a score tie by

@@ -1,12 +1,15 @@
 import { readModelUnavailable } from './read-model-unavailable.js';
 
 /** A pipeline resolves with its failures instead of rejecting, so each reply
- *  carries its own error and a wrapper around `exec` never sees one. Probed
- *  against the installed ioredis: a server-side error arrives as `ReplyError`
- *  and a connection that has gone as a plain `Error`, even with the offline
- *  queue off. The first is the writer having put something else at that key,
- *  which no amount of retrying fixes; the second is the same outage a direct
- *  command reports by rejecting. */
-export function replyFailure(error: Error): unknown {
-  return error.name === 'ReplyError' ? error : readModelUnavailable(error);
+ *  carries its own error and a wrapper around `exec` never sees one. Measured
+ *  against Redis: `-LOADING` on a restart, `-OOM`, `-BUSY`, `-MISCONF` and
+ *  `-READONLY` all arrive as `ReplyError` alongside `-WRONGTYPE`, so the class
+ *  says nothing about whether coming back would help. Only the string does.
+ *  Everything else — a transport failure, and anything that is not an error at
+ *  all — is the 503, because a wrong guess in that direction costs a retry and
+ *  the other costs an outage answered with a status nothing retries. */
+export function replyFailure(error: unknown): unknown {
+  const permanent = error instanceof Error && error.message.startsWith('WRONGTYPE');
+
+  return permanent ? error : readModelUnavailable(error);
 }

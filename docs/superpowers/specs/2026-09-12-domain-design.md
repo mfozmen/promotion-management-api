@@ -425,12 +425,12 @@ where p.id = any($1);
 
 ## 5. Read model (Redis DB 0)
 
-| Key                   | Type | Content                                                                                                                                   |
-| --------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, pricingRulesVersion, updatedAt` |
-| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                        |
-| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                           |
-| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                      |
+| Key                   | Type | Content                                                                                                                                                                                                                                                                                                |
+| --------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, pricingRulesVersion, updatedAt` — the promotion pair is written together or omitted together, never as `''` or `null`, because Redis has no null and ioredis stores both as the empty string |
+| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                                                                                                                                                                                     |
+| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                                                                                                                                                                                        |
+| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                                                                                                                                                                                   |
 
 - `GET /api/products/:id` = `HGETALL product:{id}` (zero PostgreSQL reads).
 - `GET /api/products` = `ZRANGE <zset> -inf +inf BYSCORE LIMIT offset size`
