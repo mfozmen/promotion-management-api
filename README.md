@@ -147,6 +147,29 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 
 ## Database schema
 
+[`docs/schema.sql`](./docs/schema.sql) is the schema as a single file, for a reader who wants to
+open one rather than read three migrations. It is a copy, not an input: nothing reads it at
+runtime and no check compares it, and it is re-taken when a migration lands, with
+
+```bash
+docker exec pma-db-test pg_dump --schema-only --no-owner --no-privileges --exclude-schema=drizzle -U postgres ddl_export > docs/schema.sql
+```
+
+against PostgreSQL 16.14 with `pg_dump` 16.14 — a dump from another major is a different file
+for reasons that have nothing to do with this schema, so the versions are part of the command.
+`--exclude-schema=drizzle` drops the `__drizzle_migrations` ledger, which is the ORM's
+bookkeeping rather than part of the design. `--schema=public` looks like the same thing and is
+not: it omits `CREATE EXTENSION btree_gist` while keeping both `EXCLUDE USING gist` constraints
+that need it, and it adds a `CREATE SCHEMA public` that fails on any database that already has
+one — so the file stops replaying, in two ways at once.
+
+Two things the file does not carry, neither accidental. `--schema-only` means the `ingestion`
+pricing rules migration `0001` seeds and the single `reconciler_state` row are absent: this is
+the schema, and that state lives in the migration where a reader can find it. And `pg_dump`
+16.14 writes `\restrict` and `\unrestrict` with a fresh random token on every run, so two dumps
+of an unchanged schema differ on four lines — a diff of that size and shape is the token, not the
+schema, and it is left alone so that regenerating the file reproduces what the command emits.
+
 The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), and `0002_active_promotions.sql` creates the `active_promotions` view. Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/workers/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver and the admin reads select from it instead of restating the predicate (ADR-0004). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
