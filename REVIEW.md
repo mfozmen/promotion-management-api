@@ -921,6 +921,24 @@ replace that matches nothing, reports success, and ships a document saying the
 opposite of what its commit message claims; that one shipped twice before it
 was noticed.
 
+13.8 **A merged configuration file is checked by parsing it, not by reading
+it.** A merge can leave two blocks under the same key: git is content, because
+each side's lines are kept and neither deleted the other's; the parser is
+content, because a duplicate key is legal in YAML and the last occurrence wins;
+and a reader is content, because each block is individually correct. Load the
+merged file and compare the parsed result against what you meant it to say —
+for a workflow, the service list, the step list, the environment.
+
+Evidence: merging the storefront branch onto the HTTP skeleton put two
+`services:` blocks in `ci.yml`, one bringing up Redis and one PostgreSQL. YAML
+kept the second, so every integration test would have run in CI against no
+Redis at all, and the diff read as two correct additions. This is the fourth of
+a family this week — a gate that cannot fire is indistinguishable from a gate
+that passed. The others were a label-strip step that removed no labels,
+`drizzle-kit` exiting 0 on a failure, and a migration-count assertion that
+could not fail (11.5). The question that separates them is not "did it pass"
+but "what would make it fail, and has anyone seen it do that".
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
