@@ -1,4 +1,6 @@
+import { Engine } from 'json-rules-engine';
 import { describe, expect, it } from 'vitest';
+import { CompiledRuleSet } from '@src/modules/pricing/domain/compiled-rule-set.js';
 import { RuleCompiler } from '@src/modules/pricing/domain/rule-compiler.js';
 import { RowPricer } from '@src/modules/pricing/domain/row-pricer.js';
 import type { VendorRowFacts } from '@src/modules/pricing/domain/dto/vendor-row-facts.js';
@@ -265,76 +267,6 @@ describe('RowPricer', () => {
     expect(outcome.ok === false && outcome.reason).toMatch(/category/);
   });
 
-  it('prices overlapping calls on one rule set without dropping a rule', async () => {
-    const rules = await new RuleCompiler().compile([
-      ruleRow({
-        id: 1,
-        name: 'markup',
-        priority: 100,
-        conditions: categoryIs('Electronics'),
-        event: percent(1500),
-      }),
-      ruleRow({
-        id: 2,
-        name: 'bulk',
-        priority: 50,
-        conditions: stockAbove(100),
-        event: percent(-300),
-      }),
-      ruleRow({ id: 3, name: 'commission', priority: 10, conditions: always, event: percent(500) }),
-    ]);
-    // A fact whose first evaluation yields to the event loop, so a second run
-    // started meanwhile finishes first and the engine marks itself finished
-    // under the first run's feet.
-    let calls = 0;
-    rules.engine.addFact('slow', () =>
-      calls++ === 0
-        ? new Promise((resolve) => setImmediate(() => resolve(true)))
-        : Promise.resolve(true),
-    );
-    rules.engine.addRule({
-      name: 'slow',
-      priority: 1000,
-      conditions: { all: [{ fact: 'slow', operator: 'equal', value: true }] },
-      event: cents(0),
-    });
-
-    const pricer = new RowPricer(rules);
-    const outcomes = await Promise.all([pricer.price(vendorRow()), pricer.price(vendorRow())]);
-
-    expect(outcomes.map((outcome) => outcome.ok && outcome.basePriceCents)).toEqual([
-      93_702, 93_702,
-    ]);
-  });
-
-  it('prices overlapping calls on a nine-rule set, with no fact the module does not define', async () => {
-    // The clobber is a function of how many priority sets the engine walks, not
-    // of any rule suspending: a run that matches nothing finishes first, marks
-    // the engine finished, and the run beside it loses its remaining rules.
-    // Without the wrapper's queue the second row comes back short and ok: true.
-    const rules = await new RuleCompiler().compile(
-      Array.from({ length: 9 }, (_, index) =>
-        ruleRow({
-          id: index + 1,
-          name: `rule-${index + 1}`,
-          priority: 100 - index,
-          conditions: categoryIs('Electronics'),
-          event: cents(100),
-        }),
-      ),
-    );
-
-    const pricer = new RowPricer(rules);
-    const outcomes = await Promise.all([
-      pricer.price(vendorRow({ category: 'Garden' })),
-      pricer.price(vendorRow()),
-    ]);
-
-    expect(outcomes.map((outcome) => outcome.ok && outcome.basePriceCents)).toEqual([
-      80_000, 80_900,
-    ]);
-  });
-
   it('applies equal-priority rules in a total order, whatever the row order', async () => {
     const fee = { name: 'handling-fee', conditions: always, event: cents(1000) };
     const double = { name: 'double', conditions: always, event: percent(10_000) };
@@ -357,76 +289,18 @@ describe('RowPricer', () => {
     });
   });
 
-  it('keeps reporting a rules fault after one, rather than mispricing the next row', async () => {
-    const rules = await new RuleCompiler().compile([
-      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
-    ]);
-    // A fact that fails once. The failed run keeps evaluating in the background
-    // and marks the engine finished under the next run's feet, which would drop
-    // that run's remaining rules and price the row as if no rule matched.
-    let failing = true;
-    rules.engine.addFact('flaky', () => {
-      if (!failing) return Promise.resolve(1);
-      failing = false;
-      return Promise.reject(new Error('fact blew up'));
-    });
-    rules.engine.addRule({
-      name: 'flaky',
-      priority: 1000,
-      conditions: { all: [{ fact: 'flaky', operator: 'equal', value: 1 }] },
-      event: cents(0),
-    });
-
-    const pricer = new RowPricer(rules);
-    const first = await pricer.price(vendorRow());
-    const second = await pricer.price(vendorRow());
-
-    expect(first).toMatchObject({ ok: false, fault: 'rules' });
-    expect(second).toMatchObject({ ok: false, fault: 'rules', reason: 'fact blew up' });
-  });
-
-  it('reports the rules fault to rows already queued when the run fails', async () => {
-    const rules = await new RuleCompiler().compile([
-      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
-    ]);
-    let failing = true;
-    rules.engine.addFact('flaky', () => {
-      if (!failing) return Promise.resolve(1);
-      failing = false;
-      return Promise.reject(new Error('fact blew up'));
-    });
-    rules.engine.addRule({
-      name: 'flaky',
-      priority: 1000,
-      conditions: { all: [{ fact: 'flaky', operator: 'equal', value: 1 }] },
-      event: cents(0),
-    });
-
-    // Queued before the first run's failure is observed, so a check made only
-    // when the call arrives would let these through onto the spent engine.
-    const pricer = new RowPricer(rules);
-    const outcomes = await Promise.all([
-      pricer.price(vendorRow()),
-      pricer.price(vendorRow()),
-      pricer.price(vendorRow()),
-    ]);
-
-    expect(
-      outcomes.map((outcome) => (outcome.ok ? outcome.basePriceCents : outcome.fault)),
-    ).toEqual(['rules', 'rules', 'rules']);
-  });
-
   it('reports an engine that fails with a non-error without throwing itself', async () => {
-    const rules = await new RuleCompiler().compile([
-      ruleRow({ id: 1, name: 'markup', conditions: always, event: percent(1500) }),
-    ]);
-    rules.engine.addFact('rude', () => Promise.reject('just a string'));
-    rules.engine.addRule({
+    // Built here rather than through the compiler: the engine belongs to CompiledRuleSet,
+    // and what this asserts is the pricer's answer to a rejected run.
+    const engine = new Engine();
+    engine.addFact('rude', () => Promise.reject('just a string'));
+    engine.addRule({
       name: 'rude',
       priority: 1000,
       conditions: { all: [{ fact: 'rude', operator: 'equal', value: 1 }] },
       event: cents(0),
     });
+    const rules = new CompiledRuleSet(engine, [1], 1);
 
     await expect(new RowPricer(rules).price(vendorRow())).resolves.toMatchObject({
       ok: false,
@@ -441,10 +315,11 @@ describe('RowPricer', () => {
   });
 
   it('turns an engine failure into a rejection rather than letting it escape', async () => {
-    const exploding = {
-      pricingRulesVersion: 1,
-      engine: { run: () => Promise.reject(new Error('engine exploded')) },
-    } as unknown as Awaited<ReturnType<RuleCompiler['compile']>>;
+    const exploding = new CompiledRuleSet(
+      { run: () => Promise.reject(new Error('engine exploded')) } as unknown as Engine,
+      [1],
+      1,
+    );
 
     await expect(new RowPricer(exploding).price(vendorRow())).resolves.toEqual({
       ok: false,

@@ -22,7 +22,7 @@ tests/
   e2e/
 ```
 
-Test files import their subject through the `@src/*` alias — `import { calculateEffectivePrice } from '@src/modules/promotion/domain/calculate-effective-price.js'` — wired in `tsconfig.json` `paths` and `vitest.workspace.ts`, which declares the alias once and spreads it into both projects (a workspace project does not inherit the root `vitest.config.ts` `resolve` block). Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
+Test files import their subject through the `@src/*` alias — `import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js'` — wired in `tsconfig.json` `paths` and `vitest.workspace.ts`, which declares the alias once and spreads it into both projects (a workspace project does not inherit the root `vitest.config.ts` `resolve` block). Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
 
 A module opens a directory when it has a file for it, not before. No `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/` anywhere, except `domain/dto/` (REVIEW.md 8c.8).
 

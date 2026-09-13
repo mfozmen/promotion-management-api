@@ -35,11 +35,11 @@ describe('RuleSetLoader', () => {
   it('serves the cached rule set within the cache window', async () => {
     const load = vi.fn().mockResolvedValue(rowsAt('2026-09-01T00:00:00.000Z'));
     let now = 1_000_000;
-    const loader = new RuleSetLoader(load, () => now);
+    const loader = new RuleSetLoader({ source: load, now: () => now });
 
-    const first = await loader.current();
+    const first = await loader.load();
     now += 59_999;
-    const second = await loader.current();
+    const second = await loader.load();
 
     expect(second).toBe(first);
     expect(load).toHaveBeenCalledTimes(1);
@@ -51,11 +51,11 @@ describe('RuleSetLoader', () => {
       .mockResolvedValueOnce(rowsAt('2026-09-01T00:00:00.000Z'))
       .mockResolvedValueOnce(rowsAt('2026-09-05T00:00:00.000Z'));
     let now = 1_000_000;
-    const loader = new RuleSetLoader(load, () => now);
+    const loader = new RuleSetLoader({ source: load, now: () => now });
 
-    const first = await loader.current();
+    const first = await loader.load();
     now += 60_000;
-    const second = await loader.current();
+    const second = await loader.load();
 
     expect(load).toHaveBeenCalledTimes(2);
     expect(second.pricingRulesVersion).toBeGreaterThan(first.pricingRulesVersion);
@@ -63,9 +63,9 @@ describe('RuleSetLoader', () => {
 
   it('shares one in-flight load between concurrent callers', async () => {
     const load = vi.fn().mockResolvedValue(rowsAt('2026-09-01T00:00:00.000Z'));
-    const loader = new RuleSetLoader(load, () => 0);
+    const loader = new RuleSetLoader({ source: load, now: () => 0 });
 
-    const [a, b] = await Promise.all([loader.current(), loader.current()]);
+    const [a, b] = await Promise.all([loader.load(), loader.load()]);
 
     expect(a).toBe(b);
     expect(load).toHaveBeenCalledTimes(1);
@@ -76,10 +76,10 @@ describe('RuleSetLoader', () => {
       .fn()
       .mockRejectedValueOnce(new Error('database down'))
       .mockResolvedValue(rowsAt('2026-09-01T00:00:00.000Z'));
-    const loader = new RuleSetLoader(load, () => 0);
+    const loader = new RuleSetLoader({ source: load, now: () => 0 });
 
-    await expect(loader.current()).rejects.toThrowError('database down');
-    await expect(loader.current()).resolves.toMatchObject({
+    await expect(loader.load()).rejects.toThrowError('database down');
+    await expect(loader.load()).resolves.toMatchObject({
       pricingRulesVersion: expect.any(Number),
     });
     expect(load).toHaveBeenCalledTimes(2);

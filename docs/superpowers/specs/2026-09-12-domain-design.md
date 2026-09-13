@@ -175,7 +175,7 @@ create table ingestion_chunks (
   The arithmetic is not in the rule, not in a registry the rule can name and
   not in a parameter bag — it is a pure calculator per discount type behind one
   pure entry point.
-- **One function, one vocabulary.** `calculateEffectivePrice(basePriceCents, promotion)`
+- **One function, one vocabulary.** `EffectivePriceCalculator.calculate(basePriceCents, promotion)`
   in `src/modules/promotion/domain/` takes
   `Pick<Promotion, 'discountType' | 'value'>` — `discountType` of
   `percentage | fixed`, `value` in basis points or minor units — and returns a
@@ -192,9 +192,9 @@ create table ingestion_chunks (
   in its own `Discount` (`percentage-discount.ts`,
   `fixed-discount.ts`) together with its own value check — the 10 000
   basis-point ceiling belongs to percentage, not to the guard.
-  `calculateEffectivePrice` looks one up instead of branching on the type;
+  `EffectivePriceCalculator` looks one up instead of branching on the type;
   arithmetic in `bigint`, the result clamped to `[0, base]` by
-  `calculateEffectivePrice`. A third kind of
+  `EffectivePriceCalculator`. A third kind of
   discount is a migration that widens the enum plus a calculator file the
   `Record<DiscountType, Discount>` will not typecheck without, and
   that is the right cost:
@@ -202,14 +202,14 @@ create table ingestion_chunks (
   than one that can hold anything.
 - **The union is exhaustive; the database is not.** The enum can widen a deploy
   before the union does, so the map is reached only through
-  `discountFor(discountType: string)`, which checks own properties —
+  `EffectivePriceCalculator`'s private lookup, which checks own properties —
   a `discountType` of `toString` resolves nothing — and returns
-  `Discount | undefined`. `calculateEffectivePrice` turns `undefined` into
+  `Discount | undefined`. `EffectivePriceCalculator` turns `undefined` into
   `{ ok: false, reason: 'unknown discount type' }`, so a row the code does not
   understand yet is a defective row and a log line, not a throwing event
   handler that retries and leaves the product unpriced.
 - **Selection compares candidates, so each is priced first.** The resolver
-  runs `calculateEffectivePrice` for every candidate, then runs the engine once over a
+  runs `EffectivePriceCalculator` for every candidate, then runs the engine once over a
   single fact set — the only one, so a rule author has one list to read, and it
   is the flat shape given below. The candidates' windows are not in it: the
   resolution query already filters to active promotions, so a window fact could
@@ -274,7 +274,7 @@ create table ingestion_chunks (
   and the highest-priority match wins, which is what keeps the case's "at most
   one active promotion" true at the applied level. Letting several stack would
   be a change to that one selection step, not to the pricing function.
-- **A failed computation is not a silent base price.** `calculateEffectivePrice` returns
+- **A failed computation is not a silent base price.** `EffectivePriceCalculator` returns
   `{ ok: false, reason }` for a row the boundary should have rejected — a value
   above 10 000 basis points, a base price outside the safe-integer range. The
   event handler logs it with the `promotionId` and writes the price the
@@ -304,7 +304,7 @@ create table ingestion_chunks (
 - **The slot is the effective price.** "Slot non-null" in the table below means
   `productEffectivePriceCents` / `categoryEffectivePriceCents`, never the
   discount type or the value. A candidate that exists but cannot be priced —
-  `calculateEffectivePrice` returned `{ ok: false }` — is `null` in **all three** of its
+  `EffectivePriceCalculator` returned `{ ok: false }` — is `null` in **all three** of its
   keys plus a defect log carrying the `promotionId`, so it is absent to the
   rules rather than half-present. Without this the two readings diverge on a
   real customer: null the keys and the category discount applies with the
@@ -664,20 +664,20 @@ All routes under `/api`; JSON errors `{ error: { code, message, details? } }`;
 zod validation at every boundary; OpenAPI generated from the zod schemas and
 served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 
-| Method | Path                                           | Store    | Notes                                                                                                                          |
-| ------ | ---------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/api/products`                                | Redis    | `category?`, `sort=calculateEffectivePrice`, `order=asc\|desc`, `page`, `pageSize` (≤ 100); `{ items, page, pageSize, total }` |
-| GET    | `/api/products/:id`                            | Redis    | hottest endpoint; `404` if the hash is missing                                                                                 |
-| POST   | `/api/products`                                | PG+event | `sku, name, category, basePriceCents, stockQuantity`; `409` on duplicate SKU                                                   |
-| POST   | `/api/promotions`                              | PG+event | `name, discountType, value, startsAt, endsAt, productId? \| category?`; no target = `draft`; `409` on overlap                  |
-| POST   | `/api/promotions/:id/assign`                   | PG+event | `productId \| category`; draft → active; `409` on overlap, non-draft, or an `endsAt` already passed                            |
-| POST   | `/api/promotions/:id/cancel`                   | PG+event | idempotent                                                                                                                     |
-| GET    | `/api/promotions`, `/api/promotions/:id`       | PG       | `status?`, `category?`, `productId?`                                                                                           |
-| POST   | `/api/vendor/imports`                          | PG+queue | multipart `file`, field `vendor`; `202`                                                                                        |
-| GET    | `/api/vendor/imports/:id`                      | PG       | progress, chunk statuses, `last_error`, stuck chunks (`running` with expired lease)                                            |
-| POST   | `/api/vendor/imports/:id/pause\|resume\|abort` | PG+queue |                                                                                                                                |
-| GET    | `/api/health`                                  | —        | PostgreSQL, Redis, queue reachability; `readmodel:ready`                                                                       |
-| *      | `/api/admin/...`                               | —        | section 9                                                                                                                      |
+| Method | Path                                           | Store    | Notes                                                                                                                 |
+| ------ | ---------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/products`                                | Redis    | `category?`, `sort=effectivePrice`, `order=asc\|desc`, `page`, `pageSize` (≤ 100); `{ items, page, pageSize, total }` |
+| GET    | `/api/products/:id`                            | Redis    | hottest endpoint; `404` if the hash is missing                                                                        |
+| POST   | `/api/products`                                | PG+event | `sku, name, category, basePriceCents, stockQuantity`; `409` on duplicate SKU                                          |
+| POST   | `/api/promotions`                              | PG+event | `name, discountType, value, startsAt, endsAt, productId? \| category?`; no target = `draft`; `409` on overlap         |
+| POST   | `/api/promotions/:id/assign`                   | PG+event | `productId \| category`; draft → active; `409` on overlap, non-draft, or an `endsAt` already passed                   |
+| POST   | `/api/promotions/:id/cancel`                   | PG+event | idempotent                                                                                                            |
+| GET    | `/api/promotions`, `/api/promotions/:id`       | PG       | `status?`, `category?`, `productId?`                                                                                  |
+| POST   | `/api/vendor/imports`                          | PG+queue | multipart `file`, field `vendor`; `202`                                                                               |
+| GET    | `/api/vendor/imports/:id`                      | PG       | progress, chunk statuses, `last_error`, stuck chunks (`running` with expired lease)                                   |
+| POST   | `/api/vendor/imports/:id/pause\|resume\|abort` | PG+queue |                                                                                                                       |
+| GET    | `/api/health`                                  | —        | PostgreSQL, Redis, queue reachability; `readmodel:ready`                                                              |
+| *      | `/api/admin/...`                               | —        | section 9                                                                                                             |
 
 `GET /api/products` pages by offset over ZSET scores that a category rescan rewrites progressively, so a page taken while a sale is being applied can repeat a row or miss one until the scan finishes. Stated rather than claimed away (REVIEW.md 5.5); an exclusive `(score, id)` cursor is the upgrade.
 
@@ -697,7 +697,7 @@ src/
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
       jobs/      scheduling.ts
     pricing/
-      domain/    rule-compiler.ts, row-pricer.ts (one per rule set: its queue is a field), rule-set-loader.ts (caches a compiled set; the query that feeds it is the caller's)
+      domain/    rule-compiler.ts, compiled-rule-set.ts (owns the engine and serialises its runs), row-pricer.ts, rule-set-loader.ts (caches a compiled set; the query that feeds it is the caller's)
         dto/     pricing-rule-row.ts, compiled-rule-set.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8
       db/        resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
@@ -705,7 +705,7 @@ src/
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
   shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue.ts (BullMQ queues), logger.ts (pino, request ids)
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
-  unit/          effective-price-calculator, csv-lines, rule-compiler, row-pricer, rule-set-loader, schemas
+  unit/          effective-price-calculator, csv-lines, rule-compiler, compiled-rule-set, row-pricer, rule-set-loader, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
   e2e/           the docs/e2e-cases scenarios against the running compose stack
 docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander

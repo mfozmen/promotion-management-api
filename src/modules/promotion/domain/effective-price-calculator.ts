@@ -5,25 +5,23 @@ import type { Promotion } from './dto/promotion.js';
 import { FixedDiscount } from './fixed-discount.js';
 import { PercentageDiscount } from './percentage-discount.js';
 
-export class EffectivePriceCalculator {
-  private readonly discounts: Record<DiscountType, Discount>;
+// Keyed by the union itself, so widening it does not compile until its discount exists.
+// Built once rather than per construction, and frozen because every calculator shares it;
+// the discounts themselves hold no state to protect.
+const DEFAULT_DISCOUNTS: Readonly<Record<DiscountType, Discount>> = Object.freeze({
+  percentage: new PercentageDiscount(),
+  fixed: new FixedDiscount(),
+});
 
-  // Keyed by the union itself, so widening it does not compile until its discount exists.
+export class EffectivePriceCalculator {
   constructor(
-    discounts: Record<DiscountType, Discount> = {
-      percentage: new PercentageDiscount(),
-      fixed: new FixedDiscount(),
-    },
-  ) {
-    this.discounts = discounts;
-  }
+    private readonly discounts: Readonly<Record<DiscountType, Discount>> = DEFAULT_DISCOUNTS,
+  ) {}
 
   calculate(
     basePriceCents: number,
     promotion: Pick<Promotion, 'discountType' | 'value'>,
   ): PricingOutcome {
-    // The database enum can widen before the union does, so an unknown type is a
-    // defective row rather than a crash.
     const discount = Object.hasOwn(this.discounts, promotion.discountType)
       ? this.discounts[promotion.discountType]
       : undefined;
@@ -32,7 +30,7 @@ export class EffectivePriceCalculator {
       return { ok: false, reason: 'unknown discount type' };
     }
 
-    const reason = this.inputError(basePriceCents, promotion.value, discount);
+    const reason = this.validateBasePriceAndDiscount(basePriceCents, promotion.value, discount);
 
     if (reason !== null) {
       return { ok: false, reason };
@@ -45,7 +43,11 @@ export class EffectivePriceCalculator {
     return { ok: true, effectivePriceCents: Number(cents > base ? 0n : base - cents) };
   }
 
-  private inputError(basePriceCents: number, value: number, discount: Discount): string | null {
+  private validateBasePriceAndDiscount(
+    basePriceCents: number,
+    value: number,
+    discount: Discount,
+  ): string | null {
     if (!Number.isSafeInteger(basePriceCents) || basePriceCents < 0) {
       return 'base price is not a whole number of minor units in range';
     }

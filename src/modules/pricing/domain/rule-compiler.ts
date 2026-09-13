@@ -1,7 +1,7 @@
 import { Engine, type RuleProperties, type TopLevelCondition } from 'json-rules-engine';
 
 import { adjustmentEvent } from './dto/adjustment-event.js';
-import type { CompiledRuleSet } from './dto/compiled-rule-set.js';
+import { CompiledRuleSet } from './compiled-rule-set.js';
 import type { PricingRuleRow } from './dto/pricing-rule-row.js';
 import type { VendorRowFacts } from './dto/vendor-row-facts.js';
 
@@ -48,11 +48,11 @@ export class RuleCompiler {
     }
 
     const newest = active.reduce((max, row) => Math.max(max, row.updatedAt.getTime()), 0);
-    return {
+    return new CompiledRuleSet(
       engine,
-      ruleIds: active.map((row) => row.id),
-      pricingRulesVersion: newest,
-    };
+      active.map((row) => row.id),
+      newest,
+    );
   }
 
   private withoutPriorities(node: unknown): unknown {
