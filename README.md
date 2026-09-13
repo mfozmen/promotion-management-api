@@ -25,7 +25,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
-- Docker with the Compose plugin (PostgreSQL 16, Redis 7 and the `api` image built from this repository's `Dockerfile` all run locally from `docker-compose.yml`), plus one throwaway Redis on 6399 for the queue integration tests, which use no mocks (REVIEW.md 7.3)
+- Docker with the Compose plugin (PostgreSQL 16, Redis 7, and the `api` image built from this repository's `Dockerfile`, which also runs the three worker services, all run locally from `docker-compose.yml`), plus one throwaway Redis on 6399 for the queue integration tests, which use no mocks (REVIEW.md 7.3)
 
 ## Run it
 
@@ -41,13 +41,14 @@ http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps th
 add `-v` to that compose command to drop the volumes too.
 
 `event-handler`, `ingestion-worker` and `reconciler` run from the same image as `api`, one
-command each, and they wait on `api` rather than on PostgreSQL: `api` is the only process that
-migrates, so waiting on the database alone would let a worker connect before the schema exists.
+command each. Each waits on all three of `postgres`, `redis` and `api` being healthy; the gate
+that matters is `api`, the only process that migrates, because waiting on the stores alone would
+let a worker connect before the schema exists.
 
 **They start, connect and wait — none of them consumes anything yet.** Each logs the queues it
 holds and says that no consumer is registered, so an idle queue is not mistaken for a drained
-one. The projection arrives with issue #12, the chunk processor with #105, the reconciler sweep
-with the other half of #18. They carry no healthcheck for the same reason: until a worker has
+one. The projection arrives with issue #12, the chunk processor with #105, and the reconciler's
+boundary sweep with #18, in its own pull request under `src/workers/reconciler/`. They carry no healthcheck for the same reason: until a worker has
 work, a check could only confirm the process is alive, which `up --wait` already does.
 
 `ingestion-worker` is capped at 256 MiB and half a CPU, which is the case study's own
@@ -82,7 +83,7 @@ Run it as often as you like: what you get depends on the migrations and this run
 
 Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own: an active `Electronics` promotion under another name is not deleted by name, so the insert aborts on `23P01` and the whole file rolls back, leaving no half-written catalogue behind.
 
-[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the upload endpoint and chunk worker arrive with issue #16, and that half of issue #19 is still open.
+[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the `ingestion-worker` container runs but registers no consumer, and the upload endpoint and chunk worker arrive with issue #16.
 
 Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one — `npm run up` starts it, along with the throwaway PostgreSQL the integration layer clones from. Both are in the `test` profile and hold nothing worth keeping.
 
@@ -137,7 +138,7 @@ Stop the stack with `docker compose down`, or `docker compose down -v` to drop t
 
 `.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
 
-The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. Issue #19 adds the remaining containers (event-handler, ingestion-worker, reconciler) and the `monitoring` profile on top of it.
+The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, the three worker services (`event-handler`, `ingestion-worker`, `reconciler`) running that same image with one command each, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. The workers have no healthcheck and no consumer yet, so `--wait` treats them as up once they are running. The `monitoring` profile is not built: issue #18 adds it.
 
 ### The queue
 

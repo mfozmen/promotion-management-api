@@ -806,6 +806,12 @@ Evidence: a status argument sat beside an error code, and the pairing between
 them was wrong in three different directions across three commits before the
 argument itself was deleted and the status derived from the code.
 
+This reaches the data a line logs, not only the arguments a function takes: a
+worker logged `queues: ['promotions', 'catalog']` where no `catalog` queue
+exists, and the array was a bare string literal, so nothing but a reader could
+catch it. Annotating it `QueueName[]` moved the finding from prose review to the
+build.
+
 8c.6 The same thing is called the same thing everywhere: the class, the file,
 the test file, the directory, the error code, the ADR and the design spec. A
 rename that stops at the code and leaves the prose behind is 8b.5 again, one

@@ -3,6 +3,7 @@ import { eventRouting } from '../events/event-routing.js';
 import { loadConfig } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 import { EventQueue } from '../shared/queue/event-queue.js';
+import type { QueueName } from '../shared/queue/queue-name.js';
 
 // Runs the `maintenance` queue plus its own repeatable schedule (ADR-0003). It connects and
 // waits: the boundary sweep it will call lands in `src/workers/reconciler/` with its own pull
@@ -16,8 +17,11 @@ const queue = EventQueue.connect(
   eventRouting,
 );
 
+// Typed, so a queue that does not exist fails the build instead of the log line.
+const queues: QueueName[] = ['maintenance'];
+
 logger.info(
-  { worker: 'reconciler', queues: ['maintenance'] },
+  { worker: 'reconciler', queues },
   'connected; no consumer registered yet, so this queue is not being drained',
 );
 

@@ -3,8 +3,9 @@ import { eventRouting } from '../events/event-routing.js';
 import { loadConfig } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 import { EventQueue } from '../shared/queue/event-queue.js';
+import type { QueueName } from '../shared/queue/queue-name.js';
 
-// Runs the `promotions` and `catalog` queues in one process (ADR-0003). It connects and waits:
+// Runs the `promotions` and `products` queues in one process (ADR-0003). It connects and waits:
 // the projection that consumes them is #12, so no `Worker` is registered here yet and the
 // queues are not drained. The log line says so rather than leaving an operator to infer it.
 const config = loadConfig();
@@ -15,8 +16,11 @@ const queue = EventQueue.connect(
   eventRouting,
 );
 
+// Typed, so a queue that does not exist fails the build instead of the log line.
+const queues: QueueName[] = ['promotions', 'products'];
+
 logger.info(
-  { worker: 'event-handler', queues: ['promotions', 'catalog'] },
+  { worker: 'event-handler', queues },
   'connected; no consumer registered yet, so these queues are not being drained',
 );
 

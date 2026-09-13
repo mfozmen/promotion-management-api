@@ -3,6 +3,7 @@ import { eventRouting } from '../events/event-routing.js';
 import { loadConfig } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 import { EventQueue } from '../shared/queue/event-queue.js';
+import type { QueueName } from '../shared/queue/queue-name.js';
 
 // Runs the `ingestion` queue alone, under the case study's 256 MiB and 0.5 CPU limit, because
 // Scenario A's claim is that a 500 000-row import survives exactly that. It connects and waits:
@@ -15,8 +16,11 @@ const queue = EventQueue.connect(
   eventRouting,
 );
 
+// Typed, so a queue that does not exist fails the build instead of the log line.
+const queues: QueueName[] = ['ingestion'];
+
 logger.info(
-  { worker: 'ingestion-worker', queues: ['ingestion'] },
+  { worker: 'ingestion-worker', queues },
   'connected; no consumer registered yet, so this queue is not being drained',
 );
 
