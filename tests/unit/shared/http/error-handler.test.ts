@@ -83,11 +83,28 @@ describe('HttpError mapping', () => {
 
   it('logs a handler-raised 5xx as a server fault, with its message', async () => {
     const captured = captureLogger();
+    await request(appThrowing(new HttpError('INTERNAL', 'the wheels came off'), captured)).get(
+      '/boom',
+    );
+
+    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
+      error: { message: 'the wheels came off' },
+    });
+  });
+
+  it('does not call come back later a server fault', async () => {
+    const captured = captureLogger();
     await request(
       appThrowing(new HttpError('READ_MODEL_NOT_READY', 'rebuild running'), captured),
     ).get('/boom');
 
-    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
+    // Every request during a rebuild raises this. At `error` with a stack it
+    // is one alertable line per request for an ordinary operating condition,
+    // which buries the real 500s ADR-0010 reserves that level for.
+    expect(captured.lines.find((line) => line.level === 50)).toBeUndefined();
+    expect(captured.lines.find((line) => line.level === 40)).toMatchObject({
+      code: 'READ_MODEL_NOT_READY',
+      status: 503,
       error: { message: 'rebuild running' },
     });
   });
@@ -165,9 +182,11 @@ describe('unexpected errors', () => {
     // The serialized error reports the cause's code, so without the two
     // top-level fields the line names the driver's failure and never the 503
     // the client read.
-    const logged = captured.lines.find((line) => line.level === 50);
+    const logged = captured.lines.find((line) => line.level === 40);
     expect(logged).toMatchObject({ code: 'READ_MODEL_NOT_READY', status: 503 });
     expect((logged as { error: { code: string } }).error.code).toBe('ECONNREFUSED');
+    // No stack on a line every request writes during an outage.
+    expect(logged).not.toHaveProperty('error.stack');
   });
 
   it('bounds a 4xx message, so a handler cannot mirror a long id back', async () => {

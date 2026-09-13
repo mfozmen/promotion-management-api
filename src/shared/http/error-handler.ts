@@ -90,6 +90,16 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (known) {
     if (isClientStatus(known.status)) {
       log.warn({ code: known.code, status: known.status }, 'request rejected');
+    } else if (RETRIABLE.includes(known.code)) {
+      // Come back later is an operating condition, not a fault: every request
+      // during a rebuild or an outage raises one, and at `error` with a stack
+      // that is an alertable line per request burying the real 500s. The
+      // cause's own code survives, because that is where an outage shows.
+      const { type, message, code } = serializeError(err);
+      log.warn(
+        { code: known.code, status: known.status, error: { type, message, code } },
+        'request deferred',
+      );
     } else {
       // The code and status the client read: `serializeError` reports the
       // cause's code, so without these the line names the driver's failure and
