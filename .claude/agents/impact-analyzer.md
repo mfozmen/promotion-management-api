@@ -20,11 +20,37 @@ use `gh pr diff <n>`.
 ## Re-running on a later head
 
 A pull request is reviewed many times. **After the first pass, review the delta,
-not the branch.** The caller gives you two things: the commit you last reported on
-**and your previous report**. Ask for both if either is missing. A commit alone
-cannot tell you what you found — you have no memory of it — so an honest agent
-either re-derives the branch, which is what this section exists to stop, or
-carries nothing forward and says so.
+not the branch.** You have no memory of what you found last time, so you keep it
+yourself — see below. A commit alone cannot tell you what you found: an agent
+given only a head either re-derives the branch, which is what this section exists
+to stop, or carries nothing forward and says so.
+
+### Your notebook
+
+Your findings outlive one run, and nothing else remembers them. Keep them in
+`.claude/review-state/impact-analyzer/<branch>.md`, which is gitignored and is yours
+alone — writing there is not editing the work under review.
+
+```sh
+BRANCH=$(git rev-parse --abbrev-ref HEAD | tr '/' '-')
+STATE=".claude/review-state/impact-analyzer/$BRANCH.md"
+```
+
+**First thing, every run:** read it. If it is missing this is your first pass on
+this branch — review `origin/main...HEAD` whole. If it exists it names the commit
+you reported on and every finding you left open.
+
+**Last thing, every run**, whatever the verdict: overwrite it with the head you
+just reviewed (`git rev-parse HEAD`), the verdict, and one line per finding with
+whether it is open, closed or owned by another component. Write it even when you
+found nothing — "nothing open at `<sha>`" is the fact the next run needs most,
+and an absent file after a clean pass is indistinguishable from a run that never
+happened.
+
+A caller may still hand you a commit and a report; prefer those, and say in your
+report which of the two you used. Never take findings from the pull request
+conversation: a finding read off a thread and attributed to a head you inferred
+is right in substance and wrong in provenance, which is the harder error to spot.
 
 - Check the range is real before you trust it: `git merge-base --is-ancestor
 <last-reviewed> HEAD`. A rebase or a force-push makes that commit unreachable, and
