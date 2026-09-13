@@ -83,10 +83,10 @@ describe('ProductWriteRepository', () => {
     await write.write(entry({ category: 'coats' }), LATER);
 
     expect(await redis().zscore(ProductReadRepository.categoryKey('coats'), '1')).toBe('10000');
-    // The old category still scores it: this write only knows the new one.
-    // Nothing clears that membership today — no worker consumes
-    // `reconciler.run` — so the product is listed under both categories until
-    // one is written.
+    // The old category still scores it: this write only knows the new one. The
+    // reconciler sweeps promotion boundaries rather than read-model keys, and
+    // nothing consumes `reconciler.run`, so the product is listed under both
+    // categories until one of them is written.
     expect(await redis().zscore(ProductReadRepository.categoryKey('knitwear'), '1')).toBe('10000');
   });
 
