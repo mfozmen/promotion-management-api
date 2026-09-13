@@ -4,29 +4,15 @@ import { promotions } from '../../promotion/db/schema/promotions.js';
 import type { BoundaryWindow } from '../domain/dto/boundary-window.js';
 import { reconcilerState } from './schema/reconciler-state.js';
 
-/**
- * How far behind `now()` a window may close. A writer takes its timestamps from
- * `transaction_timestamp()` and commits later, so a window that closed at the
- * instant it was read would step over a boundary still in flight — and that
- * boundary is then older than every future window's start, which is the one
- * failure this sweep has nothing behind it for. The lag is above the 10 s
- * `statement_timeout` and the 10 s `idle_in_transaction_session_timeout` in
- * `shared/db/client.ts`, which together bound how long a writer can hold one.
- */
+/** Above the two 10 s timeouts in `shared/db/client.ts`, which bound how long a
+ *  writer can hold a boundary uncommitted. */
 const COMMIT_LAG_SECONDS = 30;
-
-/** One sweep's worth, so a window that grew while the reconciler was down is
- *  taken in pieces rather than published in one unbounded loop. */
-const MAX_PER_SWEEP = 500;
 
 export class BoundaryRepository {
   constructor(private readonly db: Db) {}
 
-  /**
-   * Both ends come from one statement on the database clock: asking for `now()`
-   * again when the promotions are read would leave a gap between what was looked
-   * at and what the watermark then records as looked at.
-   */
+  /** Both ends come from one statement: a second `now()` would leave a gap between
+   *  what was looked at and what the watermark records as looked at. */
   async crossedSince(): Promise<BoundaryWindow> {
     const [bounds] = await this.db
       .select({
@@ -66,20 +52,15 @@ export class BoundaryRepository {
           ),
         ),
       )
-      .orderBy(asc(promotions.id))
-      .limit(MAX_PER_SWEEP);
+      .orderBy(asc(promotions.id));
 
     // A promotion whose window opened and closed inside one sweep matches twice and
     // is announced once; its handler would recompute the same prices either way.
     return { since, windowEnd, promotionIds: [...new Set(rows.map((row) => row.id))] };
   }
 
-  /**
-   * Compare-and-set on the mark this sweep started from. Two reconcilers reading
-   * the same window would otherwise let the slower one write its earlier end over
-   * the faster one's, moving the watermark backwards; the loser writes nothing and
-   * reads the window again, which is the outcome that loses no boundary.
-   */
+  /** Compare-and-set: two reconcilers on one window would otherwise let the slower
+   *  write its earlier end over the faster one's, moving the watermark backwards. */
   async advance(from: Date, to: Date): Promise<boolean> {
     const rows = await this.db
       .update(reconcilerState)
