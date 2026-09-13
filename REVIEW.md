@@ -604,6 +604,16 @@ comment, so a violation blocks like any other.
 non-obvious invariant, a unit that is not in the name, a reason the obvious
 approach was rejected, a shortcut's ceiling, a contract a caller must honour.
 
+8b.1a The test is the reader, not the writer. Code a reader understands on
+its own carries no comment. Code a reader cannot understand without help
+carries one comment, simpler than the code it explains — one sentence, plain
+words. A comment that is harder to read than the code, or that a reader has to
+parse twice, is a finding: it adds nothing and costs attention. When the
+explanation needs a paragraph, the code needs a better name or a smaller
+method first, and the paragraph belongs in ADR.md (8b.3). Evidence: PR #39
+went through five comment-trimming rounds; each round's survivors were
+paragraphs that explained the ADR, not the line below them.
+
 Evidence: four source files in flight carried between 34 and 67 per cent
 comment lines, all of them passing the rule this one replaced.
 
@@ -647,7 +657,8 @@ fix changes behaviour, the `ADR.md` sentence and the design-spec paragraph that
 described the old behaviour change in the same commit; leaving the code right
 and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
-rule or a section that lands in another pull request reads as fact and is not.
+rule or a section that lands in another pull request reads as fact and is not. An ADR states the decision and the current state; it carries no pull
+request, commit or issue number — that history is git's.
 
 8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
 properties) carry no explanatory comments; the entry says what it does. At most
@@ -739,6 +750,11 @@ ADR-0008.
 business noun (`promotions.ts`, `pricing-rules.ts`) is a finding; it belongs to
 the module that owns it, under `db/schema/`. Migrations are the exception and
 stay in `shared/db/`. ADR-0008.
+
+8c.11 A class reads top-down: fields, constructor, public methods, then private
+methods. What a caller can use is at the top; how it is done is below. ESLint
+`@typescript-eslint/member-ordering` holds it from the pull request that lands
+the first classes (#39). ADR-0008.
 
 ---
 
