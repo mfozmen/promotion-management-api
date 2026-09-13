@@ -5,8 +5,9 @@ import { logger } from '../shared/logger.js';
 import { EventQueue } from '../shared/queue/event-queue.js';
 
 // Runs the `maintenance` queue plus its own repeatable schedule (ADR-0003). It connects and
-// waits: the drift sweep that consumes it is the reconciler half of #18, which needs the read
-// model of #12, so nothing is drained or scheduled here yet.
+// waits: the boundary sweep it will call lands in `src/workers/reconciler/` with its own pull
+// request, so nothing is drained or scheduled here yet. The seam is a directory rather than an
+// import, because an import of a module that does not exist fails the build instead of idling.
 const config = loadConfig();
 const queue = EventQueue.connect(
   config.REDIS_URL,
