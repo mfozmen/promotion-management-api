@@ -863,7 +863,9 @@ was defeated by sorting the journal, which left both its assertions true.
 
 ## 12. Keep it small
 
-**Severity: suggestion.**
+**Severity: warning.** It was a suggestion, and a suggestion is adopted only
+when cheaper than deferring, so no review ever raised it; the rules below were
+true of a branch that grew the way they forbid.
 
 12.1 No abstraction with one implementation, no configuration for a value that
 never changes, no feature the case does not ask for. Deleting is the preferred
@@ -889,6 +891,16 @@ Evidence: a 149-line validator plus 296 test lines replaced by 37 lines (PR #34)
 (cyclomatic, gates `npm run lint`) and Sonar S3776 (cognitive, on the PR). Above
 it, Extract Function or Replace Nested Conditional with Guard Clauses — never a
 disable comment.
+
+12.7 A guard against a failure nothing in this repository can produce today is
+a finding, however careful it is: the branch that adds the producer adds the
+guard, against the real failure. Prose has the same rule — a comment, an ADR
+bullet or a test that defends the code against a reader who has not arrived
+is deleted, not improved.
+
+Evidence: an HTTP skeleton scrubbed SQL from driver errors, froze tables
+nothing assigns to and logged a misconfigured client fleet before any route
+queried a database; every open review thread on it was that prose going stale.
 
 ---
 
