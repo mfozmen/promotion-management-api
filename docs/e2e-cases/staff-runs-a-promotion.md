@@ -217,6 +217,7 @@ Acceptance criteria
 
 - Before its start date a promotion has no effect on prices.
 - At its start it applies; at its end it stops, with no action from staff.
+- A boundary whose announcement was lost still reaches the storefront: the next sweep repairs it once, and having repaired it the system moves on rather than repairing the same boundary for ever. (Owner decision, 2026-09-14: a repair mechanism has to be verified end to end, and the observable is the shopper-facing price.)
 
 Test cases
 
@@ -227,3 +228,11 @@ Test cases
 - When: the product is read before the start, after the start, and after the end
 - Then: base price, then discounted price, then base price again
 - Measure: each boundary takes effect within 5 seconds of its time
+
+### promotion-20
+
+- Precondition: `POST /api/promotions`, `GET /api/products/:id`, the boundary scheduler (#12), the reconciler sweep worker and its schedule (#109)
+- Given: a product at 100.00 carrying a 20 % promotion whose start has just passed, and whose `promotion.changed` announcement never reached the read model, so the storefront still serves 100.00
+- When: staff let the sweep run, a shopper opens the product, and staff then let one further sweep run over the same window before the shopper opens it again
+- Then: the first sweep repairs the boundary once and the shopper sees 80.00 naming that promotion; the second sweep reports no repair for that boundary and the shopper still sees 80.00 — the same boundary is never repaired twice
+- Measure: time from the sweep that repairs it to 80.00 appearing on the storefront, under 30 seconds; repairs counted for that boundary across the two sweeps, exactly one, and a second repair fails it
