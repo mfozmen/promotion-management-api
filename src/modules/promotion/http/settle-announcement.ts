@@ -1,8 +1,6 @@
 import type { Announcement } from './announcement.js';
 
 /**
- * Awaits one announcement step and swallows its failure.
- *
  * Each step is settled separately because a sequential chain lets the first
  * failure take the rest with it: a boundary call that times out would otherwise
  * skip the `promotion.changed` behind it and leave a cancelled sale priced on
