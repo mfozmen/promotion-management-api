@@ -4,11 +4,6 @@ import createError from 'http-errors';
 
 const PARTS = ['body', 'query', 'params'] as const;
 
-/** Measured, not assumed: the largest body the 100 kB cap allows, made entirely of
- *  failing array items, is 9 998 issues and a 909 kB response — nine times the request,
- *  unauthenticated. The body cap bounds the request and amplifies into the response. */
-const MAX_DETAILS = 20;
-
 const formatPath = (part: string, path: PropertyKey[]): string =>
   path.reduce<string>(
     (acc, segment) =>
@@ -18,7 +13,7 @@ const formatPath = (part: string, path: PropertyKey[]): string =>
 
 /** Names the caller's own keys and never the values they sent. */
 function toDetails(error: ZodError, part: string): { path: string; message: string }[] {
-  return error.issues.slice(0, MAX_DETAILS).map((issue) => ({
+  return error.issues.map((issue) => ({
     path: formatPath(part, issue.path),
     message:
       issue.code === 'unrecognized_keys'

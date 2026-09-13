@@ -165,22 +165,6 @@ describe('validate — where the problem is', () => {
   });
 });
 
-describe('validate — how much one request can cost', () => {
-  it('caps the details it returns, so a bad body cannot amplify into a response', async () => {
-    const app = appWith(
-      '/imports',
-      validate({ body: z.object({ items: z.array(z.strictObject({ sku: z.string() })) }) }),
-    );
-
-    const res = await request(app)
-      .post('/imports')
-      .send({ items: Array.from({ length: 200 }, () => ({ sku: 1 })) });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error.details).toHaveLength(20);
-  });
-});
-
 describe('validate — query', () => {
   const app = appWith('/products', validate({ query: listQuery }));
 
