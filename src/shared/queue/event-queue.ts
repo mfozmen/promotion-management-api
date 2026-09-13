@@ -4,7 +4,6 @@ import type { QueueName } from './queue-name.js';
 import { logger } from '../logger.js';
 import { serializeError } from '../serialize-error.js';
 
-/** A catalogue of event names to the schema each payload is parsed against. */
 type Registry = Record<string, ZodType>;
 
 /** The producer side of the queues: policy and routing, generic over its catalogue. ADR-0003. */
@@ -20,7 +19,6 @@ export class EventQueue<R extends Registry> {
   /** A timed-out operation may still land: a fast failure, not a known outcome. */
   static readonly OPERATION_TIMEOUT_MS = 2_000;
 
-  /** Connecting pays DNS and a TLS handshake that operating on an open socket does not. */
   static readonly CONNECT_TIMEOUT_MS = 10_000;
 
   private constructor(
@@ -70,16 +68,11 @@ export class EventQueue<R extends Registry> {
     );
   }
 
-  /**
-   * Takes the event, not the queue, so a removal cannot reach a different queue from the
-   * publish it undoes. BullMQ's codes: `1` when nothing blocked it, `0` when a worker
-   * already holds it — and `1` also when there was no such job, so a code is not proof.
-   */
+  /** `1` also means there was no such job, so a code is not proof of a removal. */
   async remove<N extends keyof R & string>(name: N, jobId: string): Promise<number> {
     return this.bounded(`remove("${jobId}")`, this.queues[this.routing[name]].remove(jobId));
   }
 
-  /** Reads only: `add` here would skip the parse and the timeout `publish` exists to give. */
   inspect(name: QueueName): Pick<Queue, 'getJob' | 'getWaitingCount' | 'getDelayedCount'> {
     return this.queues[name];
   }
@@ -108,9 +101,7 @@ export class EventQueue<R extends Registry> {
       ]);
     } finally {
       clearTimeout(timer);
-      // An unhandled rejection would take the process down, and a discarded one leaves the
-      // timeout message standing in for the real cause. The line says only what it knows:
-      // whether the bound was reached is the caller's error to tell, not this one's.
+      // The loser still settles, and an unhandled rejection would take the process down.
       work.catch((error: unknown) => {
         logger.error({ operation, error: serializeError(error) }, 'queue operation failed');
       });
