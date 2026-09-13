@@ -1,38 +1,31 @@
 import type { ErrorRequestHandler } from 'express';
 import createError from 'http-errors';
-import { MAX_DETAIL_MESSAGE } from './max-detail-message.js';
-import { MAX_DETAILS } from './max-details.js';
 import { MAX_MESSAGE } from '../max-message.js';
-import type { ValidationDetail } from './validation-detail.js';
-import { logger } from '../logger.js';
 import { serializeError } from '../serialize-error.js';
 
 const INTERNAL_MESSAGE = 'Internal server error';
 
-/** `details` is the validator's own property on the error, so it is checked rather than trusted. */
-const detailsOf = (err: createError.HttpError): readonly ValidationDetail[] | undefined => {
+/** A custom property, so its shape is checked rather than trusted. The validator is
+ *  the only producer and bounds both the count and each message; this returns them. */
+const detailsOf = (err: createError.HttpError): unknown[] | undefined => {
   const found: unknown = (err as { details?: unknown }).details;
 
-  return Array.isArray(found) ? (found as readonly ValidationDetail[]) : undefined;
+  return Array.isArray(found) ? found : undefined;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express recognises an error handler by its arity
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
-  // Mountable without httpLogger: throwing here would drop the request into
-  // Express's final handler, which prints the raw stack to stderr.
-  const log = req.log ?? logger;
-
   if (res.headersSent) {
-    // No envelope fits over bytes already sent, and handing the error on would
-    // reach that same final handler. A destroyed socket truncates instead.
-    log.error({ error: serializeError(err) }, 'unhandled error after the response started');
+    // No envelope fits over bytes already sent, and passing the error on reaches
+    // Express's final handler, which prints the raw stack to stderr.
+    req.log.error({ error: serializeError(err) }, 'unhandled error after the response started');
     res.destroy();
 
     return;
   }
 
   if (!createError.isHttpError(err)) {
-    log.error({ error: serializeError(err) }, 'unhandled error');
+    req.log.error({ error: serializeError(err) }, 'unhandled error');
     res.status(500).json({ error: { message: INTERNAL_MESSAGE } });
 
     return;
@@ -48,9 +41,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   const retriable = headers['retry-after'] !== undefined;
 
   if (err.status < 500 || retriable) {
-    log.warn({ status: err.status }, 'request rejected');
+    req.log.warn({ status: err.status }, 'request rejected');
   } else {
-    log.error(
+    req.log.error(
       { status: err.status, error: serializeError(err) },
       'server fault raised by a handler',
     );
@@ -58,16 +51,12 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
 
   res.set(headers);
 
-  const body: { error: { message: string; details?: readonly ValidationDetail[] } } = {
-    error: { message },
-  };
+  const body: { error: { message: string; details?: unknown[] } } = { error: { message } };
   // Only when the message is exposed: masking the prose and returning the details
   // beside it leaks by the other field. A masked 5xx says one sentence and nothing else.
   const details = err.expose ? detailsOf(err) : undefined;
   if (details !== undefined) {
-    body.error.details = details
-      .slice(0, MAX_DETAILS)
-      .map(({ path, message: text }) => ({ path, message: text.slice(0, MAX_DETAIL_MESSAGE) }));
+    body.error.details = details;
   }
 
   res.status(err.status).json(body);

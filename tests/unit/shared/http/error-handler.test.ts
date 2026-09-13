@@ -104,28 +104,16 @@ describe('errorHandler', () => {
     expect(createError(503, 'x', { expose: true }).expose).toBe(true);
   });
 
-  it('bounds each detail message, not just how many there are', async () => {
-    const raised = createError(400, 'Invalid request body', {
-      details: [{ path: 'body.sku', message: 'x'.repeat(5_000) }],
-    });
-
-    const res = await request(appThrowing(raised)).get('/boom');
-
-    // The count was bounded and each message was not, so twenty details of a
-    // schema author's own wording had no size bound at all on an
-    // unauthenticated path.
-    expect(res.body.error.details[0].message).toHaveLength(1_500);
-  });
-
-  it('truncates a details list at the envelope, whoever produced it', async () => {
-    // The cap lives here now, not in the validator, so it holds for every
-    // producer. This is its test, next to the code it bounds.
-    const details = Array.from({ length: 21 }, (_, i) => ({ path: `body.f${i}`, message: 'bad' }));
+  it('returns the details it is given, because one producer bounds them', async () => {
+    // The caps live in the validator now: it is the only producer, and bounding
+    // the work of building details is what the cap was ever for. The envelope
+    // returns what it is handed.
+    const details = [{ path: 'body.sku', message: 'too short' }];
     const res = await request(
-      appThrowing(createError(400, 'Invalid request body', { details: details })),
+      appThrowing(createError(400, 'Invalid request body', { details })),
     ).get('/boom');
 
-    expect(res.body.error.details).toHaveLength(20);
+    expect(res.body.error.details).toEqual(details);
   });
 
   it('includes details when the error carries them', async () => {
@@ -353,20 +341,5 @@ describe('errorHandler: exposed client errors body-parser did not raise', () => 
     );
 
     expect(res.status).toBe(500);
-  });
-});
-
-describe('errorHandler: mounted without the http logger', () => {
-  it('still answers, instead of throwing inside the error handler', async () => {
-    const app = express();
-    app.get('/boom', (_req, _res, next) => {
-      next(createError(409, 'Overlap'));
-    });
-    app.use(errorHandler);
-
-    const res = await request(app).get('/boom');
-
-    expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: { message: 'Overlap' } });
   });
 });

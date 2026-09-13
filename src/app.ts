@@ -1,7 +1,7 @@
 import express, { type Express } from 'express';
+import createError from 'http-errors';
 import type { Logger } from 'pino';
 import { errorHandler } from './shared/http/error-handler.js';
-import { notFoundHandler } from './shared/http/not-found-handler.js';
 import { logger as rootLogger } from './shared/logger.js';
 import { httpLogger } from './shared/http/http-logger.js';
 
@@ -21,7 +21,9 @@ export function createApp(logger: Logger = rootLogger): Express {
   });
   app.use('/api', api);
 
-  app.use(notFoundHandler);
+  app.use((_req, _res, next) => {
+    next(createError(404, 'Route not found'));
+  });
   app.use(errorHandler);
 
   return app;
