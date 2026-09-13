@@ -693,7 +693,7 @@ Target layout: a file appears here before it exists on disk, and lands with the 
 src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
-    product/     http/product-read-routes.ts, queries/ (one class per use case), db/product-read-model.ts, domain/
+    storefront/  http/product-read-routes.ts, queries/ (one class per use case), db/product-read-repository.ts, domain/, events/
     promotion/
       domain/    effective-price-calculator.ts (EffectivePriceCalculator: discounts injected, the lookup inline in calculate, the input guard a private method), percentage-discount.ts and fixed-discount.ts (one Discount class each, formula and value check together), candidate-selection.ts (runs the engine over already-loaded rules, pure)
         dto/     promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), discount.ts (the Discount interface: valueError + discountCents) — REVIEW.md 8c.8

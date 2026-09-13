@@ -907,6 +907,16 @@ of the guard asserted the applied row count against a freshly migrated database,
 where the timestamps increase by construction, and could not fail; the second
 was defeated by sorting the journal, which left both its assertions true.
 
+**Break the thing the test names and watch it fail.** A test and the code it
+covers can agree with each other and both be wrong; a mutation is the thing
+outside both, because it asks the test a question the code did not supply the
+answer to. It is the cheapest check in this file and the one that keeps
+catching this family. Evidence, all on pull requests this week: a widened path
+scan that was proved load-bearing only by reverting the widening with the
+broken paths still in place; a citation regex that matched nothing because an
+escape had been eaten; and a coverage threshold that surfaced a fallback
+nothing could reach. In each the suite was green and the defect was real.
+
 ---
 
 ## 12. Keep it small

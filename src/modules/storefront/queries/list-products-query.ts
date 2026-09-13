@@ -18,7 +18,7 @@ export class ListProductsQuery {
 
     // A member whose entry is gone is dropped rather than taking the page with
     // it (ADR-0006).
-    const present = hashes.filter((hash) => Object.keys(hash).length > 0);
+    const present = hashes.filter((hash) => hash !== undefined);
 
     return { items: present.map((hash) => productView.parse(hash)), page, pageSize, total };
   }

@@ -28,7 +28,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   const headers = err.headers ?? {};
   // A retriable 5xx is an operating condition, not a fault: at `error` a rebuild
   // writes one alertable line per request and the real 500s sit inside that noise.
-  const retriable = headers['retry-after'] !== undefined;
+  // `http-errors` passes `headers` through as the raiser spelled them, so a
+  // `Retry-After` would otherwise log a routine 503 at `error`.
+  const retriable = Object.keys(headers).some((name) => name.toLowerCase() === 'retry-after');
 
   if (err.status < 500 || retriable) {
     // `err` too: a retriable 5xx carries the driver failure as its cause, and

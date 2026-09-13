@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis';
-import { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
+import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 
 /** A logical database of its own, so a run cannot disturb the read model or

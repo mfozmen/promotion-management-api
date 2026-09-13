@@ -2,7 +2,7 @@ import { connect } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
-import { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
+import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import { logger as rootLogger } from '@src/shared/logger.js';
 import { eventRegistry } from '@src/events/event-registry.js';
 import { eventRouting } from '@src/events/event-routing.js';

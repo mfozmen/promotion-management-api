@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Redis } from 'ioredis';
 import createError from 'http-errors';
-import { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
+import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 
 const replyError = (message: string) => Object.assign(new Error(message), { name: 'ReplyError' });
 
@@ -118,7 +118,10 @@ describe('ProductReadRepository', () => {
         pipeline: () => ({ hgetall: () => undefined, exec: () => Promise.resolve([]) }),
       } as unknown as Redis;
 
-      await expect(new ProductReadRepository(redis).findAll(['1', '2'])).resolves.toEqual([{}, {}]);
+      await expect(new ProductReadRepository(redis).findAll(['1', '2'])).resolves.toEqual([
+        undefined,
+        undefined,
+      ]);
     });
 
     it('answers an empty list for an empty page rather than a null', async () => {

@@ -5,7 +5,7 @@ import { loadConfig } from './shared/config.js';
 import { runMigrations } from './shared/db/migrate.js';
 import { GracefulShutdown } from './shared/graceful-shutdown.js';
 import { logger } from './shared/logger.js';
-import { ProductReadRepository } from './modules/product/db/product-read-repository.js';
+import { ProductReadRepository } from './modules/storefront/db/product-read-repository.js';
 import { createReadModelClient } from './shared/read-model-client.js';
 import { EventQueue } from './shared/queue/event-queue.js';
 

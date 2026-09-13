@@ -14,7 +14,7 @@ src/
     db/         the store gateway: the keys or SQL, and what a failed call means
       schema/   this module's tables, one file per table (REVIEW.md 8c.10)
     http/       routes, handlers and the middleware they mount
-    events/     one `<Event>Handler` class per consumed event, `handle(payload)`
+    events/     the events this module owns, one payload schema per file, and one `<Event>Handler` class per event it consumes, `handle(payload)`
   shared/
     db/         the client and the migrator; migrations/ holds the one journal
     http/       error handler, request validator, correlation-id logger

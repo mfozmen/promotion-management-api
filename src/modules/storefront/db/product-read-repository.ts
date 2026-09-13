@@ -14,7 +14,7 @@ export class ProductReadRepository {
 
   constructor(private readonly redis: Redis) {}
 
-  static productKey(id: number): string {
+  static productKey(id: number | string): string {
     return `product:${String(id)}`;
   }
 
@@ -28,10 +28,22 @@ export class ProductReadRepository {
     return (await this.reached(this.redis.exists(key), key)) === 1;
   }
 
-  async find(id: number): Promise<Record<string, string>> {
+  /** Absent is `undefined`: an empty hash is Redis's way of saying no key, and
+   *  translating that is this class's job rather than every caller's. */
+  async find(id: number | string): Promise<Record<string, string> | undefined> {
     const key = ProductReadRepository.productKey(id);
+    const hash = await this.reached(this.redis.hgetall(key), key);
 
-    return this.reached(this.redis.hgetall(key), key);
+    return Object.keys(hash).length === 0 ? undefined : hash;
+  }
+
+  /** Whether the whole-catalogue index still lists the product, which is what
+   *  separates a product that never existed from one a rebuild has not rewritten
+   *  yet (ADR-0006). */
+  async isListed(id: number | string): Promise<boolean> {
+    const key = ProductReadRepository.ALL_PRODUCTS;
+
+    return (await this.reached(this.redis.zscore(key, String(id)), key)) !== null;
   }
 
   /** With REV, Redis expects the maximum first. */
@@ -53,8 +65,11 @@ export class ProductReadRepository {
   }
 
   /** One pipeline whatever the page size, never one round trip per product. */
-  async findAll(ids: readonly string[]): Promise<Record<string, string>[]> {
-    const keys = ids.map((id) => ProductReadRepository.productKey(Number(id)));
+  async findAll(ids: readonly string[]): Promise<(Record<string, string> | undefined)[]> {
+    // The member goes to Redis as the index holds it: coercing it to a number
+    // would turn a member this class did not write into `product:NaN`, which
+    // reads as an ordinary absence.
+    const keys = ids.map((id) => ProductReadRepository.productKey(id));
     const pipeline = this.redis.pipeline();
     for (const key of keys) pipeline.hgetall(key);
     // `exec` is typed nullable: ioredis answers null for a transaction a WATCH
@@ -62,12 +77,14 @@ export class ProductReadRepository {
     const replies = (await this.reached(pipeline.exec(), ProductReadRepository.ALL_PRODUCTS)) ?? [];
 
     // Driven by the keys, not the replies: a reply the pipeline did not return
-    // is an absent entry, which is what a caller does with an empty hash anyway.
+    // and an empty hash are the same fact to a caller, the product is not there.
     return keys.map((key, index) => {
       const [error, hash] = replies[index] ?? [null, {}];
       if (error !== null) throw ProductReadRepository.classify(error, key);
 
-      return hash as Record<string, string>;
+      const record = hash as Record<string, string>;
+
+      return Object.keys(record).length === 0 ? undefined : record;
     });
   }
 

@@ -1,10 +1,11 @@
 import express, { type Express } from 'express';
 import createError from 'http-errors';
 import type { Logger } from 'pino';
-import type { ProductReadRepository } from './modules/product/db/product-read-repository.js';
-import { FindProductQuery } from './modules/product/queries/find-product-query.js';
-import { ListProductsQuery } from './modules/product/queries/list-products-query.js';
-import { productReadRoutes } from './modules/product/http/product-read-routes.js';
+import type { ProductReadRepository } from './modules/storefront/db/product-read-repository.js';
+import { FindProductQuery } from './modules/storefront/queries/find-product-query.js';
+import { ReadModelReadinessQuery } from './modules/storefront/queries/read-model-readiness-query.js';
+import { ListProductsQuery } from './modules/storefront/queries/list-products-query.js';
+import { productReadRoutes } from './modules/storefront/http/product-read-routes.js';
 import { errorHandler } from './shared/http/error-handler.js';
 import { httpLogger } from './shared/http/http-logger.js';
 
@@ -25,7 +26,7 @@ export function createApp(logger: Logger, products: ProductReadRepository): Expr
   api.use(
     '/products',
     productReadRoutes({
-      products,
+      readiness: new ReadModelReadinessQuery(products),
       find: new FindProductQuery(products),
       list: new ListProductsQuery(products),
     }),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { productView } from '@src/modules/product/domain/dto/product-view.js';
+import { productView } from '@src/modules/storefront/domain/dto/product-view.js';
 
 const stored = {
   id: '7',

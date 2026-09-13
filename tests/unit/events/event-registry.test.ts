@@ -3,7 +3,7 @@ import { chunkProcess } from '@src/modules/ingestion/events/chunk-process.js';
 import { productUpserted } from '@src/modules/catalog/events/product-upserted.js';
 import { promotionChanged } from '@src/modules/promotion/events/promotion-changed.js';
 import { eventRegistry } from '@src/events/event-registry.js';
-import { readmodelRebuild } from '@src/modules/product/events/readmodel-rebuild.js';
+import { readModelRebuild } from '@src/modules/storefront/events/readmodel-rebuild.js';
 import { reconcilerRun } from '@src/events/reconciler-run.js';
 
 // The eventRegistry only maps names to schemas; each schema is tested beside its source.
@@ -22,7 +22,7 @@ describe('eventRegistry', () => {
     expect(eventRegistry).toEqual({
       'product.upserted': productUpserted,
       'promotion.changed': promotionChanged,
-      'readmodel.rebuild': readmodelRebuild,
+      'readmodel.rebuild': readModelRebuild,
       'reconciler.run': reconcilerRun,
       'chunk.process': chunkProcess,
     });

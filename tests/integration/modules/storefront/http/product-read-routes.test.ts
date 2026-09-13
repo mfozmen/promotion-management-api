@@ -2,7 +2,7 @@ import { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
-import { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
+import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import pino from 'pino';
 import {
   seedProducts,
@@ -316,14 +316,19 @@ describe('a rebuild that has removed a product the index still lists', () => {
     expect(res.headers['retry-after']).toBeUndefined();
   });
 
-  it('answers 404 on the detail route for a member whose entry is gone', async () => {
+  it('answers 503 on the detail route for a member whose entry is gone', async () => {
     await seedProducts(redis(), [product({ id: 1 })]);
     await redis().unlink('product:1');
 
-    // The listing drops such a member; the detail route has no entry to render
-    // and says so. Telling it apart from a product that never existed needs a
-    // rebuild to exist first, and that is issue #12's to decide.
-    expect((await request(app()).get('/api/products/1')).status).toBe(404);
+    // The index still lists it, so the entry is mid-rebuild rather than absent.
+    // A 404 here is cached by every crawler and CDN for a live product.
+    expect((await request(app()).get('/api/products/1')).status).toBe(503);
+  });
+
+  it('answers 404 for an id no index lists', async () => {
+    await seedProducts(redis(), [product({ id: 1 })]);
+
+    expect((await request(app()).get('/api/products/2')).status).toBe(404);
   });
 
   it('answers 503 with a retry hint rather than a server fault', async () => {

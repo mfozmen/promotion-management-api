@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '@src/app.js';
-import { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
+import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import { logger as rootLogger } from '@src/shared/logger.js';
 import { captureLogger } from './capture-logger.js';
 

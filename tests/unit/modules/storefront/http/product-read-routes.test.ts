@@ -2,7 +2,7 @@ import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
-import { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
+import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import { logger as rootLogger } from '@src/shared/logger.js';
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
-import { ListProductsQuery } from '@src/modules/product/queries/list-products-query.js';
+import type { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
+import { ListProductsQuery } from '@src/modules/storefront/queries/list-products-query.js';
 
 const row = (id: string, price = '10000') => ({
   id,
@@ -73,7 +73,7 @@ describe('ListProductsQuery', () => {
   });
 
   it('drops a member whose entry is gone rather than failing the page', async () => {
-    const model = products({ findAll: () => Promise.resolve([row('1'), {}]) });
+    const model = products({ findAll: () => Promise.resolve([row('1'), undefined]) });
 
     const result = await new ListProductsQuery(model).execute(input);
 
