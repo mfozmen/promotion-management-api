@@ -25,12 +25,7 @@ const withoutPriorities = (node: unknown): unknown => {
   );
 };
 
-/**
- * `{"all": []}` is well-formed and evaluates true, so the engine accepts it and
- * the rule fires on every row: a 500 000-row file priced by a rule nobody meant
- * to match, every outcome `ok: true`, nothing rejected for a breaker to see. An
- * empty `any` is the same typo pointing the other way and never fires.
- */
+/** An empty `all` evaluates true and an empty `any` never fires; both are well-formed. ADR-0005. */
 const hasEmptyGroup = (node: unknown): boolean => {
   if (Array.isArray(node)) return node.some(hasEmptyGroup);
   if (node === null || typeof node !== 'object') return false;
@@ -74,9 +69,7 @@ export async function compileRules(rows: readonly PricingRuleRow[]): Promise<Com
     };
     try {
       engine.addRule(properties);
-      // An unknown operator or an unknown fact only surfaces when the engine
-      // runs, so a rule broken that way would reject every row of a 500 000-row
-      // file while the job still reported success.
+      // The probe run is what makes the failure happen once here rather than per row. ADR-0005.
       await new Engine([
         { ...properties, conditions: withoutPriorities(row.conditions) as TopLevelCondition },
       ]).run(PROBE_ROW);
