@@ -86,7 +86,6 @@ describe('BasePriceCalculator', () => {
       ruleRow({ id: 9, name: 'retired', conditions: always, event: percent(100), active: false }),
     ]);
 
-    // Evaluation order, so a log of these ids says what priced the file.
     expect(compiled.ruleIds).toEqual([4, 7]);
   });
 
@@ -455,7 +454,6 @@ describe('BasePriceCalculator', () => {
     ]);
     const cheapRow = vendorRow({ vendorPriceCents: 1000 });
 
-    // The lower id wins the tie, so both compilations price identically.
     await expect(feeFirst.calculate(cheapRow)).resolves.toMatchObject({
       basePriceCents: 4000,
     });
@@ -465,8 +463,6 @@ describe('BasePriceCalculator', () => {
   });
 
   it('reports an engine that fails with a non-error without throwing itself', async () => {
-    // Built here rather than through the compiler: the engine belongs to CompiledRuleSet,
-    // and what this asserts is the pricer's answer to a rejected run.
     const engine = new Engine();
     engine.addFact('rude', () => Promise.reject('just a string'));
     engine.addRule({

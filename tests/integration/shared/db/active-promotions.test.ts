@@ -89,10 +89,7 @@ describe('active_promotions', () => {
     expect(rows.map((row) => row.name)).toEqual(['running now']);
     expect(rows[0]).toMatchObject({ productId: inWindow, discountType: 'percentage', value: 1000 });
   });
-  // now() is transaction_timestamp(), so running the inserts and the read in one
-  // transaction is what makes endsAt equal the instant the predicate is evaluated.
-  // Outside a transaction the clock has already moved on and an inclusive upper
-  // bound passes just as happily.
+  // now() is transaction_timestamp(): inside one transaction endsAt can equal the evaluated instant.
   it('starts the moment starts_at arrives and stops the moment ends_at does, because the range is half-open', async () => {
     const [startingNow, endingNow] = await Promise.all([insertProduct(), insertProduct()]);
 

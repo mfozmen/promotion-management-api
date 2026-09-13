@@ -10,16 +10,11 @@ const BPS = 10_000n;
 const MAX_CENTS = BigInt(Number.MAX_SAFE_INTEGER);
 const PROBE_ROW: VendorRowFacts = { category: 'probe', vendorPriceCents: 0, stockQuantity: 0 };
 
-/**
- * The active ingestion rules, compiled once and priced one row at a time. Runs are
- * serialised here because the rule engine keeps per-run state on itself, so holding the
- * compiled rules and the queue apart would make the guarantee a caller's to keep. ADR-0005.
- */
 export class BasePriceCalculator {
   private queue: Promise<unknown> = Promise.resolve();
   private spentBy: Error | undefined;
 
-  /** `fromRules` is the way in; this is for a test that needs an engine it prepared itself. */
+  /** Tests build one around their own engine; production goes through fromRules. */
   constructor(
     private readonly engine: Engine,
     readonly ruleIds: readonly number[],
@@ -44,7 +39,6 @@ export class BasePriceCalculator {
       BasePriceCalculator.newestVersion(active),
     );
   }
-  /** A bad row is a returned rejection, never a throw: one row cannot abort the batch. */
   async calculate(row: VendorRowFacts): Promise<PricingOutcome> {
     const facts = vendorRowFacts.safeParse(row);
     if (!facts.success) {
@@ -143,8 +137,7 @@ export class BasePriceCalculator {
     }
     return undefined;
   }
-  /** Probe only: the engine stops at the first priority set that decides a rule, so a broken
-   *  operator behind an unmatched condition is never reached. */
+  /** The engine stops at the first priority set that decides, so the probe strips priorities to reach every operator. */
   private static withoutPriorities(node: unknown): unknown {
     if (Array.isArray(node))
       return node.map((child) => BasePriceCalculator.withoutPriorities(child));
@@ -164,8 +157,7 @@ export class BasePriceCalculator {
     return Object.values(node).some((value) => BasePriceCalculator.hasEmptyGroup(value));
   }
   private run(facts: VendorRowFacts) {
-    // Checked inside the continuation too: a row queued before the failure lands would
-    // otherwise run on a spent engine.
+    // Re-checked here: a row queued before the failure must not run.
     const run = this.queue.then(() =>
       this.spentBy ? Promise.reject(this.spentBy) : this.engine.run(facts),
     );

@@ -269,8 +269,6 @@ describe('promotions check constraints', () => {
     expect(await sqlStateOf(insert({ value: 0 }))).toBe(CHECK_VIOLATION);
     expect(await sqlStateOf(insert({ value: -1 }))).toBe(CHECK_VIOLATION);
     expect(await sqlStateOf(insert({ value: 10_001 }))).toBe(CHECK_VIOLATION);
-    // 10 000 basis points is a free product, which is a legitimate promotion; and a fixed
-    // discount above the base price is clamped by the pricing function, not rejected here.
     expect(await sqlStateOf(insert({ value: 10_000 }))).toBeUndefined();
     expect(
       await sqlStateOf(insert({ name: 'Large fixed', discountType: 'fixed', value: 10_001 })),
@@ -302,8 +300,7 @@ describe('promotions under concurrent writers', () => {
 
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     const [loser] = results.filter((result) => result.status === 'rejected');
-    // Two backends that insert their GiST index tuples at the same instant can wait on each
-    // other, and PostgreSQL kills one as a deadlock instead; both outcomes reject the loser.
+    // Concurrent GiST inserts can deadlock instead of conflicting; both reject the loser.
     expect([EXCLUSION_VIOLATION, DEADLOCK_DETECTED]).toContain(
       await sqlStateOf(Promise.reject(loser!.reason)),
     );
@@ -436,9 +433,6 @@ describe('ingestion_chunks', () => {
     });
   });
 
-  // Every enum the modules declare is the enum the migrations created. Drizzle generates
-  // migrations from these declarations, so a hand-edited migration and a moved file are
-  // both ways for the two to drift apart with nothing else noticing.
   it.each([
     [promotionStatus, 'promotion_status'],
     [promotionDiscountType, 'promotion_discount_type'],
@@ -455,10 +449,7 @@ describe('ingestion_chunks', () => {
     expect(rows.map((row) => row.value)).toEqual([...declared.enumValues]);
   });
 
-  // The checks and indexes each table declares are the ones the database has. Drizzle
-  // evaluates that second argument lazily, so nothing else in the suite reads it: a check
-  // dropped from a declaration would leave the migration's constraint in place today and
-  // silently disappear on the next generated migration.
+  // Drizzle reads the constraint callback lazily; nothing else in the suite exercises it.
   it.each([
     [products, 'products'],
     [promotions, 'promotions'],

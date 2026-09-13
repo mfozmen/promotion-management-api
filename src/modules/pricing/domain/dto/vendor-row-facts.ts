@@ -6,9 +6,8 @@ export type VendorRowFacts = {
   stockQuantity: number;
 };
 
-/** Re-validated: `BigInt()` throws on a fractional price and a missing fact skips a rule silently. */
+/** Validated again here: a bad value must be a rejected row, not a throw. */
 export const vendorRowFacts = z.object({
-  // Trimmed before matching: a padded category would price as a different category.
   category: z.string().trim().min(1),
   vendorPriceCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   stockQuantity: z.number().int().min(0),
