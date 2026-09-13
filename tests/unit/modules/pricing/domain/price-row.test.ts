@@ -297,6 +297,33 @@ describe('priceRow', () => {
     ]);
   });
 
+  it('prices overlapping calls on a nine-rule set, with no fact the module does not define', async () => {
+    // The clobber is a function of how many priority sets the engine walks, not
+    // of any rule suspending: a run that matches nothing finishes first, marks
+    // the engine finished, and the run beside it loses its remaining rules.
+    // Without the wrapper's queue the second row comes back short and ok: true.
+    const rules = await compileRules(
+      Array.from({ length: 9 }, (_, index) =>
+        ruleRow({
+          id: index + 1,
+          name: `rule-${index + 1}`,
+          priority: 100 - index,
+          conditions: categoryIs('Electronics'),
+          event: cents(100),
+        }),
+      ),
+    );
+
+    const outcomes = await Promise.all([
+      priceRow(rules, vendorRow({ category: 'Garden' })),
+      priceRow(rules, vendorRow()),
+    ]);
+
+    expect(outcomes.map((outcome) => outcome.ok && outcome.basePriceCents)).toEqual([
+      80_000, 80_900,
+    ]);
+  });
+
   it('applies equal-priority rules in a total order, whatever the row order', async () => {
     const fee = { name: 'handling-fee', conditions: always, event: cents(1000) };
     const double = { name: 'double', conditions: always, event: percent(10_000) };

@@ -25,6 +25,19 @@ const withoutPriorities = (node: unknown): unknown => {
   );
 };
 
+/**
+ * `{"all": []}` is well-formed and evaluates true, so the engine accepts it and
+ * the rule fires on every row: a 500 000-row file priced by a rule nobody meant
+ * to match, every outcome `ok: true`, nothing rejected for a breaker to see.
+ */
+const hasEmptyGroup = (node: unknown): boolean => {
+  if (Array.isArray(node)) return node.some(hasEmptyGroup);
+  if (node === null || typeof node !== 'object') return false;
+  const groups = Object.entries(node).filter(([key]) => key === 'all' || key === 'any');
+  if (groups.some(([, value]) => Array.isArray(value) && value.length === 0)) return true;
+  return Object.values(node).some(hasEmptyGroup);
+};
+
 /** A malformed row is a descriptive error, never a silently skipped rule. */
 export async function compileRules(rows: readonly PricingRuleRow[]): Promise<CompiledRuleSet> {
   // Total order: the adjustments do not commute, and two rules sharing a
@@ -44,6 +57,9 @@ export async function compileRules(rows: readonly PricingRuleRow[]): Promise<Com
     const event = adjustmentEvent.safeParse(row.event);
     if (!event.success) {
       throw new Error(`${where} has a malformed event: ${event.error.issues[0]?.message}`);
+    }
+    if (hasEmptyGroup(row.conditions)) {
+      throw new Error(`${where} has an empty all or any, which matches every row`);
     }
     const properties: RuleProperties = {
       // The engine reports a fired rule by name only, so the id travels inside

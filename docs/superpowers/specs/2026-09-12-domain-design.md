@@ -549,7 +549,11 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    (`json-rules-engine`, rules loaded from `pricing_rules` where
    `type = 'ingestion'` and cached for 60 s), producing `base_price_cents` and `pricing_rules_version`. Invalid
    rows are counted as rejected and logged with their byte offset; they never
-   abort the batch.
+   abort the batch. A `fault: 'rules'` outcome is not one of them: it says the rule
+   set is at fault, so it fails the chunk rather than counting a rejected row. So
+   does a batch whose rows are all rejected with the same `rejectedBy`, which is how
+   one rule pricing every row into the ground is told apart from a bad file
+   (ADR-0005).
 4. **Commit** one transaction: multi-row
    `insert ... on conflict (sku) do update` plus the checkpoint as a
    compare-and-set:

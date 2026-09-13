@@ -194,4 +194,27 @@ describe('compileRules', () => {
       ]),
     ).rejects.toThrowError(/pricing rule 9 \("no-conditions"\)/);
   });
+
+  it('rejects an empty all, which fires on every row instead of being rejected', async () => {
+    await expect(
+      compileRules([
+        ruleRow({ id: 4, name: 'typo-for-always', conditions: { all: [] }, event: percent(-3000) }),
+      ]),
+    ).rejects.toThrowError(/pricing rule 4 \("typo-for-always"\) has an empty all or any/);
+  });
+
+  it('rejects an empty any nested under a populated all', async () => {
+    await expect(
+      compileRules([
+        ruleRow({
+          id: 5,
+          name: 'nested-typo',
+          conditions: {
+            all: [{ any: [] }, { fact: 'stockQuantity', operator: 'greaterThan', value: 0 }],
+          },
+          event: percent(-3000),
+        }),
+      ]),
+    ).rejects.toThrowError(/pricing rule 5 \("nested-typo"\) has an empty all or any/);
+  });
 });
