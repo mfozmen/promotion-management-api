@@ -92,6 +92,23 @@ describe('HttpError mapping', () => {
     });
   });
 
+  it('says which come back later it was, when the cause hides the reason', async () => {
+    const captured = captureLogger();
+    const raised = new HttpError('READ_MODEL_NOT_READY', 'The read model cannot be reached');
+    raised.cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+
+    await request(appThrowing(raised, captured)).get('/boom');
+
+    // `serializeError` reports the root of the chain, so with a cause present
+    // the raised message never reaches the log and an operator cannot tell an
+    // unreachable store from one that is still being built. Both answer the
+    // same code with the same public wording.
+    expect(captured.lines.find((line) => line.level === 40)).toMatchObject({
+      reason: 'The read model cannot be reached',
+      error: { code: 'ECONNREFUSED' },
+    });
+  });
+
   it('does not call come back later a server fault', async () => {
     const captured = captureLogger();
     await request(
