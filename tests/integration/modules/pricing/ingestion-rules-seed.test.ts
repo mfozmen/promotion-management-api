@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { compileRules } from '@src/modules/pricing/domain/compile-rules.js';
 import { priceRow } from '@src/modules/pricing/domain/price-row.js';
 import type { PricingRuleRow } from '@src/modules/pricing/domain/dto/pricing-rule-row.js';
-import { createRuleSetLoader } from '@src/modules/pricing/domain/rule-set-loader.js';
+import { createRuleSetLoader } from '@src/modules/pricing/domain/create-rule-set-loader.js';
 import { pricingRules } from '@src/shared/db/schema.js';
 import { useTestDatabase } from '../../db.js';
 
