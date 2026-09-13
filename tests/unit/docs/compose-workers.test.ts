@@ -22,13 +22,24 @@ describe('the worker services', () => {
   });
 
   it.each(WORKERS)('%s runs a command whose entry point exists in src/', async (name) => {
-    // `dist/workers/x.js` is `src/workers/x.ts` after the build, so a rename that misses one
-    // of the two files fails here rather than crash-looping in a container.
+    // The command is checked against the build's own mapping, not a hard-coded `dist/`: moving
+    // `outDir` would otherwise leave this green while all three containers crash-loop.
+    const options = async (file: string): Promise<Record<string, string>> =>
+      (
+        JSON.parse(await readFile(new URL(`../../../${file}`, import.meta.url), 'utf8')) as {
+          compilerOptions: Record<string, string>;
+        }
+      ).compilerOptions;
+    // `rootDir` is the build config's; `outDir` is inherited from the base it extends.
+    const rootDir = (await options('tsconfig.build.json'))['rootDir'];
+    const outDir = (await options('tsconfig.json'))['outDir'];
     const command = (await services())[name]?.['command'];
     const script = Array.isArray(command) ? String(command[1]) : '';
 
-    expect(script).toBe(`dist/workers/${name}.js`);
-    expect(existsSync(new URL(`../../../src/workers/${name}.ts`, import.meta.url))).toBe(true);
+    expect(script).toBe(`${outDir}/workers/${name}.js`);
+    expect(existsSync(new URL(`../../../${rootDir}/workers/${name}.ts`, import.meta.url))).toBe(
+      true,
+    );
   });
 
   it.each(WORKERS)('%s waits for the migrator, not just for the stores', async (name) => {
@@ -47,6 +58,30 @@ describe('the worker services', () => {
     };
 
     expect(deploy.resources.limits).toEqual({ memory: '256M', cpus: '0.5' });
+  });
+
+  it('keeps V8 under the container limit, so the cap is an error and not a SIGKILL', async () => {
+    // Measured, not assumed: `docker run -m 256m node:22-alpine` reports a heap limit of 259 MB,
+    // above the cgroup. Without a lower ceiling the kernel kills the import with no stack, no
+    // log line and no exit reason, and `restart: unless-stopped` makes it look slow instead.
+    const worker = (await services())['ingestion-worker'] ?? {};
+    const options = String((worker['environment'] as Record<string, string>)['NODE_OPTIONS']);
+    const heapMiB = Number(/--max-old-space-size=(\d+)/.exec(options)?.[1]);
+    const limit = worker['deploy'] as { resources: { limits: { memory: string } } };
+
+    expect(heapMiB).toBeLessThan(Number(limit.resources.limits.memory.replace('M', '')));
+  });
+
+  it('gives the ingestion worker the same upload volume the api writes to', async () => {
+    // `api` streams the upload to a file and the worker reads it back by `file_ref`; without a
+    // shared volume that read is an ENOENT the day the chunk processor lands.
+    const mounts = async (name: string): Promise<unknown> =>
+      ((await services())[name]?.['volumes'] as string[] | undefined)?.find((mount) =>
+        mount.endsWith(':/app/uploads'),
+      );
+
+    expect(await mounts('ingestion-worker')).toBeDefined();
+    expect(await mounts('ingestion-worker')).toBe(await mounts('api'));
   });
 
   it('gives the limit to the ingestion worker alone', async () => {

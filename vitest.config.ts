@@ -16,7 +16,13 @@ export default defineConfig({
       include: ['src/**'],
       // Process entry points, per the design spec's section 12: they wire collaborators and
       // install signal handlers, and exercising them means starting a process.
-      exclude: ['src/server.ts', 'src/workers/*.ts', '**/*.d.ts'],
+      exclude: [
+        'src/server.ts',
+        'src/workers/event-handler.ts',
+        'src/workers/ingestion-worker.ts',
+        'src/workers/reconciler.ts',
+        '**/*.d.ts',
+      ],
       thresholds: { lines: 100, branches: 100, functions: 100, statements: 100 },
     },
   },
