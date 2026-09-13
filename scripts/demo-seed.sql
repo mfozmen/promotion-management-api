@@ -1,11 +1,8 @@
--- Demo catalogue and one flash sale, so `docker compose up` plus `npm run seed` is a system a
--- reviewer can look at. Not a migration: this data is a demonstration, not the schema, and a
--- production database must be able to skip it. The `ingestion` pricing rules a vendor import
--- applies are the other kind and are seeded by `0001_seed_pricing_rules.sql`.
---
--- Every statement converges rather than appends, so running the seed twice leaves what running
--- it once left: the whole file is one implicit transaction under the simple query protocol.
+-- Demo catalogue and one flash sale, applied by `npm run seed`. README's "Demo data" says what
+-- it produces and what running it twice promises.
 
+-- ponytail: 1 000 rows in one statement, under the pool's 10 s statement_timeout. A realistic
+-- catalogue arrives through vendor ingestion, not by raising this number.
 INSERT INTO "products" ("sku", "name", "category", "base_price_cents", "stock_quantity")
 SELECT
   format('DEMO-%s', lpad(i::text, 4, '0')),
@@ -19,22 +16,21 @@ ON CONFLICT ("sku") DO UPDATE SET
   "category" = excluded."category",
   "base_price_cents" = excluded."base_price_cents",
   "stock_quantity" = excluded."stock_quantity",
-  -- The demo row is not the vendor's any more, so it stops naming the job that wrote it. Left
-  -- behind, the pair would point at an ingestion job whose values this statement just replaced.
+  -- Every column that explains the price is cleared with it: left behind, they would say an
+  -- ingestion job and a rule set produced the number this statement just overwrote.
   "ingest_job_id" = NULL,
   "ingest_source_offset" = NULL,
+  "pricing_rules_version" = NULL,
   "updated_at" = now()
 WHERE
   ("products"."name", "products"."category", "products"."base_price_cents", "products"."stock_quantity")
   IS DISTINCT FROM
   (excluded."name", excluded."category", excluded."base_price_cents", excluded."stock_quantity")
-  OR "products"."ingest_job_id" IS NOT NULL;
+  OR "products"."ingest_job_id" IS NOT NULL
+  OR "products"."pricing_rules_version" IS NOT NULL;
 
--- Deleted and re-inserted rather than upserted: `promotions_no_overlapping_active_category`
--- excludes a second active row over the same category and overlapping window, so a second run
--- would raise 23P01 against the row the first one wrote. The delete is by name, so an active
--- promotion an operator created is not in scope and the seed fails against it rather than
--- replacing it.
+-- By name, so an `Electronics` promotion an operator created is not in scope: the insert below
+-- then fails against it on 23P01 rather than replacing it.
 DELETE FROM "promotions" WHERE "name" = 'Demo electronics flash sale';
 
 INSERT INTO "promotions" ("name", "discount_type", "value", "starts_at", "ends_at", "category", "status")

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { count, eq, like, max } from 'drizzle-orm';
+import { asc, count, eq, inArray, like, max } from 'drizzle-orm';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { products } from '@src/modules/catalog/db/schema/products.js';
 import { activePromotions } from '@src/modules/promotion/db/schema/active-promotions.js';
@@ -76,7 +76,12 @@ describe('demo seed', () => {
     await seed();
     await db()
       .update(products)
-      .set({ basePriceCents: 79_990, ingestJobId: 42, ingestSourceOffset: 512 })
+      .set({
+        basePriceCents: 79_990,
+        ingestJobId: 42,
+        ingestSourceOffset: 512,
+        pricingRulesVersion: 1_789_234_960_908,
+      })
       .where(eq(products.sku, 'DEMO-0004'));
 
     await seed();
@@ -86,15 +91,46 @@ describe('demo seed', () => {
         basePriceCents: products.basePriceCents,
         ingestJobId: products.ingestJobId,
         ingestSourceOffset: products.ingestSourceOffset,
+        pricingRulesVersion: products.pricingRulesVersion,
       })
       .from(products)
       .where(eq(products.sku, 'DEMO-0004'));
-    // The provenance goes with the price. Leaving it would have the row name an ingestion job
-    // whose values are gone, and #16's offset guard would then decline to re-apply them.
+    // Every column that explains the price goes with the price. A row keeping its
+    // `pricing_rules_version` would claim a rule set produced a number the seed wrote.
     expect(reclaimed).toEqual({
       basePriceCents: 1200,
       ingestJobId: null,
       ingestSourceOffset: null,
+      pricingRulesVersion: null,
     });
+  });
+
+  // Two files carry the same four rows and nothing else keeps them equal, so editing the seed's
+  // categories would quietly turn the sample's updates into inserts.
+  it('agrees with the vendor sample on the rows they share', async () => {
+    await seed();
+    const sample = await readFile(
+      new URL('../../../fixtures/vendor-sample.csv', import.meta.url),
+      'utf8',
+    );
+    const shared = sample
+      .split('\n')
+      .filter((line) => line.startsWith('DEMO-'))
+      .map((line) => line.split(','))
+      .map(([sku, name, category]) => ({ sku, name, category }));
+    expect(shared).toHaveLength(4);
+
+    const seeded = await db()
+      .select({ sku: products.sku, name: products.name, category: products.category })
+      .from(products)
+      .where(
+        inArray(
+          products.sku,
+          shared.map(({ sku }) => sku ?? ''),
+        ),
+      )
+      .orderBy(asc(products.sku));
+
+    expect(seeded).toEqual([...shared].sort((a, b) => (a.sku ?? '').localeCompare(b.sku ?? '')));
   });
 });
