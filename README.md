@@ -37,7 +37,7 @@ It is one verb rather than two because a one-shot migration service cannot be wa
 
 For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
 
-The integration tests read Redis on database 9 and PostgreSQL through the same compose stack, so `docker compose up -d --wait` has to be running before `npm run test:integration`; `TEST_REDIS_URL` and `TEST_DATABASE_URL` override the defaults.
+The integration tests read Redis on database 9 and PostgreSQL through the same compose stack, so `docker compose up -d --wait` has to be running before `npm run test:integration`; `TEST_REDIS_URL` and `TEST_DATABASE_URL` override the defaults. A run reporting `no tests` with 0 % coverage is the integration project failing to reach PostgreSQL, not an empty suite — it exits 1, but the message sends you looking in the wrong place.
 
 Tests and checks:
 

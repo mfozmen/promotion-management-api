@@ -4,8 +4,8 @@ import { validate } from '../../../shared/http/request-validator.js';
 import { HttpError } from '../../../shared/http/http-error.js';
 import { findProduct } from '../db/find-product.js';
 import { listProducts } from '../db/list-products.js';
-import { detailParams, type DetailParams } from './detail-params.js';
-import { listQuery, type ListQuery } from './list-query.js';
+import { detailParams, type DetailParams } from '../domain/dto/detail-params.js';
+import { listQuery, type ListQuery } from '../domain/dto/list-query.js';
 import { requireReadModel } from './require-read-model.js';
 
 export function productReadRoutes(redis: Redis): Router {

@@ -16,20 +16,22 @@ const redisAnsweringNoReplies = {
   pipeline: () => ({ hgetall: () => undefined, exec: () => Promise.resolve(null) }),
 } as unknown as Redis;
 
-describe('when Redis answers a pipeline with nothing at all', () => {
-  it('serves an empty page rather than failing', async () => {
-    const res = await request(createApp({ redis: redisAnsweringNoReplies })).get('/api/products');
+describe('productReadRoutes', () => {
+  describe('when Redis answers a pipeline with nothing at all', () => {
+    it('serves an empty page rather than failing', async () => {
+      const res = await request(createApp({ redis: redisAnsweringNoReplies })).get('/api/products');
 
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ items: [], total: 1 });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ items: [], total: 1 });
+    });
   });
-});
 
-describe('when the product routes have no Redis to read', () => {
-  it('serves the liveness probe and leaves the storefront unmounted', async () => {
-    const app = createApp();
+  describe('when the product routes have no Redis to read', () => {
+    it('serves the liveness probe and leaves the storefront unmounted', async () => {
+      const app = createApp();
 
-    expect((await request(app).get('/api/health')).status).toBe(200);
-    expect((await request(app).get('/api/products')).status).toBe(404);
+      expect((await request(app).get('/api/health')).status).toBe(200);
+      expect((await request(app).get('/api/products')).status).toBe(404);
+    });
   });
 });

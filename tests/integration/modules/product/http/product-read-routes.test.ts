@@ -2,7 +2,7 @@ import { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
-import { seedProducts, useTestRedis, type SeedProduct } from './redis.js';
+import { seedProducts, useTestRedis, type SeedProduct } from '../../../redis.js';
 
 const redis = useTestRedis();
 const app = () => createApp({ redis: redis() });

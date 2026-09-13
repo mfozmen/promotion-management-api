@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { MAX_OFFSET } from './max-offset.js';
-import { MAX_PAGE_SIZE } from './max-page-size.js';
+import { MAX_OFFSET } from '../../http/max-offset.js';
+import { MAX_PAGE_SIZE } from '../../http/max-page-size.js';
 
 /** Digits only rather than `z.coerce`: `1e9` and `0x10` are numbers to
  *  JavaScript, and a page of `1e9` is the deep scan `MAX_OFFSET` refuses. */
