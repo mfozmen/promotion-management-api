@@ -703,7 +703,7 @@ src/
       db/        resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
-  workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
+  workers/       one entry point per queue: promotions.ts, catalog.ts, ingestion.ts, reconciler.ts   (thin: create worker, register handler, start)
   shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue/ (the BullMQ queues), graceful-shutdown.ts, logger.ts (pino, request ids)
   events/        event-registry.ts and event-routing.ts: the event catalogue and its four-queue partition
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)

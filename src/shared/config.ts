@@ -10,7 +10,14 @@ const env = z
     REDIS_URL: z.url(),
     REDIS_READ_MODEL_DB: z.coerce.number().int().min(0).max(15).default(0),
     REDIS_QUEUE_DB: z.coerce.number().int().min(0).max(15).default(1),
-    SHUTDOWN_DRAIN_TIMEOUT_MS: z.coerce.number().int().min(0).default(10_000),
+    // The one knob where a blank value is both accepted and meaningful: `Number('')` is 0
+    // and 0 means "force the exit", so every SIGTERM would kill in-flight requests.
+    SHUTDOWN_DRAIN_TIMEOUT_MS: z
+      .string()
+      .regex(/^\d+$/)
+      .transform(Number)
+      .pipe(z.number().int())
+      .default(10_000),
     UPLOAD_DIR: z.string().default('./uploads'),
     INGESTION_CHUNK_BYTES: z.coerce
       .number()

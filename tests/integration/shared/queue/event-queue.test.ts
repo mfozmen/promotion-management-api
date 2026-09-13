@@ -144,13 +144,13 @@ describe('EventQueue', () => {
     );
     expect(await bus.inspect('promotions').getDelayedCount()).toBe(1);
 
-    expect(await bus.remove('promotions', 'promo:7:activate')).toBe(1);
+    expect(await bus.remove('promotion.changed', 'promo:7:activate')).toBe(1);
 
     expect(await bus.inspect('promotions').getDelayedCount()).toBe(0);
   });
 
   it('reports success when there was no such job to remove', async () => {
-    expect(await bus.remove('promotions', 'promo:999:expire')).toBe(1);
+    expect(await bus.remove('promotion.changed', 'promo:999:expire')).toBe(1);
   });
 
   it('reports a removal code of zero when a worker already holds the job', async () => {
@@ -176,7 +176,7 @@ describe('EventQueue', () => {
     await bus.publish('promotion.changed', { promotionId: 9 }, { jobId: 'promo:9:activate' });
     await hasStarted;
 
-    expect(await bus.remove('promotions', 'promo:9:activate')).toBe(0);
+    expect(await bus.remove('promotion.changed', 'promo:9:activate')).toBe(0);
 
     release();
   });
@@ -273,7 +273,7 @@ describe('EventQueue', () => {
       PREFIX,
     );
     try {
-      await expect(unreachable.remove('promotions', 'promo:5:activate')).rejects.toThrow(
+      await expect(unreachable.remove('promotion.changed', 'promo:5:activate')).rejects.toThrow(
         /remove\("promo:5:activate"\) did not confirm within 2000 ms/,
       );
     } finally {

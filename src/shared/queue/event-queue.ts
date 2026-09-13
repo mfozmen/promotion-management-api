@@ -66,9 +66,13 @@ export class EventQueue<R extends Registry> {
     );
   }
 
-  /** BullMQ's codes: `1` when nothing blocked it, `0` when a worker already holds it. */
-  async remove(name: QueueName, jobId: string): Promise<number> {
-    return this.bounded(`remove("${jobId}")`, this.queues[name].remove(jobId));
+  /**
+   * Takes the event, not the queue, so a removal cannot reach a different queue from the
+   * publish it undoes. BullMQ's codes: `1` when nothing blocked it, `0` when a worker
+   * already holds it — and `1` also when there was no such job, so a code is not proof.
+   */
+  async remove<N extends keyof R & string>(name: N, jobId: string): Promise<number> {
+    return this.bounded(`remove("${jobId}")`, this.queues[this.routing[name]].remove(jobId));
   }
 
   /** Reads only: `add` here would skip the parse and the timeout `publish` exists to give. */
@@ -100,8 +104,11 @@ export class EventQueue<R extends Registry> {
       ]);
     } finally {
       clearTimeout(timer);
-      // The loser still settles, and an unhandled rejection would take the process down.
-      work.catch(() => undefined);
+      // The loser still settles; an unhandled rejection would take the process down, and
+      // a discarded one leaves the timeout message standing in for the real cause.
+      work.catch((error: Error) =>
+        console.error(`${operation} failed after timing out:`, error.message),
+      );
     }
   }
 }

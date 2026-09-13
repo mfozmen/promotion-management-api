@@ -1,10 +1,9 @@
 import type { Job, JobsOptions } from 'bullmq';
 import { describe, expect, it } from 'vitest';
 import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-scheduler.js';
-import type { QueueName } from '@src/shared/queue/queue-name.js';
 
 type Published = { payload: { promotionId: number }; options?: JobsOptions };
-type Removed = { name: QueueName; jobId: string };
+type Removed = { name: 'promotion.changed'; jobId: string };
 
 /** A queue that records rather than connects: the ids and the delay are what this owns. */
 class RecordingQueue {
@@ -22,7 +21,7 @@ class RecordingQueue {
     return { id: options?.jobId } as Job;
   }
 
-  async remove(name: QueueName, jobId: string): Promise<number> {
+  async remove(name: 'promotion.changed', jobId: string): Promise<number> {
     this.removed.push({ name, jobId });
     return this.removalCodes.shift() ?? 1;
   }
@@ -65,8 +64,8 @@ describe('PromotionScheduler', () => {
       expire: 0,
     });
     expect(queue.removed).toEqual([
-      { name: 'promotions', jobId: 'promo:7:activate' },
-      { name: 'promotions', jobId: 'promo:7:expire' },
+      { name: 'promotion.changed', jobId: 'promo:7:activate' },
+      { name: 'promotion.changed', jobId: 'promo:7:expire' },
     ]);
   });
 });

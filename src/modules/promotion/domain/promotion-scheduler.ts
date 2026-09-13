@@ -1,5 +1,4 @@
 import type { Job, JobsOptions } from 'bullmq';
-import type { QueueName } from '../../../shared/queue/queue-name.js';
 import type { PromotionBoundary } from './dto/promotion-boundary.js';
 
 /** What the scheduler needs of the queue; the queue itself knows nothing of promotions. */
@@ -9,13 +8,11 @@ type BoundaryQueue = {
     payload: { promotionId: number },
     options?: JobsOptions,
   ): Promise<Job>;
-  remove(name: QueueName, jobId: string): Promise<number>;
+  remove(name: 'promotion.changed', jobId: string): Promise<number>;
 };
 
 /** The promotion module's delayed boundary jobs: their ids, their delay and their removal. */
 export class PromotionScheduler {
-  private static readonly QUEUE: QueueName = 'promotions';
-
   constructor(private readonly queue: BoundaryQueue) {}
 
   /**
@@ -56,9 +53,6 @@ export class PromotionScheduler {
   }
 
   private async remove(promotionId: number, boundary: PromotionBoundary): Promise<number> {
-    return this.queue.remove(
-      PromotionScheduler.QUEUE,
-      PromotionScheduler.jobId(promotionId, boundary),
-    );
+    return this.queue.remove('promotion.changed', PromotionScheduler.jobId(promotionId, boundary));
   }
 }

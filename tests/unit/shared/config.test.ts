@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { productUpserted } from '@src/modules/catalog/domain/dto/product-upserted.js';
 import { loadConfig } from '@src/shared/config.js';
 
 const validEnv = {
   DATABASE_URL: 'postgres://promo:promo@localhost:5432/promotion',
   REDIS_URL: 'redis://localhost:6379',
 };
+
+const ids = (count: number): number[] => Array.from({ length: count }, (_, i) => i + 1);
 
 const getError = (attempt: () => unknown): unknown => {
   try {
@@ -46,8 +49,25 @@ describe('loadConfig', () => {
     ).toBe(expected);
   });
 
-  it.each(['-1', 'abc', '1.5'])('rejects a shutdown drain cap of %s', (raw) => {
+  // The blank case is the one that matters: `Number('')` is 0 and 0 means "force the
+  // exit", so a compose block with the value cleared would kill in-flight requests.
+  it.each(['', ' ', '-1', 'abc', '1.5', '0x10'])('rejects a shutdown drain cap of %s', (raw) => {
     expect(() => loadConfig({ ...validEnv, SHUTDOWN_DRAIN_TIMEOUT_MS: raw })).toThrow();
+  });
+
+  it('keeps the ingestion batch cap and the announcement cap equal', () => {
+    // A batch that commits more ids than one product.upserted may carry would
+    // dead-letter its own announcement after the rows are already in PostgreSQL.
+    const batchCeiling = loadConfig({
+      ...validEnv,
+      INGESTION_BATCH_SIZE: '5000',
+    }).INGESTION_BATCH_SIZE;
+
+    expect(() => productUpserted.parse({ productIds: ids(batchCeiling) })).not.toThrow();
+    expect(() => productUpserted.parse({ productIds: ids(batchCeiling + 1) })).toThrow();
+    expect(() =>
+      loadConfig({ ...validEnv, INGESTION_BATCH_SIZE: String(batchCeiling + 1) }),
+    ).toThrow();
   });
 
   it('coerces overrides to numbers', () => {
