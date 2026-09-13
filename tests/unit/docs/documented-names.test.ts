@@ -1,5 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
-import { glob } from 'node:fs/promises';
+import { glob, readFile, stat } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 const DOCUMENTS = [
@@ -104,9 +103,7 @@ describe('the documents', () => {
   });
 
   it('name only members their declaration actually has', async () => {
-    // A rename is reliable in the code and unreliable in the prose about it: three times in
-    // one day a document kept calling a method by the name it had before the refactor, and
-    // the path check above could not see it because no path had changed.
+    // A rename is reliable in the code and unreliable in the prose about it.
     const declarations = await exportedDeclarations();
     const missing: string[] = [];
 
@@ -114,11 +111,8 @@ describe('the documents', () => {
       const text = await readFile(document, 'utf8');
       for (const [, owner, member] of text.matchAll(MEMBER)) {
         const source = owner === undefined ? undefined : declarations.get(owner);
-        // A whole word, not a substring: `connect` survives as part of `connectTimeout`, so
-        // `includes` stayed green through a source-side rename — the likelier direction,
-        // because an IDE renames the code and never the prose.
-        // ponytail: a match inside a comment or an import still counts; parsing the file
-        // is the upgrade if that ever hides a real rename.
+        // A whole word: `includes` stayed green on `connect` because of `connectTimeout`.
+        // ponytail: a match in a comment counts too; parsing the file is the upgrade.
         if (source !== undefined && member !== undefined && !wholeWord(member).test(source)) {
           missing.push(`${document}: ${owner}.${member}`);
         }
