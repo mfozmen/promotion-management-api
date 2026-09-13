@@ -2,9 +2,9 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 
-// Relative to the process working directory, which the image fixes at /app, and which
-// `npm run db:migrate` and the tests share.
-const MIGRATIONS_FOLDER = 'src/shared/db/migrations';
+// Relative to the process working directory, which the image fixes at /app. Exported so
+// the test harness migrates from the same place rather than a second copy of the path.
+export const MIGRATIONS_FOLDER = 'src/shared/db/migrations';
 
 /**
  * Brings a database up to the schema this build carries, then closes what it opened.

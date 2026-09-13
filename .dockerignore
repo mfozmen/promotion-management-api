@@ -9,6 +9,5 @@ uploads
 tests
 docs
 *.md
-!README.md
 .env
 .env.*

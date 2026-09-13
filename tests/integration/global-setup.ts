@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Client, Pool } from 'pg';
+import { MIGRATIONS_FOLDER } from '@src/shared/db/migrate.js';
 import { adminUrl, templateDatabase, urlFor } from './env.js';
 
 const STALE_AFTER_MS = 3_600_000;
@@ -58,6 +59,6 @@ export default async function setup(): Promise<void> {
     statement_timeout: 0,
     idle_in_transaction_session_timeout: 0,
   });
-  await migrate(drizzle(pool), { migrationsFolder: 'src/shared/db/migrations' });
+  await migrate(drizzle(pool), { migrationsFolder: MIGRATIONS_FOLDER });
   await pool.end();
 }
