@@ -5,11 +5,8 @@ import { productKey } from '@src/modules/product/db/product-key.js';
 import { READY_KEY } from '@src/modules/product/db/ready-key.js';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 
-/**
- * A logical database of its own, so a run cannot disturb the read model or the
- * queue a developer is using, and the keys can be cleared between tests by
- * prefix rather than with FLUSHDB (REVIEW.md 5.3).
- */
+/** A logical database of its own, so a run cannot disturb the read model or
+ *  the queue a developer is using. */
 const url = process.env.TEST_REDIS_URL ?? 'redis://localhost:6379/9';
 
 export function useTestRedis(): () => Redis {
@@ -20,8 +17,7 @@ export function useTestRedis(): () => Redis {
   });
 
   beforeEach(async () => {
-    // SCAN, never KEYS: the rule that forbids KEYS in a code path does not
-    // stop applying because this one is a test (REVIEW.md 5.3).
+    // SCAN, never KEYS: what is forbidden in a code path is forbidden here.
     const doomed: string[] = [];
     let cursor = '0';
     do {
@@ -51,7 +47,7 @@ export type SeedProduct = {
   promotionName?: string;
 };
 
-/** Writes the keys the read-model worker of #12 will write, as spec §5 documents them. */
+/** Writes the keys the read-model worker will write, as the design documents them. */
 export async function seedProducts(redis: Redis, products: readonly SeedProduct[]): Promise<void> {
   const pipeline = redis.pipeline();
   for (const product of products) {

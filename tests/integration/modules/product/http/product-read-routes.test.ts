@@ -33,6 +33,36 @@ describe('GET /api/products', () => {
     expect(res.body).toMatchObject({ page: 1, pageSize: 20, total: 3 });
   });
 
+  it('orders products sharing a price by id as a string, which is not numeric order', async () => {
+    // A flash sale flattens many prices to one score, so this is the ordinary
+    // Scenario B case rather than an edge one. Redis breaks a score tie by
+    // comparing members as strings, so "10" sorts before "9".
+    await seedProducts(redis(), [
+      product({ id: 9, effectivePriceCents: 2_000 }),
+      product({ id: 10, effectivePriceCents: 2_000 }),
+      product({ id: 11, effectivePriceCents: 2_000 }),
+    ]);
+
+    const res = await request(app()).get('/api/products?category=Accessories');
+
+    expect(res.body.items.map((item: { id: number }) => item.id)).toEqual([10, 11, 9]);
+  });
+
+  it('keeps a tied page stable across reads, so paging does not repeat or skip', async () => {
+    await seedProducts(
+      redis(),
+      Array.from({ length: 6 }, (_, index) => product({ id: index + 1, effectivePriceCents: 500 })),
+    );
+
+    const first = await request(app()).get('/api/products?pageSize=3&page=1');
+    const second = await request(app()).get('/api/products?pageSize=3&page=2');
+    const repeat = await request(app()).get('/api/products?pageSize=3&page=1');
+
+    const ids = (res: { body: { items: { id: number }[] } }) => res.body.items.map((i) => i.id);
+    expect(ids(first)).toEqual(ids(repeat));
+    expect([...ids(first), ...ids(second)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
   it('orders most expensive first when asked', async () => {
     await seedProducts(redis(), [
       product({ id: 1, effectivePriceCents: 3_000 }),

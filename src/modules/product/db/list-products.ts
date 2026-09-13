@@ -6,7 +6,7 @@ import { categoryKey } from './category-key.js';
 import { productKey } from './product-key.js';
 
 interface Page {
-  category?: string | undefined;
+  category?: string;
   order: 'asc' | 'desc';
   page: number;
   pageSize: number;

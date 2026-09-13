@@ -92,8 +92,6 @@ jobs:
       - name: Test with coverage
         run: npm run test:cov
         env:
-          # The integration tests read the storefront's read model. Database 9
-          # so a run cannot disturb the model or the queue (ADR-0003).
           TEST_REDIS_URL: redis://localhost:6379/9
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/promotion
 
