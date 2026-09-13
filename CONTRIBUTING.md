@@ -15,7 +15,7 @@ src/
     jobs/       BullMQ processors
   shared/
     db/         the client and the migrator; migrations/ holds the one journal
-    http/       error type, error handler, request validator, logger
+    http/       error handler, request validator, correlation-id logger
     config.ts
     queue/      the BullMQ queues, generic over the catalogue they are given
     graceful-shutdown.ts
