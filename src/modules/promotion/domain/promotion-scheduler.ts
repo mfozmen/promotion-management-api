@@ -13,7 +13,7 @@ type BoundaryQueue = {
 };
 
 /** The promotion module's delayed boundary jobs: their ids, their delay and their removal. */
-export class PromotionBoundaryScheduler {
+export class PromotionScheduler {
   private static readonly QUEUE: QueueName = 'promotions';
 
   constructor(private readonly queue: BoundaryQueue) {}
@@ -33,7 +33,7 @@ export class PromotionBoundaryScheduler {
       'promotion.changed',
       { promotionId },
       {
-        jobId: PromotionBoundaryScheduler.jobId(promotionId, boundary),
+        jobId: PromotionScheduler.jobId(promotionId, boundary),
         delay: Math.max(0, at.getTime() - now.getTime()),
       },
     );
@@ -57,8 +57,8 @@ export class PromotionBoundaryScheduler {
 
   private async remove(promotionId: number, boundary: PromotionBoundary): Promise<number> {
     return this.queue.remove(
-      PromotionBoundaryScheduler.QUEUE,
-      PromotionBoundaryScheduler.jobId(promotionId, boundary),
+      PromotionScheduler.QUEUE,
+      PromotionScheduler.jobId(promotionId, boundary),
     );
   }
 }

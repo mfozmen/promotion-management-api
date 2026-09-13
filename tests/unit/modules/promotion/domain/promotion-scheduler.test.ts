@@ -1,6 +1,6 @@
 import type { Job, JobsOptions } from 'bullmq';
 import { describe, expect, it } from 'vitest';
-import { PromotionBoundaryScheduler } from '@src/modules/promotion/domain/promotion-boundary-scheduler.js';
+import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-scheduler.js';
 import type { QueueName } from '@src/shared/queue/queue-name.js';
 
 type Published = { payload: { promotionId: number }; options?: JobsOptions };
@@ -30,14 +30,14 @@ class RecordingQueue {
 
 const at = new Date('2026-09-13T00:00:00.000Z');
 
-describe('PromotionBoundaryScheduler', () => {
+describe('PromotionScheduler', () => {
   it.each([
     ['activate', 'promo:5:activate'],
     ['expire', 'promo:5:expire'],
   ] as const)('gives a %s boundary the write-once id %s', async (boundary, jobId) => {
     const queue = new RecordingQueue();
 
-    const job = await new PromotionBoundaryScheduler(queue).schedule(5, boundary, at, at);
+    const job = await new PromotionScheduler(queue).schedule(5, boundary, at, at);
 
     expect(job.id).toBe(jobId);
     expect(queue.published[0]?.payload).toEqual({ promotionId: 5 });
@@ -52,7 +52,7 @@ describe('PromotionBoundaryScheduler', () => {
     const queue = new RecordingQueue();
     const now = new Date(at.getTime() - offsetMs);
 
-    await new PromotionBoundaryScheduler(queue).schedule(8, 'expire', at, now);
+    await new PromotionScheduler(queue).schedule(8, 'expire', at, now);
 
     expect(queue.published[0]?.options?.delay).toBe(expected);
   });
@@ -60,7 +60,7 @@ describe('PromotionBoundaryScheduler', () => {
   it('cancels both boundaries on the promotions queue and reports each code', async () => {
     const queue = new RecordingQueue([1, 0]);
 
-    expect(await new PromotionBoundaryScheduler(queue).cancel(7)).toEqual({
+    expect(await new PromotionScheduler(queue).cancel(7)).toEqual({
       activate: 1,
       expire: 0,
     });
