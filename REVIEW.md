@@ -204,9 +204,9 @@ finding.
 unless one of the §3.1 mechanisms serialises the writers. The read-model writer
 has four consumers, one per queue and three of them writers, so concurrency 1 is not
 available to it: every
-read-model write is a Lua compare-and-set on a `sourceReadAt` token — `clock_timestamp()`
-from the same statement as the recompute's `SELECT`, never `now()`, one per batch — covering the whole write for
-a product, and a consumer that writes without it is a finding (ADR-0003 has the clauses). The rule
+read-model write is a Lua compare-and-set on a `sourceReadAt` token, and a consumer that
+writes without it is a finding. ADR-0003 states the clauses: which clock, how often it is
+taken, what absence and a tie mean, and how much of the write the script owns. The rule
 changed when the queues were partitioned by urgency and the guarantee that a
 single consumer had been providing went with it, silently. Elsewhere use a single command, a pipeline that does not depend on
 intermediate reads, `SET NX`, or a Lua script. `WATCH`/`MULTI` without a retry

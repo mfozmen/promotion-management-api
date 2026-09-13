@@ -439,7 +439,7 @@ where p.id = any($1);
   Members with equal scores order by member string, which is deterministic
   but not numeric (`"10"` before `"9"`); zero-pad ids if numeric tie order
   ever matters.
-- Writing a product entry is one `MULTI`: `HSET product:{id}`,
+- Writing a product entry is one Lua script, not a `MULTI`: a `MULTI` cannot read the stored `sourceReadAt` and branch on it, and a compare-and-set that is not atomic with its `ZADD`s leaves the hash at one price and the sorted set at another (ADR-0003, REVIEW.md 3.9). The script does `HSET product:{id}`,
   `ZADD category:{new}`, `ZADD products:all`, and `ZREM category:{old}` when
   the stored category differs. Bulk recomputes pipeline 1 000 entries per
   round trip.

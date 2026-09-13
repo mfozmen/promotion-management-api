@@ -27,8 +27,7 @@ async function clearOwnQueues(): Promise<void> {
   }
 }
 
-// No default: vitest's own 5 s would fire first, so a 20 s deadline here could never be
-// reached and its message could never appear — the unreachable bound this file just lost.
+// No default: a shared one hides what each caller actually expects to wait for.
 async function waitFor(condition: () => Promise<boolean>, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
