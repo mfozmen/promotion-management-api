@@ -1,9 +1,9 @@
 import { Engine, type RuleProperties, type TopLevelCondition } from 'json-rules-engine';
 
-import { adjustmentEvent } from './adjustment-event.js';
+import { adjustmentEvent } from './dto/adjustment-event.js';
 import type { CompiledRuleSet } from './dto/compiled-rule-set.js';
 import type { PricingRuleRow } from './dto/pricing-rule-row.js';
-import type { VendorRowFacts } from './vendor-row-facts.js';
+import type { VendorRowFacts } from './dto/vendor-row-facts.js';
 
 const PROBE_ROW: VendorRowFacts = { category: 'probe', vendorPriceCents: 0, stockQuantity: 0 };
 
