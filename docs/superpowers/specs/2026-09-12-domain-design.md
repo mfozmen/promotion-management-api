@@ -663,7 +663,7 @@ configuration, not application code.
 
 ## 10. API
 
-All routes under `/api`; JSON errors `{ error: { code, message, details? } }`;
+All routes under `/api`; JSON errors `{ error: { message } }`;
 zod validation at every boundary; OpenAPI generated from the zod schemas and
 served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 
