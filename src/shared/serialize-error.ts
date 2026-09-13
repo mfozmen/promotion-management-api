@@ -4,10 +4,8 @@ import { MAX_MESSAGE } from './max-message.js';
  *  search for. */
 const MIN_SECRET = 8;
 
-/** The whole chain, not one step: a repository that interpolates a driver
- *  message into its own sits between the handler's error and the statement,
- *  and a single step lands on that wrapper, which carries no `query` field to
- *  recognise it by. */
+/** The whole chain, not one step: the wrapper in the middle carries no field
+ *  to recognise it by (ADR-0010). */
 function causeChain(err: Error): Error[] {
   const chain = [err];
   // Stops on a cycle: a retry wrapper that re-attaches the error it caught
@@ -43,10 +41,6 @@ function secrets(chain: readonly Error[]): string[] {
   return chain.flatMap((err) => {
     const { query, params } = err as Error & { query?: unknown; params?: unknown };
     return [query, ...(Array.isArray(params) ? params : [params])].filter(
-      // Long enough to be worth hiding. A statement is always long; a bound
-      // value of one or two characters appears in any English sentence, so
-      // searching for it would replace the constraint name that diagnoses the
-      // failure — and the caller chooses that length.
       (value): value is string => typeof value === 'string' && value.length >= MIN_SECRET,
     );
   });
@@ -56,21 +50,15 @@ function safeMessage(err: Error, held: readonly string[]): string {
   // Cut at the first quoted value: a driver quotes what the caller sent.
   const message = err.message.split(': "')[0]!;
 
-  // Compared before the bound is applied, not after: a statement quoted past
-  // the bound is absent from the truncated string, so the check would miss it
-  // and the prefix would go to the log.
+  // Compared before the bound is applied, not after (ADR-0010).
   if (held.some((secret) => message.includes(secret))) {
     return 'database query failed';
   }
   return message.slice(0, MAX_MESSAGE);
 }
 
-/**
- * Contract for every log site (ADR-0010): errors go through this, under an
- * `error` key, never handed to a logger as an object — a driver error carries
- * the statement and bound row in its fields and its message, and pino-http
- * wraps a custom `err` serializer, so registering it there feeds it two shapes.
- */
+/** The whitelist every log site calls, under an `error` key, never handing the
+ *  error itself to a logger (REVIEW.md 8.4, ADR-0010). */
 export function serializeError(err: unknown): Record<string, unknown> {
   if (!(err instanceof Error)) {
     // Never the value itself: an unknown thrown object may be the leak.

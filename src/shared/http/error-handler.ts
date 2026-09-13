@@ -16,9 +16,7 @@ import { serializeError } from '../serialize-error.js';
 const RETRY_AFTER_MIN = 5;
 const RETRY_AFTER_SPREAD = 6;
 // `crypto.randomInt`, not `Math.random`: the jitter is fine either way, but a
-// non-cryptographic generator on a response header is a security hotspot, and
-// clearing it in the analyser's interface rather than in the code is the
-// bypass REVIEW.md 13.6 forbids.
+// non-cryptographic generator on a response header is a security hotspot.
 const retryAfter = (): string =>
   String(randomInt(RETRY_AFTER_MIN, RETRY_AFTER_MIN + RETRY_AFTER_SPREAD));
 
