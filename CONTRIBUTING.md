@@ -19,7 +19,7 @@ src/
     config.ts
     queue/      the BullMQ queues, generic over the catalogue they are given
     graceful-shutdown.ts
-  events/       registry.ts and routing.ts: the application's event catalogue (ADR-0008)
+  events/       event-registry.ts and event-routing.ts: the application's event catalogue (ADR-0008)
 tests/
   unit/         mirrors src/, one test file per source file
   integration/  real PostgreSQL and Redis

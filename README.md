@@ -94,7 +94,7 @@ The compose file holds the two stores, the `api` service built from this reposit
 
 ### The queue
 
-Four queues, one per urgency class, and `routing` maps an event to one of
+Four queues, one per urgency class, and `eventRouting` maps an event to one of
 them — the caller never picks. `promotions` carries `promotion.changed` and the
 delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
 `ingestion.chunk`, and `maintenance` carries `readmodel.rebuild` and

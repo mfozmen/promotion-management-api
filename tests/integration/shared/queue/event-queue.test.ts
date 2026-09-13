@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Queue, Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
-import { registry } from '@src/events/registry.js';
-import { routing } from '@src/events/routing.js';
+import { eventRegistry } from '@src/events/event-registry.js';
+import { eventRouting } from '@src/events/event-routing.js';
 import { EventQueue } from '@src/shared/queue/event-queue.js';
 import { randomUUID } from 'node:crypto';
 
@@ -37,11 +37,11 @@ async function waitFor(condition: () => Promise<boolean>, timeoutMs = 20_000): P
 }
 
 describe('EventQueue', () => {
-  let bus: ReturnType<typeof EventQueue.connect<typeof registry>>;
+  let bus: ReturnType<typeof EventQueue.connect<typeof eventRegistry>>;
   const workers: Pick<Worker, 'close'>[] = [];
 
   beforeAll(async () => {
-    bus = EventQueue.connect(redisUrl, QUEUE_DB, registry, routing, PREFIX);
+    bus = EventQueue.connect(redisUrl, QUEUE_DB, eventRegistry, eventRouting, PREFIX);
     // A run killed mid-test leaves keys behind that fail the next one's counts.
     await clearOwnQueues();
   });
@@ -225,7 +225,7 @@ describe('EventQueue', () => {
     }
   });
   it('stops accepting jobs once the queues are closed, so SIGTERM can exit', async () => {
-    const closing = EventQueue.connect(redisUrl, QUEUE_DB, registry, routing, PREFIX);
+    const closing = EventQueue.connect(redisUrl, QUEUE_DB, eventRegistry, eventRouting, PREFIX);
     const queued = await closing.publish('promotion.changed', { promotionId: 77 });
 
     await closing.close();
@@ -246,8 +246,8 @@ describe('EventQueue', () => {
     const unreachable = EventQueue.connect(
       'redis://127.0.0.1:1',
       QUEUE_DB,
-      registry,
-      routing,
+      eventRegistry,
+      eventRouting,
       PREFIX,
     );
     const startedAt = Date.now();
@@ -268,8 +268,8 @@ describe('EventQueue', () => {
     const unreachable = EventQueue.connect(
       'redis://127.0.0.1:1',
       QUEUE_DB,
-      registry,
-      routing,
+      eventRegistry,
+      eventRouting,
       PREFIX,
     );
     try {

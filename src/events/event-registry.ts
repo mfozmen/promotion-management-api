@@ -5,7 +5,7 @@ import { readmodelRebuild } from './readmodel-rebuild.js';
 import { reconcileRun } from './reconcile-run.js';
 
 /** The application's event catalogue; it sits above the modules, not in `shared/`. ADR-0008. */
-export const registry = {
+export const eventRegistry = {
   'product.upserted': productUpserted,
   'promotion.changed': promotionChanged,
   'readmodel.rebuild': readmodelRebuild,

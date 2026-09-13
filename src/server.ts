@@ -1,8 +1,8 @@
 import { createApp } from './app.js';
 import { loadConfig } from './shared/config.js';
 import { runMigrations } from './shared/db/migrate.js';
-import { registry } from './events/registry.js';
-import { routing } from './events/routing.js';
+import { eventRegistry } from './events/event-registry.js';
+import { eventRouting } from './events/event-routing.js';
 import { EventQueue } from './shared/queue/event-queue.js';
 import { GracefulShutdown } from './shared/graceful-shutdown.js';
 
@@ -12,7 +12,12 @@ const config = loadConfig();
 await runMigrations(config.DATABASE_URL);
 
 const app = createApp();
-const queue = EventQueue.connect(config.REDIS_URL, config.REDIS_QUEUE_DB, registry, routing);
+const queue = EventQueue.connect(
+  config.REDIS_URL,
+  config.REDIS_QUEUE_DB,
+  eventRegistry,
+  eventRouting,
+);
 
 const server = app.listen(config.PORT, () => {
   console.log(`Server listening on port ${config.PORT}`);

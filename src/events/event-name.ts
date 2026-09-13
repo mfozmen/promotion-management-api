@@ -1,3 +1,3 @@
-import type { registry } from './registry.js';
+import type { eventRegistry } from './event-registry.js';
 
-export type EventName = keyof typeof registry;
+export type EventName = keyof typeof eventRegistry;

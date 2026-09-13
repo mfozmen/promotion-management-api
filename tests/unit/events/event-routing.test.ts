@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { routing } from '@src/events/routing.js';
+import { eventRouting } from '@src/events/event-routing.js';
 
-describe('routing', () => {
+describe('eventRouting', () => {
   it('gives each urgency class its own queue', () => {
-    expect(routing).toEqual({
+    expect(eventRouting).toEqual({
       'promotion.changed': 'promotions',
       'product.upserted': 'catalog',
       'ingestion.chunk': 'ingestion',
@@ -14,11 +14,11 @@ describe('routing', () => {
 
   it('keeps a flash sale off every queue a bulk import or a rebuild writes to', () => {
     const bulk = [
-      routing['product.upserted'],
-      routing['ingestion.chunk'],
-      routing['readmodel.rebuild'],
+      eventRouting['product.upserted'],
+      eventRouting['ingestion.chunk'],
+      eventRouting['readmodel.rebuild'],
     ];
 
-    expect(bulk).not.toContain(routing['promotion.changed']);
+    expect(bulk).not.toContain(eventRouting['promotion.changed']);
   });
 });
