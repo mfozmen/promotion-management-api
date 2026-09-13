@@ -668,7 +668,7 @@ or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not. An ADR states the decision and the current state; it carries no pull
 request, commit or issue number — that history is git's.
 
-A path is checkable and a reference is not. `tests/unit/docs/documented-paths.test.ts` reads every backticked repository path out of the deliverable documents and the agent definitions and fails on one the tree does not hold, with a named exemption for each path a document mentions without claiming it exists; the reference half stays a reader's, because `value "99999999999" is out of range for type integer` is a quoted error rather than a citation and no pattern tells those apart. Evidence: a day of renames left four documents naming a logger file, a schema directory and a calculator that no longer existed, and two careful readings passed over the same four.
+Some references are checkable and some are not. `tests/unit/docs/documented-names.test.ts` reads every backticked repository path, every `Foo.bar` whose `Foo` the tree exports, and every `ADR-00NN` citation out of the deliverable documents and the agent definitions, and fails on one the tree does not hold, with a named exemption for each path a document mentions without claiming it exists; prose claims stay a reader’s, because `value "99999999999" is out of range for type integer` is a quoted error rather than a citation and no pattern tells those apart. Evidence: a day of renames left four documents naming a logger file, a schema directory and a calculator that no longer existed, and two careful readings passed over the same four. Evidence for the member half: a class extraction renamed a method, the code was right everywhere and two ADR bullets still called it by the old name, because an IDE renames the code and never the prose. Evidence for the citation half: a renumber left five citations pointing one record off, and each still read like a valid reference.
 
 8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
 properties) carry no explanatory comments; the entry says what it does. At most
@@ -842,7 +842,9 @@ was defeated by sorting the journal, which left both its assertions true.
 
 ## 12. Keep it small
 
-**Severity: suggestion.**
+**Severity: warning.** It was a suggestion, and a suggestion is adopted only
+when cheaper than deferring, so no review ever raised it; the rules below were
+true of a branch that grew the way they forbid.
 
 12.1 No abstraction with one implementation, no configuration for a value that
 never changes, no feature the case does not ask for. Deleting is the preferred
@@ -868,6 +870,16 @@ Evidence: a 149-line validator plus 296 test lines replaced by 37 lines (PR #34)
 (cyclomatic, gates `npm run lint`) and Sonar S3776 (cognitive, on the PR). Above
 it, Extract Function or Replace Nested Conditional with Guard Clauses — never a
 disable comment.
+
+12.7 A guard against a failure nothing in this repository can produce today is
+a finding, however careful it is: the branch that adds the producer adds the
+guard, against the real failure. Prose has the same rule — a comment, an ADR
+bullet or a test that defends the code against a reader who has not arrived
+is deleted, not improved.
+
+Evidence: an HTTP skeleton scrubbed SQL from driver errors, froze tables
+nothing assigns to and logged a misconfigured client fleet before any route
+queried a database; every open review thread on it was that prose going stale.
 
 ---
 
