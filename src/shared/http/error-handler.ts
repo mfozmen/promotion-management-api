@@ -97,7 +97,18 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
       // cause's own code survives, because that is where an outage shows.
       const { type, message, code } = serializeError(err);
       log.warn(
-        { code: known.code, status: known.status, error: { type, message, code } },
+        {
+          code: known.code,
+          status: known.status,
+          // The raiser's own words: two conditions answer this code with the
+          // same public wording, and `serializeError` reports the root of the
+          // chain, so with a driver error attached the reason is otherwise
+          // lost and an outage reads like a cold start. No guard on the cast:
+          // a retriable code is one we raised, since nothing maps a foreign
+          // error onto one, so this is always an `HttpError`.
+          reason: (err as HttpError).message.slice(0, MAX_MESSAGE),
+          error: { type, message, code },
+        },
         'request deferred',
       );
     } else {
