@@ -1,5 +1,4 @@
-import { Router } from 'express';
-import { asyncRoute } from '../../../shared/http/async-route.js';
+import { Router, type Request, type Response } from 'express';
 import { validate } from '../../../shared/http/request-validator.js';
 import type { Db } from '../../../shared/db/client.js';
 import type { Publish } from '../../../events/publish.js';
@@ -45,7 +44,7 @@ export function promotionRoutes(
   router.post(
     '/',
     validate({ body: createPromotionSchema }),
-    asyncRoute(async (req, res) => {
+    async (req: Request, res: Response) => {
       const outcome = await insertPromotion(db, req.body as CreatePromotion);
       if (!outcome.ok) throw promotionWriteError(outcome);
 
@@ -58,13 +57,13 @@ export function promotionRoutes(
         });
       }
       res.status(201).json(outcome.promotion);
-    }),
+    },
   );
 
   router.post(
     '/:id/assign',
     validate({ body: assignPromotionSchema }),
-    asyncRoute(async (req, res) => {
+    async (req: Request, res: Response) => {
       const outcome = await assignPromotion(db, idFrom(req.params.id), req.body as AssignPromotion);
       if (!outcome.ok) throw promotionWriteError(outcome);
 
@@ -74,12 +73,12 @@ export function promotionRoutes(
         log: req.log,
       });
       res.status(200).json(outcome.promotion);
-    }),
+    },
   );
 
   router.post(
     '/:id/cancel',
-    asyncRoute(async (req, res) => {
+    async (req: Request, res: Response) => {
       const id = idFrom(req.params.id);
       const outcome = await cancelPromotion(db, id);
       if (!outcome.ok) throw promotionWriteError(outcome);
@@ -88,24 +87,24 @@ export function promotionRoutes(
       // caller asked for, and re-announcing would fan out over the category again.
       if (outcome.changed) await announceCancellation(id, { publish, scheduler, log: req.log });
       res.status(200).json(outcome.promotion);
-    }),
+    },
   );
 
   router.get(
     '/',
     validate({ query: listPromotionsQuerySchema }),
-    asyncRoute(async (req, res) => {
+    async (req: Request, res: Response) => {
       res.status(200).json({ items: await listPromotions(db, req.query as unknown as ListPromotionsQuery) });
-    }),
+    },
   );
 
   router.get(
     '/:id',
-    asyncRoute(async (req, res) => {
+    async (req: Request, res: Response) => {
       const promotion = await findPromotion(db, idFrom(req.params.id));
       if (!promotion) throw new HttpError('NOT_FOUND', 'No such promotion');
       res.status(200).json(promotion);
-    }),
+    },
   );
 
   return router;

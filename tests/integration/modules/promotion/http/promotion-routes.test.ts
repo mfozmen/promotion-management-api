@@ -584,3 +584,18 @@ describe('a promotion aimed at a product that does not exist', () => {
     expect(res.body.error.code).toBe('NOT_FOUND');
   });
 });
+
+describe('a promotion that is already running when it is created', () => {
+  it('schedules only the expiry, because the create event is the activation', async () => {
+    // Scheduling an activate with delay 0 would put a second promotion.changed on
+    // the queue milliseconds behind the first, and each rescans the whole category.
+    const res = await request(app())
+      .post('/api/promotions')
+      .send({ ...draftBody(), startsAt: past(hour), endsAt: future(hour), category: uniqueCategory() });
+
+    expect(res.status).toBe(201);
+    expect(res.body.state).toBe('live');
+    expect(rec.scheduled.map((s) => s.boundary)).toEqual(['expire']);
+    expect(rec.events).toHaveLength(1);
+  });
+});

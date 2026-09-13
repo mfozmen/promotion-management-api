@@ -1,4 +1,3 @@
-import { sql } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
 import { isExclusionViolation } from '../../../shared/db/exclusion-violation.js';
 import { isForeignKeyViolation } from '../../../shared/db/foreign-key-violation.js';
@@ -6,6 +5,7 @@ import { promotions } from './schema/promotions.js';
 import { promotionColumns } from './promotion-columns.js';
 import type { CreatePromotion } from '../domain/dto/create-promotion-schema.js';
 import { findConflictingPromotion } from './find-conflicting-promotion.js';
+import { databaseNow } from './database-now.js';
 import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcome.js';
 
 /**
@@ -20,7 +20,7 @@ import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcom
 export async function insertPromotion(
   db: Db,
   input: CreatePromotion,
-): Promise<PromotionWriteOutcome & { now?: Date }> {
+): Promise<PromotionWriteOutcome> {
   const hasTarget = input.productId !== undefined || input.category !== undefined;
   try {
     const [row] = await db
@@ -35,11 +35,7 @@ export async function insertPromotion(
         category: input.category ?? null,
         status: hasTarget ? 'active' : 'draft',
       })
-      // `sql<Date>` would be a lie: a raw fragment comes back as the driver's
-      // text, so the conversion is here rather than in the type. Annotating it
-      // `Date` compiled, and every caller that treated it as one threw at
-      // runtime — where the failure was swallowed as a lost announcement.
-      .returning({ ...promotionColumns, now: sql<string>`now()` });
+      .returning({ ...promotionColumns, now: databaseNow });
     if (!row) throw new Error('insert returned no row');
 
     const { now, ...promotion } = row;

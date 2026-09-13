@@ -6,6 +6,7 @@ import { promotions } from './schema/promotions.js';
 import type { AssignPromotion } from '../domain/dto/assign-promotion-schema.js';
 import { findConflictingPromotion } from './find-conflicting-promotion.js';
 import { promotionColumns } from './promotion-columns.js';
+import { databaseNow } from './database-now.js';
 import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcome.js';
 
 /**
@@ -19,7 +20,7 @@ export async function assignPromotion(
   db: Db,
   id: number,
   target: AssignPromotion,
-): Promise<PromotionWriteOutcome & { now?: Date }> {
+): Promise<PromotionWriteOutcome> {
   try {
     const [row] = await db
       .update(promotions)
@@ -31,11 +32,7 @@ export async function assignPromotion(
           sql`${promotions.endsAt} > now()`,
         ),
       )
-      // `sql<Date>` would be a lie: a raw fragment comes back as the driver's
-      // text, so the conversion is here rather than in the type. Annotating it
-      // `Date` compiled, and every caller that treated it as one threw at
-      // runtime — where the failure was swallowed as a lost announcement.
-      .returning({ ...promotionColumns, now: sql<string>`now()` });
+      .returning({ ...promotionColumns, now: databaseNow });
 
     if (row) {
       const { now, ...promotion } = row;

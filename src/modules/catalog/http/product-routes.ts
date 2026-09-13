@@ -1,7 +1,6 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import type { Publish } from '../../../events/publish.js';
 import type { Db } from '../../../shared/db/client.js';
-import { asyncRoute } from '../../../shared/http/async-route.js';
 import { validate } from '../../../shared/http/request-validator.js';
 import { HttpError } from '../../../shared/http/http-error.js';
 import type { CreateProduct } from '../domain/dto/create-product-schema.js';
@@ -18,7 +17,7 @@ export function productRoutes(db: Db, publish: Publish): Router {
   router.post(
     '/',
     validate({ body: createProductSchema }),
-    asyncRoute(async (req, res) => {
+    async (req: Request, res: Response) => {
       const result = await insertProduct(db, req.body as CreateProduct);
       if (!result.ok) throw new HttpError('SKU_EXISTS', 'A product with this SKU already exists');
 
@@ -42,7 +41,7 @@ export function productRoutes(db: Db, publish: Publish): Router {
       );
 
       res.status(201).json(result.product);
-    }),
+    },
   );
 
   return router;

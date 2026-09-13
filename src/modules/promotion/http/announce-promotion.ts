@@ -21,16 +21,27 @@ export async function announcePromotion(
     promotion.id,
     deps,
   );
+  // A promotion that is already running needs no activation job: the publish above
+  // is the activation. Scheduling one anyway gives it `delay: 0`, so two
+  // `promotion.changed` jobs land within milliseconds and each keyset-scans the
+  // same category — two full rescans of 50 000 products, on the queue that already
+  // holds the system's longest job, with a cancel queued behind both.
+  const alreadyRunning = promotion.startsAt.getTime() <= now.getTime();
+
   await Promise.all([
     settleAnnouncement(
       deps.scheduler.schedule(promotion.id, 'expire', promotion.endsAt, now),
       promotion.id,
       deps,
     ),
-    settleAnnouncement(
-      deps.scheduler.schedule(promotion.id, 'activate', promotion.startsAt, now),
-      promotion.id,
-      deps,
-    ),
+    ...(alreadyRunning
+      ? []
+      : [
+          settleAnnouncement(
+            deps.scheduler.schedule(promotion.id, 'activate', promotion.startsAt, now),
+            promotion.id,
+            deps,
+          ),
+        ]),
   ]);
 }
