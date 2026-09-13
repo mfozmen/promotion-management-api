@@ -1,24 +1,19 @@
 import express, { type Express } from 'express';
-import type { Redis } from 'ioredis';
+import createError from 'http-errors';
 import type { Logger } from 'pino';
-import { errorHandler } from './shared/http/error-handler.js';
-import { httpLogger } from './shared/http/http-logger.js';
-import { notFoundHandler } from './shared/http/not-found-handler.js';
-import { logger as rootLogger } from './shared/logger.js';
+import type { Redis } from 'ioredis';
 import { productReadRoutes } from './modules/product/http/product-read-routes.js';
+import { errorHandler } from './shared/http/error-handler.js';
+import { logger as rootLogger } from './shared/logger.js';
+import { httpLogger } from './shared/http/http-logger.js';
 
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
 
-export interface AppDeps {
-  logger?: Logger;
-  /** The storefront's only store. Omitted, the product routes are not mounted,
-   *  so a process without Redis serves the liveness probe and nothing that
-   *  would need it (ADR-0006). */
-  redis?: Redis;
-}
-
-export function createApp({ logger = rootLogger, redis }: AppDeps = {}): Express {
+/** The storefront routes mount only when a read-model client is given: a
+ *  process without one answers no product route at all rather than mounting
+ *  routes that cannot answer (ADR-0006). */
+export function createApp(logger: Logger = rootLogger, readModel?: Redis): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');
@@ -29,12 +24,14 @@ export function createApp({ logger = rootLogger, redis }: AppDeps = {}): Express
   api.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
   });
-  if (redis !== undefined) {
-    api.use('/products', productReadRoutes(redis));
+  if (readModel !== undefined) {
+    api.use('/products', productReadRoutes(readModel));
   }
   app.use('/api', api);
 
-  app.use(notFoundHandler);
+  app.use((_req, _res, next) => {
+    next(createError(404, 'Route not found'));
+  });
   app.use(errorHandler);
 
   return app;

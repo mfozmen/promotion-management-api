@@ -17,7 +17,7 @@ describe('unknown routes', () => {
 
     expect(res.status).toBe(404);
     expect(res.type).toBe('application/json');
-    expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
+    expect(res.body).toEqual({ error: { message: 'Route not found' } });
   });
 
   it('does not echo the requested path back to the client', async () => {
@@ -30,7 +30,7 @@ describe('unknown routes', () => {
 describe('correlation id', () => {
   it('reuses the incoming x-request-id and logs every line with it', async () => {
     const { logger, lines } = captureLogger();
-    const res = await request(createApp({ logger }))
+    const res = await request(createApp(logger))
       .get('/api/health')
       .set('x-request-id', 'trace-abc-123');
 
@@ -41,7 +41,7 @@ describe('correlation id', () => {
 
   it('generates a uuid when the header is absent', async () => {
     const { logger, lines } = captureLogger();
-    const res = await request(createApp({ logger })).get('/api/health');
+    const res = await request(createApp(logger)).get('/api/health');
 
     expect(res.headers['x-request-id']).toMatch(UUID);
     expect(lines.every((line) => line.reqId === res.headers['x-request-id'])).toBe(true);
@@ -49,7 +49,7 @@ describe('correlation id', () => {
 
   it('generates a uuid when the incoming header is not a safe token', async () => {
     const { logger } = captureLogger();
-    const res = await request(createApp({ logger }))
+    const res = await request(createApp(logger))
       .get('/api/health')
       .set('x-request-id', 'not a token; drop table products');
 
@@ -58,7 +58,7 @@ describe('correlation id', () => {
 
   it('logs one request-completed line with method, url and status', async () => {
     const { logger, lines } = captureLogger();
-    await request(createApp({ logger })).get('/api/health');
+    await request(createApp(logger)).get('/api/health');
 
     const completed = lines.filter((line) => line.res !== undefined);
     expect(completed).toHaveLength(1);
@@ -70,7 +70,7 @@ describe('correlation id', () => {
 
   it('never logs the query string, which a future endpoint could fill with a token', async () => {
     const { logger, lines } = captureLogger();
-    await request(createApp({ logger })).get('/api/health?token=leak-me');
+    await request(createApp(logger)).get('/api/health?token=leak-me');
 
     expect(JSON.stringify(lines)).not.toContain('leak-me');
   });
@@ -85,7 +85,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(413);
     expect(res.body).toEqual({
-      error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' },
+      error: { message: 'request entity too large' },
     });
   });
 
@@ -106,7 +106,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
-      error: { code: 'VALIDATION_ERROR', message: 'Request body could not be read' },
+      error: { message: "Expected property name or '}' in JSON at position 2 (line 1 column 3)" },
     });
   });
 
@@ -118,10 +118,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(415);
     expect(res.body).toEqual({
-      error: {
-        code: 'UNSUPPORTED_MEDIA_TYPE',
-        message: 'Request body encoding is not supported',
-      },
+      error: { message: 'unsupported charset "ISO-8859-9"' },
     });
   });
 
@@ -137,7 +134,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
-      error: { code: 'VALIDATION_ERROR', message: 'Request body could not be read' },
+      error: { message: 'Decompression failed' },
     });
   });
 });
@@ -145,7 +142,7 @@ describe('request body size cap', () => {
 describe('log hygiene', () => {
   it('never logs credentials or the request body', async () => {
     const { logger, lines } = captureLogger();
-    await request(createApp({ logger }))
+    await request(createApp(logger))
       .post('/api/health')
       .set('authorization', 'Bearer super-secret-token')
       .set('cookie', 'session=super-secret-session')
@@ -169,6 +166,6 @@ describe('GET /api/health', () => {
     const res = await request(createApp()).get('/health');
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
+    expect(res.body).toEqual({ error: { message: 'Route not found' } });
   });
 });

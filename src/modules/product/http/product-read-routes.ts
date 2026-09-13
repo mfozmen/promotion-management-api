@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Redis } from 'ioredis';
 import { validate } from '../../../shared/http/request-validator.js';
-import { HttpError } from '../../../shared/http/http-error.js';
+import createError from 'http-errors';
 import { findProduct } from '../db/find-product.js';
 import { listProducts } from '../db/list-products.js';
 import { detailParams, type DetailParams } from '../domain/dto/detail-params.js';
@@ -28,7 +28,7 @@ export function productReadRoutes(redis: Redis): Router {
     findProduct(redis, id)
       .then((product) => {
         if (product === undefined) {
-          throw new HttpError('NOT_FOUND', 'Product not found');
+          throw createError(404, 'Product not found');
         }
         res.json(product);
       })

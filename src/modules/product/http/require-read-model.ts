@@ -1,7 +1,8 @@
 import type { RequestHandler } from 'express';
 import type { Redis } from 'ioredis';
-import { HttpError } from '../../../shared/http/http-error.js';
+import createError from 'http-errors';
 import { READY_KEY } from '../db/ready-key.js';
+import { RETRY_AFTER } from '../db/retry-after.js';
 import { replyFailure } from '../db/reply-failure.js';
 
 /** The read model is the only store these routes may touch, so an unbuilt one
@@ -15,7 +16,10 @@ export const requireReadModel =
         next(
           ready === 1
             ? undefined
-            : new HttpError('READ_MODEL_NOT_READY', 'The read model is still being built'),
+            : createError(503, 'The read model is still being built', {
+                expose: true,
+                headers: { 'retry-after': RETRY_AFTER() },
+              }),
         );
       })
       .catch((error: unknown) => {

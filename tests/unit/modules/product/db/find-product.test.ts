@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Redis } from 'ioredis';
 import { findProduct } from '@src/modules/product/db/find-product.js';
-import { HttpError } from '@src/shared/http/http-error.js';
+import createError from 'http-errors';
 
 describe('findProduct', () => {
   it('answers come back rather than server fault when Redis drops mid-request', async () => {
@@ -10,8 +10,8 @@ describe('findProduct', () => {
 
     const raised = await findProduct(redis, 7).catch((error: unknown) => error);
 
-    expect(raised).toBeInstanceOf(HttpError);
-    expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
+    expect(createError.isHttpError(raised)).toBe(true);
+    expect((raised as createError.HttpError).status).toBe(503);
   });
 
   it('names the key when the writer put something else at it', async () => {
@@ -37,7 +37,7 @@ describe('findProduct', () => {
 
     const raised = await findProduct(redis, 7).catch((error: unknown) => error);
 
-    expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
+    expect((raised as createError.HttpError).status).toBe(503);
   });
 
   it('leaves a product no index lists absent, so the route can answer 404', async () => {

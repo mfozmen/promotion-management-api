@@ -4,8 +4,9 @@ import { ALL_PRODUCTS } from './all-products-key.js';
 import { DETAIL_ORPHANS } from './detail-orphans-key.js';
 import { fromReadModel } from './from-read-model.js';
 import { productKey } from './product-key.js';
+import { RETRY_AFTER } from './retry-after.js';
 import { reportGhosts } from './report-ghosts.js';
-import { HttpError } from '../../../shared/http/http-error.js';
+import createError from 'http-errors';
 
 /** Undefined when the read model holds no such product, so the route decides
  *  the status rather than the store. A miss costs a second command to tell an
@@ -25,7 +26,10 @@ export async function findProduct(redis: Redis, id: number) {
     // if both are filed under the index they share.
     reportGhosts(DETAIL_ORPHANS, 1);
 
-    throw new HttpError('READ_MODEL_NOT_READY', 'This product is mid-rebuild or orphaned');
+    throw createError(503, 'This product is mid-rebuild or orphaned', {
+      expose: true,
+      headers: { 'retry-after': RETRY_AFTER() },
+    });
   }
 
   return undefined;

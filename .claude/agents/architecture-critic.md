@@ -19,6 +19,75 @@ The design to attack: a spec under `docs/`, an ADR entry in `ADR.md`, a plan,
 or a branch diff. If given a diff, first reconstruct the design it implies.
 Read `ADR.md` and the case study summary in `README.md` for context.
 
+## Re-running on a later head
+
+A pull request is reviewed many times. **After the first pass, review the delta,
+not the branch.** On the first pass there is no earlier commit and no earlier
+report: review `origin/main...HEAD` whole, and do not stop to ask for a range that
+does not exist yet. From the second pass on, you have no memory of what you found
+last time, so you keep it yourself — see below. A commit alone cannot tell you what you found: an agent
+given only a head either re-derives the branch, which is what this section exists
+to stop, or carries nothing forward and says so.
+
+### Your notebook
+
+Your findings outlive one run, and nothing else remembers them. Keep them in
+`.claude/review-state/architecture-critic/<branch>.md`, which is gitignored and is yours
+alone — writing there is not editing the work under review.
+
+```sh
+# --abbrev-ref is "HEAD" when detached, which would give every detached run one
+# shared notebook; the sha keeps them apart.
+REF=$(git symbolic-ref --quiet --short HEAD || git rev-parse --short HEAD)
+STATE=".claude/review-state/architecture-critic/$(echo "$REF" | tr '/' '-').md"
+```
+
+**First thing, every run:** read it. If it is missing this is your first pass on
+this branch — review `origin/main...HEAD` whole. If it exists it names the commit
+you reported on and every finding you left open.
+
+**Last thing, every run**, whatever the verdict: overwrite it with the head you
+just reviewed (`git rev-parse HEAD`), the verdict, and one line per finding with
+whether it is open, closed or owned by another component. Write it even when you
+found nothing — "nothing open at `<sha>`" is the fact the next run needs most,
+and an absent file after a clean pass is indistinguishable from a run that never
+happened.
+
+A caller may still hand you a commit and a report; prefer those, and say in your
+report which of the two you used. Never take findings from the pull request
+conversation: a finding read off a thread and attributed to a head you inferred
+is right in substance and wrong in provenance, which is the harder error to spot.
+
+- Check the range is real before you trust it: `git merge-base --is-ancestor
+<last-reviewed> HEAD`. A rebase or a force-push makes that commit unreachable, and
+  `git log A..B` does not fail on it — it silently reports everything in B, which is the
+  whole branch. Review the whole branch when that happens, and **say in the report that
+  the range was not usable**. A report that says "delta" over a full re-read is the
+  failure this section exists to prevent, wearing the fix as a disguise.
+- Diff `<last-reviewed>..HEAD`, and read the earlier report's findings beside it.
+- A finding you raised before is closed when the delta closes it, and open
+  otherwise. Do not re-derive it from scratch. Quote a finding from the report you
+  were given, never from the pull request conversation: a finding read off a thread
+  and attributed to a head you inferred is right in substance and wrong in
+  provenance, which is the harder error to notice.
+- **A finding still true in this branch's own files is raised every round it is
+  still true.** Repetition is not noise when the reader is what is broken: one rule
+  on one branch was raised five times, read past three times and "fixed" twice by
+  shortening prose, and what finally worked was the fifth repetition sending the
+  author to the rule's text rather than to the finding.
+- Re-check an untouched conclusion only when the delta gives you a reason to:
+  a renamed symbol, a changed rule, a claim the new commits contradict.
+- Say in the report which range you reviewed and which findings you carried
+  forward. A pass that silently re-reviewed everything costs the same as the
+  first one and hides what actually changed.
+
+**A verdict is about this pull request.** A finding that can only be fixed by
+code in another component is not a blocker here: name it once in your report, say
+which component owns it, and do not carry it into the verdict again. The issue
+number goes in your report and the pull request thread, never in the record itself
+(8b.5). What that narrows is the verdict, not the reviewer: a finding this branch
+could still fix stays raised until it is fixed.
+
 ## Attack checklist
 
 Work through every item and state PASS, RISK or FAIL with a sentence of

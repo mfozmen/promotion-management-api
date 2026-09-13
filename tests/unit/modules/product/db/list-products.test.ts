@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Redis } from 'ioredis';
 import { listProducts } from '@src/modules/product/db/list-products.js';
-import { HttpError } from '@src/shared/http/http-error.js';
+import createError from 'http-errors';
 
 const page = { order: 'asc', page: 1, pageSize: 20 } as const;
 
@@ -25,9 +25,9 @@ describe('listProducts', () => {
 
     // The readiness gate maps this; the page read did not, so a failover one
     // round trip later answered 500 and invited an immediate retry.
-    expect(raised).toBeInstanceOf(HttpError);
-    expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
-    expect((raised as HttpError).cause).toBe(failure);
+    expect(createError.isHttpError(raised)).toBe(true);
+    expect((raised as createError.HttpError).status).toBe(503);
+    expect((raised as createError.HttpError).cause).toBe(failure);
   });
 
   it('reads the failure a pipeline resolves with rather than waiting to be rejected', async () => {
@@ -47,8 +47,8 @@ describe('listProducts', () => {
 
     const raised = await listProducts(redis, page).catch((error: unknown) => error);
 
-    expect(raised).toBeInstanceOf(HttpError);
-    expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
+    expect(createError.isHttpError(raised)).toBe(true);
+    expect((raised as createError.HttpError).status).toBe(503);
   });
 
   it('never names a key the caller composed, even on the branch that names keys', async () => {
@@ -111,6 +111,6 @@ describe('listProducts', () => {
 
     const raised = await listProducts(redis, page).catch((error: unknown) => error);
 
-    expect(raised).not.toBeInstanceOf(HttpError);
+    expect(createError.isHttpError(raised)).toBe(false);
   });
 });

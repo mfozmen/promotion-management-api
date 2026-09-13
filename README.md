@@ -9,10 +9,11 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Node.js 22
 - Express 5
 - TypeScript (strict mode)
-- zod (request validation at the boundary)
+- zod (request and event-payload validation)
 - pino + pino-http (structured JSON logging)
+- http-errors (the error envelope: status, `expose`, response headers)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
-- Redis 7 read model (ioredis), serving the storefront reads
+- BullMQ on Redis 7 (event queue; see [ADR-0003](./ADR.md))
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
@@ -23,7 +24,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ## Prerequisites
 
 - Node.js 22 (see `.nvmrc`)
-- Docker with the Compose plugin (PostgreSQL 16, Redis 7 and the `api` image built from this repository's `Dockerfile` all run locally from `docker-compose.yml`)
+- Docker with the Compose plugin (PostgreSQL 16, Redis 7 and the `api` image built from this repository's `Dockerfile` all run locally from `docker-compose.yml`), plus one throwaway Redis on 6399 for the queue integration tests, which use no mocks (REVIEW.md 7.3)
 
 ## Getting started
 
@@ -39,13 +40,14 @@ It is one verb rather than two because a one-shot migration service cannot be wa
 
 For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
 
-The integration tests read Redis on database 9 and PostgreSQL through the same compose stack, so `docker compose up -d --wait` has to be running before `npm run test:integration`; `TEST_REDIS_URL` and `TEST_DATABASE_URL` override the defaults. A run reporting `no tests` with 0 % coverage is the integration project failing to reach PostgreSQL, not an empty suite — it exits 1, but the message sends you looking in the wrong place.
+Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
 
-Tests and checks:
+The product read tests use the compose Redis on database 9 and PostgreSQL through the same stack, so `docker compose up -d --wait` has to be running; `TEST_REDIS_URL` and `TEST_DATABASE_URL` override the defaults. A run reporting `no tests` with 0 % coverage is the integration project failing to reach PostgreSQL rather than an empty suite.
 
 ```bash
+docker run -d --rm -p 6399:6379 redis:7-alpine # only the integration layer needs it
 npm test
-npm run test:cov # needs a PostgreSQL and a Redis, see below
+npm run test:cov # needs a PostgreSQL and that Redis, see below
 npm run lint
 ```
 
@@ -53,11 +55,11 @@ npm run lint
 
 The suite is split into layers, so the one that needs nothing can run anywhere:
 
-| Layer                              | Command                    | Needs                     | Runs                        |
-| ---------------------------------- | -------------------------- | ------------------------- | --------------------------- |
-| unit (`tests/unit/`)               | `npm test`                 | nothing                   | pre-commit hook, everywhere |
-| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL and Redis | CI, before every push       |
-| both, with coverage                | `npm run test:cov`         | real PostgreSQL and Redis | CI (the 100 % gate)         |
+| Layer                              | Command                    | Needs                                 | Runs                        |
+| ---------------------------------- | -------------------------- | ------------------------------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing                               | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL and the Redis on 6399 | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | the same two                          | CI (the 100 % gate)         |
 
 The integration tests run against a real PostgreSQL and a real Redis, never a mock. Point them at one with
 `TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
@@ -86,7 +88,7 @@ checks the tool's own success line, then `git add -AN src/shared/db/migrations` 
 `git diff --exit-code src/shared/db/migrations`, so a schema change committed without its
 migration fails the build. It reads the success line rather than the exit code because
 `drizzle-kit generate` exits 0 even when it fails and writes nothing; `git add -AN` is what
-makes an untracked new migration visible to the diff (ADR-0003, commit `c14fa50`).
+makes an untracked new migration visible to the diff (ADR-0003).
 
 Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data` and `redis-data` volumes as well. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
 
@@ -96,22 +98,37 @@ Stop the stack with `docker compose down`, or `docker compose down -v` to drop t
 
 The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. Issue #19 adds the remaining containers (event-handler, ingestion-worker, reconciler) and the `monitoring` profile on top of it.
 
+### The queue
+
+Four queues, one per urgency class, and `eventRouting` maps an event to one of
+them — the caller never picks. `promotions` carries `promotion.changed` and the
+delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
+`ingestion.chunk`, and `maintenance` carries `readmodel.rebuild` and
+`reconciler.run`. The partition is what keeps a 500 000-row import's ~500
+announcements, or a full read-model rebuild, from sitting in front of a flash
+sale's `promotion.changed`: each queue gets its own worker, so two events that
+need different priority get different consumers rather than a priority number
+inside one queue (ADR-0003).
+
+BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
+holds the read model, so queue maintenance and read-model rebuilds cannot destroy
+each other (ADR-0007). `src/server.ts` reads both from `src/shared/config.ts` and
+passes the queue one to `EventQueue.connect`, which is what makes the configuration
+check that they differ mean something.
+
+`npm run dev` opens the queue connections at startup against `REDIS_URL`, which
+has no default and is required (`.env.example` sets the compose one), but it
+starts and serves without a Redis
+there: connection errors are logged and every publish fails at its 2 s bound
+rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the
+HTTP server first and the queues last, and waits at most `SHUTDOWN_DRAIN_TIMEOUT_MS`
+(default 10 s; digits only, so a blank value is rejected rather than read as the
+`0` that exits immediately) for open connections before closing the
+queues anyway (ADR-0003).
+
 ## Project structure
 
-```
-src/                 app.ts (the Express app and the /api router), server.ts (the process entry point)
-src/modules/         one module per directory, each owning its tables under db/schema/ and using
-                     domain/ (behaviour), domain/dto/ (the shapes it operates on, zod schemas
-                     included), db/ and http/ as it needs them
-src/shared/db/       the client, the migrator and the SQL migrations
-src/shared/http/     the HTTP boundary: the error type and its status table, the error handler,
-                     the not-found handler, the request validator and the request logger
-src/shared/          config.ts, logger.ts (the root logger), serialize-error.ts (the error
-                     whitelist every log site uses), max-message.ts,
-                     read-model-client.ts (the storefront's Redis client)
-tests/               unit, integration and e2e, each layer mirroring src/
-docs/                design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
-```
+Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7). The tree and the naming rules are in [CONTRIBUTING.md](./CONTRIBUTING.md) under "Source layout"; this file does not repeat them.
 
 Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7, ADR-0008). Nothing sits at the `tests/` root: a helper belongs to the layer that uses it, named `<subject>-<role>.ts` — `tests/unit/capture-logger.ts`, `tests/integration/db.ts` and `tests/integration/redis.ts` (7.7).
 
@@ -121,7 +138,9 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 
 The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), and `0002_active_promotions.sql` creates the `active_promotions` view. Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/workers/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
 
-`active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver (#36) and the admin reads will select from it instead of restating the predicate (ADR-0004, commit `1aaaffc`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed (commit `2142664`). It is not an endpoint; no route exposes it.
+`active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver and the admin reads select from it instead of restating the predicate (ADR-0004). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
+
+`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
 
 The module folders under `src/modules/` are named in the design spec and land with the endpoints that need them; the read model has no DDL of its own, since its keys are built by the event handler and rebuilt from the write store on demand (ADR-0006).
 
@@ -151,23 +170,21 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 All endpoints are mounted under the `/api` prefix (ADR-0009).
 
-| Method | Path                | Description                                                    | Query parameters                                                                                                                                                 |
-| ------ | ------------------- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/health`       | Liveness probe, returns `{"status":"ok"}`                      | none                                                                                                                                                             |
-| GET    | `/api/products`     | Storefront listing, returns `{ items, page, pageSize, total }` | `category` (exact match, optional), `sort=effectivePrice` (the only sort), `order=asc\|desc` (default `asc`), `page` (default 1), `pageSize` (1-100, default 20) |
-| GET    | `/api/products/:id` | One product with its applied promotion, or `404 NOT_FOUND`     | none; `id` is digits only                                                                                                                                        |
+| Method | Path                | Description                                            | Query parameters                                                                                                                                                                 |
+| ------ | ------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/health`       | Liveness probe, returns `{"status":"ok"}`              | none                                                                                                                                                                             |
+| GET    | `/api/products`     | Storefront listing, `{ items, page, pageSize, total }` | `category` (exact match, optional, 256 characters), `sort=effectivePrice` (the only sort), `order=asc\|desc` (default `asc`), `page` (default 1), `pageSize` (1-100, default 20) |
+| GET    | `/api/products/:id` | One product with its applied promotion                 | none; `id` is digits only                                                                                                                                                        |
 
-Both product routes are served from the Redis read model and never from PostgreSQL, so they answer `503 READ_MODEL_NOT_READY` with a `Retry-After` in three cases: until a full rebuild has published `readmodel:ready`, whenever Redis is unreachable, and — on the detail route — for a product the index still lists whose hash a rebuild has already removed. That last one is a `503` rather than a `404` because the listing calls the same state a rebuild in progress, and a `404` for it is cached by every crawler and CDN that sees it; a product no index lists is the `404` (ADR-0006). `page` and `pageSize` are bounded together: the resulting offset may not exceed 10 000, and a deeper page is a `400 VALIDATION_ERROR` rather than a scan of the whole category. `sort` accepts only `effectivePrice`, which is the one order the read model holds; naming it is optional and any other value is rejected, so a client learns that its sort is unsupported instead of receiving a silently different order.
-
-The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`), and the health route moved from `GET /health` to `GET /api/health` with the boundary (ADR-0009), so the prefix holds for everything that ships today. Further endpoints are documented as they land.
+Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`), and the health route moved from `GET /health` to `GET /api/health` with the boundary (ADR-0009), so the prefix holds for everything that ships today.
 
 ### Conventions
 
-- **Errors.** Every failure returns `{ "error": { "code": "...", "message": "...", "details"?: ... } }`. `code` comes from a closed set — `VALIDATION_ERROR` (400), `BAD_REQUEST` (any other client error), `NOT_FOUND` (404), `CONFLICT` (409), `PAYLOAD_TOO_LARGE` (413), `UNSUPPORTED_MEDIA_TYPE` (415), `BACKPRESSURE` (429), `INTERNAL` (500), `READ_MODEL_NOT_READY` (503) — so a client can branch on a finite list; the set is the `ErrorCode` type in `src/shared/http/error-code.ts` and the compiler rejects anything outside it (ADR-0009).
-- **A 4xx explains itself; a 5xx does not.** A client error carries a message written for the caller. A server error never returns the message its handler wrote — that goes to the log. A 5xx answers with the status its code maps to, and keeps that code only where the API wrote public words for it: `READ_MODEL_NOT_READY` answers `503` with `"The read model is not ready yet; retry shortly"`, and any 5xx code without public wording answers `500 INTERNAL` (PR #30, commits `af38e0c`, `4f10c7f`, `a218bf2` and `9f27f8d`). The code-to-status list above is one-way — it is the status the API answers with for a code it raises, not a reverse map: a foreign client error keeps its own status and is given the nearest code, so a `418` answers `BAD_REQUEST` even though that code's own status is `400`. An unexpected error is returned as `500 INTERNAL` only — no internal detail reaches the client — and is logged under an `error` key as `{ type, message, stack, code }`, taken from the driver error underneath so no SQL text or bound parameter reaches the log either (ADR-0010).
-- **Validation.** Request bodies, query strings and path parameters are validated at the boundary with strict zod schemas: an unknown field is a `400 VALIDATION_ERROR`, not a silently ignored typo. Strictness is top-level; a nested object declares its own with `z.strictObject(...)` (ADR-0009).
-- **A rejection names where, and which of your own keys.** `details` is a list of `{ path, message }`. The path is generated by the API (`body`, `query`, `body.window`, `body.items[3].sku`) and points at what to fix. An unknown field is named — `Unrecognized keys (1): "basePriceCent"` — because you cannot correct a typo you cannot see; keys are truncated at 64 characters rather than omitted, the list is capped, and the count is given so a truncated list is visibly truncated. What never comes back is a **value**: neither one you sent nor one we store. `details` is capped at the first 20 issues. The same key names, bounded the same way and never their values, are also logged at `warn` with the correlation id so a fleet of clients misconfigured the same way shows up in one place (ADR-0009, PR #30, commits `de3bf9e`, `af38e0c`, `4f10c7f`, `a218bf2`, `ec623cc` and `30bc002`).
-- **Request bodies** are capped at 100kb; a larger body is `413 PAYLOAD_TOO_LARGE`. A body that cannot be read is `400 VALIDATION_ERROR` whatever made it unreadable — malformed JSON, a connection dropped mid-upload, a body that will not decompress — and a charset the parser will not decode is `415 UNSUPPORTED_MEDIA_TYPE` (ADR-0009).
+- **Errors.** Every failure returns `{ "error": { "message": "..." } }`, and the status is what a client branches on. A 4xx carries the message its raiser wrote; a 5xx carries `Internal server error` unless the raiser marked it readable, which is `http-errors`' own `expose` rather than a rule of ours (ADR-0009).
+- **An unexpected error** — anything the `http-errors` library does not recognise — answers `500` with `Internal server error` and nothing else; the stack goes to the log under `err` and never to the response (ADR-0010).
+- **Validation.** Request bodies, query strings and path parameters are validated at the boundary with strict zod schemas: an unknown field is a `400`, not a silently ignored typo. The rejection names the failing part and nothing more (`Invalid request body`): no field path, no issue list, no echo of what you sent. Strictness is top-level; a nested object declares its own with `z.strictObject(...)` (ADR-0009).
+- **Request bodies** are capped at 100kb. Everything body-parser refuses keeps the status that says which failure it was — 400 for a body that cannot be read, 413 for one over the cap, 415 for a charset it will not decode — and its own message, which describes the caller's own request rather than anything of ours (ADR-0009).
+  Both product routes are served from the Redis read model and never from PostgreSQL, so they answer `503` with a `Retry-After` in three cases: until a rebuild has published `readmodel:ready`, whenever Redis is unreachable, and — on the detail route — for a product the index still lists whose entry a rebuild has already removed. That last one is a `503` rather than a `404` because the listing calls the same state a rebuild in progress, and a `404` for it is cached by every crawler that sees it; a product no index lists is the `404`. `page` and `pageSize` are bounded together: the resulting offset may not exceed 10 000.
 - **Correlation id.** Send `x-request-id` (matching `^[A-Za-z0-9._-]{1,128}$`) to trace a request; anything else is replaced by a generated uuid. The id used is returned in the `x-request-id` response header and appears as `reqId` on every JSON log line (ADR-0010).
 
 ## Development workflow
@@ -177,6 +194,6 @@ The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-1
 - All changes land through pull requests — no direct pushes to `main`.
 - A PR merges only once the required checks `ci` and `claude-review` are green. `ci` runs the SonarCloud scan and waits for its quality gate; the scan is skipped on a PR that touches nothing SonarCloud reads, which is why SonarCloud's own check is not required. Every SonarCloud finding on the PR is fixed before hand-off (see [CONTRIBUTING.md](./CONTRIBUTING.md)).
 - `local-gates` runs on every PR and computes which local-agent labels apply; it does not block the merge, but its labels are read at hand-off. When the checks are green, the threads are resolved and the labels are on, the PR is labelled `needs-human-check` and the owner is mentioned; merge happens only after the owner's approving comment, as a squash.
-- Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check.
+- Every review (AI or human) enforces [REVIEW.md](./REVIEW.md); blocking findings are fixed before the owner is asked to check, and a Warning is fixed in the pull request that found it rather than filed as an issue.
 
 See [ADR.md](./ADR.md) for architectural decisions, [Form 5 — AI Appendix](./Form%205_AI%20Appendix.docx) for AI usage documentation, and [CONTRIBUTING.md](./CONTRIBUTING.md) for the contribution process.

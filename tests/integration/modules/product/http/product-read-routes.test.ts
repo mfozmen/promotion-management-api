@@ -11,7 +11,7 @@ import {
 } from '../../../redis.js';
 
 const redis = useTestRedis();
-const app = () => createApp({ redis: redis() });
+const app = () => createApp(undefined, redis());
 
 /** A product the reader would accept. The base price follows the effective one
  *  unless a case sets it, because a price below its base with no promotion is a
@@ -198,7 +198,10 @@ describe('GET /api/products', () => {
     const res = await request(app()).get('/api/products?pageSize=101');
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    // The envelope carries no field list, so a 400 names the part and not the
+    // parameter: the cap is enforced, and which one broke it is the caller's
+    // to work out from the request they sent (ADR-0009).
+    expect(res.body.error.message).toBe('Invalid request query');
   });
 
   it.each([
@@ -254,7 +257,7 @@ describe('GET /api/products/:id', () => {
     const res = await request(app()).get('/api/products/999');
 
     expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('NOT_FOUND');
+    expect(res.body.error.message).toBe('Product not found');
   });
 
   it('rejects an id that is not a number', async () => {
@@ -290,7 +293,8 @@ describe('a rebuild that has removed a product the index still lists', () => {
     const res = await request(app()).get('/api/products');
 
     expect(res.status).toBe(500);
-    expect(res.body.error.code).toBe('INTERNAL');
+    // Masked: the writer's own words are for the operator, not the caller.
+    expect(res.body.error.message).toBe('Internal server error');
     // Not 503: retrying cannot fix a key the writer wrote wrong.
     expect(res.headers['retry-after']).toBeUndefined();
   });
@@ -317,7 +321,7 @@ describe('a rebuild that has removed a product the index still lists', () => {
     // The listing calls this state a rebuild in progress. A 404 for the same
     // state is cacheable, and says a product that exists does not.
     expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('READ_MODEL_NOT_READY');
+    expect(res.body.error.message).toBe('This product is mid-rebuild or orphaned');
     expect(res.headers['retry-after']).toBeDefined();
   });
 });
@@ -334,11 +338,11 @@ describe('when Redis cannot be reached', () => {
     });
     unreachable.connect().catch(() => undefined);
 
-    const res = await request(createApp({ redis: unreachable })).get('/api/products');
+    const res = await request(createApp(undefined, unreachable)).get('/api/products');
     unreachable.disconnect();
 
     expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('READ_MODEL_NOT_READY');
+    expect(res.body.error.message).toContain('read model');
   });
 });
 
@@ -378,7 +382,8 @@ describe('a read-model entry the writer left incomplete', () => {
     const res = await request(app()).get('/api/products/1');
 
     expect(res.status).toBe(500);
-    expect(res.body.error.code).toBe('INTERNAL');
+    // Masked: the writer's own words are for the operator, not the caller.
+    expect(res.body.error.message).toBe('Internal server error');
   });
 
   it('fails loudly on the listing too', async () => {
@@ -394,7 +399,7 @@ describe('before the read model is built', () => {
     const res = await request(app()).get('/api/products');
 
     expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('READ_MODEL_NOT_READY');
+    expect(res.body.error.message).toContain('read model');
     // A band, not a fixed number: a flat hint returns every client that met
     // the cold start in the same second.
     const after = Number(res.headers['retry-after']);
@@ -406,6 +411,6 @@ describe('before the read model is built', () => {
     const res = await request(app()).get('/api/products/1');
 
     expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('READ_MODEL_NOT_READY');
+    expect(res.body.error.message).toContain('read model');
   });
 });

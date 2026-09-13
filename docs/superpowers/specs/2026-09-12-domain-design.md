@@ -10,7 +10,7 @@ phase).
 CQRS on a modular monolith. PostgreSQL 16 is the write store and the only
 source of truth. Redis 7 holds the read model the storefront queries (sorted
 sets for price-ordered listings, hashes for product detail) and never falls
-back to PostgreSQL. BullMQ (Redis-backed) is the event bus: every write emits
+back to PostgreSQL. BullMQ (Redis-backed) is the event queue: every write emits
 a job, the event-handler worker recomputes the affected read-model entries
 from PostgreSQL, the ingestion worker processes vendor-file chunks under
 serverless-shaped limits, and a reconciler repairs drift. One codebase, one
@@ -22,7 +22,8 @@ Docker image, four commands (`api`, `event-handler`, `ingestion-worker`,
 - PostgreSQL 16, Drizzle ORM, `drizzle-kit` SQL migrations under
   `src/shared/db/migrations/` (the DDL deliverable). Extension `btree_gist`.
 - Redis 7. Logical DB `0` = read model, DB `1` = BullMQ. Rebuilds never
-  `FLUSH`; they `SCAN` + `UNLINK` by prefix.
+  `FLUSH`; they recompute each entry through the write script and `SCAN` + `UNLINK`
+  only the ids the write store no longer has.
 - Money is integer minor units (`*_cents bigint`); percentages are basis
   points (`10000 = 100 %`). No floats in pricing. Drizzle bigint columns use
   `mode: 'number'` (values stay far below 2^53).
@@ -439,34 +440,36 @@ where p.id = any($1);
   Members with equal scores order by member string, which is deterministic
   but not numeric (`"10"` before `"9"`); zero-pad ids if numeric tie order
   ever matters.
-- Writing a product entry is one `MULTI`: `HSET product:{id}`,
+- Writing a product entry is one Lua script, not a `MULTI`: a `MULTI` cannot read the stored `sourceReadAt` and branch on it, and a compare-and-set that is not atomic with its `ZADD`s leaves the hash at one price and the sorted set at another (ADR-0003, REVIEW.md 3.9). The script does `HSET product:{id}`,
   `ZADD category:{new}`, `ZADD products:all`, and `ZREM category:{old}` when
   the stored category differs. Bulk recomputes pipeline 1 000 entries per
   round trip.
 - Every read-model write is a **recompute from PostgreSQL** (section 4
   query), never a delta applied to Redis. Handlers are therefore idempotent
-  and safe to retry; ordering between handlers is enforced by running
-  exactly one event-handler instance with `concurrency: 1` (the compose file
-  does not scale this service).
+  and safe to retry. Ordering is a property of the write, not of the consumer
+  count: each recompute carries the `sourceReadAt` of the PostgreSQL query it was
+  computed from, and the write is a Lua compare-and-set that applies only when
+  that instant is newer than the one stored beside the hash (ADR-0003,
+  REVIEW.md 3.9). No consumer exists yet; the first one to write the read model
+  implements it.
 - Redis unreachable: storefront routes answer `503`; admin writes still
   commit to PostgreSQL, their enqueue fails and is logged, and the reconciler
   repairs the read model once Redis is back.
-  The handler runs as a single serialised instance; per-category locks are
-  the upgrade if one instance cannot keep up with write volume.
 
-## 6. Events (BullMQ, Redis DB 1)
+## 6. Events (BullMQ, the Redis database `REDIS_QUEUE_DB` names, default 1)
 
-Two queues. Defaults for every job: `attempts: 3`, exponential backoff from
+Four queues, one per urgency class, routed by `eventRouting` rather than by the
+caller (ADR-0003). Defaults for every job: `attempts: 3`, exponential backoff from
 1 s, `removeOnComplete: 1000`, `removeOnFail: false` (the failed set is the
 dead-letter queue, visible in Bull Board and the admin endpoints).
 
-| Queue       | Job name            | Payload                              | Producer                                                                    | Handler effect                                                                                                        |
-| ----------- | ------------------- | ------------------------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `events`    | `product.upserted`  | `{ productIds: number[] }` (≤ 1 000) | `POST /api/products` (one id); ingestion batch                              | recompute those products, write read model                                                                            |
-| `events`    | `promotion.changed` | `{ promotionId }`                    | create (with a target), assign, cancel, delayed activate/expire, reconciler | product target: recompute 1; category target: keyset-scan the category by id in batches of 1 000, recompute, pipeline |
-| `events`    | `readmodel.rebuild` | `{ category?: string }`              | cold start, admin, reconciler                                               | `SCAN`+`UNLINK` the scope, stream products from PostgreSQL, rebuild; full rebuild sets `readmodel:ready`              |
-| `events`    | `reconcile.run`     | `{}` (repeatable, every 5 min)       | reconciler worker schedule                                                  | see section 9                                                                                                         |
-| `ingestion` | `ingestion.chunk`   | `{ jobId, chunkIndex }`              | import registration, resume, time-budget hand-off                           | process the chunk from its checkpoint (section 7)                                                                     |
+| Queue         | Job name            | Payload                              | Producer                                                                    | Handler effect                                                                                                                                                                                      |
+| ------------- | ------------------- | ------------------------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog`     | `product.upserted`  | `{ productIds: number[] }` (≤ 5 000) | `POST /api/products` (one id); ingestion batch                              | recompute those products, write read model                                                                                                                                                          |
+| `promotions`  | `promotion.changed` | `{ promotionId }`                    | create (with a target), assign, cancel, delayed activate/expire, reconciler | product target: recompute 1; category target: keyset-scan the category by id in batches of 1 000, recompute, pipeline                                                                               |
+| `maintenance` | `readmodel.rebuild` | `{ category?: string }`              | cold start, admin, reconciler                                               | stream the scope's products from PostgreSQL and recompute each (the delete is part of that write, ADR-0003); `SCAN`+`UNLINK` only ids PostgreSQL no longer has; full rebuild sets `readmodel:ready` |
+| `maintenance` | `reconciler.run`    | `{}` (repeatable, every 5 min)       | reconciler worker schedule                                                  | see section 9                                                                                                                                                                                       |
+| `ingestion`   | `ingestion.chunk`   | `{ jobId, chunkIndex }`              | import registration, resume, time-budget hand-off                           | process the chunk from its checkpoint (section 7)                                                                                                                                                   |
 
 Scheduling of promotion boundaries happens when a promotion first becomes
 `active`, which is either create-with-target or `assign`; a draft schedules
@@ -475,7 +478,7 @@ immediately (if `startsAt` has passed) or delayed until `startsAt` with
 `jobId = promo:{id}:activate`, and always a delayed job until `endsAt` with
 `jobId = promo:{id}:expire`. Cancel removes both by job id and enqueues an
 immediate `promotion.changed`. Delayed jobs persist in Redis across restarts;
-the reconciler's boundary sweep covers a lost one.
+the reconciler's boundary sweep (section 9) covers a lost one.
 
 Emission happens after the PostgreSQL commit. A crash between commit and
 enqueue leaves the read model stale until the reconciler repairs it; this is
@@ -630,6 +633,8 @@ Automatic:
 - **Product entry write**: the recompute writes `HSET product:{id}` and `HDEL product:{id} promotionId promotionName` when it finds no promotion, in the same `MULTI` as the `ZADD`s and in that order. `HSET` does not remove a field, so a cancelled promotion otherwise keeps a well-formed pair beside a restored base price and the storefront names a finished sale; and a reader that sees the price restored before the pair is cleared gets a discounted price with no promotion, which the storefront refuses for the whole page (ADR-0006).
 - **Category-scoped reconciler** (`reconcile.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`/`ends_at` fell between the previous successful sweep and now (the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
 - **Cold start**: the storefront routes answer `503` while `readmodel:ready` is missing. Enqueuing `readmodel.rebuild {}` on that condition is **not built yet** — the read-model worker story owns it, along with unlinking the key before its sweep and setting it last, which is what stops a Redis restart reloading the flag and the stale hashes it certified together. Until then a cold start waits for something to start the rebuild, and nothing does.
+- **Category-scoped reconciler** (`reconciler.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`, `ends_at` or `cancelled_at` fell between the previous successful sweep and now (`cancelled_at` because a cancel whose `promotion.changed` was lost need have no boundary of its own in the window, ADR-0003; the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
+- **Cold start**: the API enqueues `readmodel.rebuild {}` when `readmodel:ready` is missing and answers `503` on storefront routes until it exists.
 - **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: always` brings it back.
 - **Handler isolation**: every handler catches, logs with the job id and rethrows so BullMQ records the failure; nothing crashes the process.
 
@@ -642,7 +647,7 @@ Manual (all under `/api/admin`, plus Bull Board at `/admin/queues`):
 | `POST /api/admin/queues/:name/drain?confirm=true`         | drop waiting jobs                                                   |
 | `POST /api/admin/dlq/retry` / `discard` (`?queue=`)       | re-queue or delete failed jobs                                      |
 | `POST /api/vendor/imports/:id/pause` / `resume` / `abort` | control one file; resume re-enqueues its pending chunks             |
-| `POST /api/admin/read-model/rebuild?category=`            | scoped or full rebuild via `SCAN`+`UNLINK`                          |
+| `POST /api/admin/read-model/rebuild?category=`            | scoped or full rebuild, recomputing through the write script        |
 
 Alarms (monitoring stack, compose profile `monitoring`): the API and every
 worker expose `GET /metrics` with `prom-client` (default Node metrics plus
@@ -661,7 +666,7 @@ configuration, not application code.
 
 ## 10. API
 
-All routes under `/api`; JSON errors `{ error: { code, message, details? } }`;
+All routes under `/api`; JSON errors `{ error: { message } }`;
 zod validation at every boundary; OpenAPI generated from the zod schemas and
 served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 
@@ -703,9 +708,10 @@ src/
       db/        resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
-  workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
-  shared/        config.ts, logger.ts (pino root logger and the error whitelist every log site uses), db/ (client, migrator, SQL migrations; each module owns its tables under db/schema/), redis.ts, queue.ts (BullMQ queues)
-    http/        the HTTP boundary: error-code.ts, status-by-code.ts, http-error.ts, client-errors.ts, other-client-error.ts, error-mapping.ts, error-handler.ts, not-found-handler.ts, request-schemas.ts, request-validator.ts, validation-detail.ts, http-logger.ts (correlation id)
+  workers/       one entry point per queue: promotions.ts, catalog.ts, ingestion.ts, maintenance.ts   (thin: create worker, register handler, start; `event-handler` runs the first two, `ingestion-worker` the third, `reconciler` the fourth plus its schedule)
+  shared/        config.ts, db/ (client, migrator, SQL migrations; each module owns its tables under db/schema/), redis.ts, queue/ (the BullMQ queues), graceful-shutdown.ts, logger.ts (the pino root logger)
+    http/        the HTTP boundary: error-handler.ts, request-validator.ts, http-logger.ts (correlation id)
+  events/        event-registry.ts and event-routing.ts: the event catalogue and its four-queue partition
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
   unit/          effective-price-calculator, csv-lines, base-price-calculator, base-price-calculator-cache, schemas, the HTTP boundary; capture-logger.ts and any other shared helper live here rather than at the tests/ root, which 7.7 keeps empty
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume

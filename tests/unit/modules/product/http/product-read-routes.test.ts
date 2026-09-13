@@ -19,7 +19,7 @@ const redisAnsweringNoReplies = {
 describe('productReadRoutes', () => {
   describe('when Redis answers a pipeline with nothing at all', () => {
     it('serves an empty page rather than failing', async () => {
-      const res = await request(createApp({ redis: redisAnsweringNoReplies })).get('/api/products');
+      const res = await request(createApp(undefined, redisAnsweringNoReplies)).get('/api/products');
 
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ items: [], total: 1 });

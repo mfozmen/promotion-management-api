@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { replyFailure } from '@src/modules/product/db/reply-failure.js';
-import { HttpError } from '@src/shared/http/http-error.js';
+import createError from 'http-errors';
 
 const reply = (message: string) => Object.assign(new Error(message), { name: 'ReplyError' });
 
@@ -24,14 +24,14 @@ describe('replyFailure', () => {
     // load.
     const raised = replyFailure(reply(message));
 
-    expect(raised).toBeInstanceOf(HttpError);
-    expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
+    expect(createError.isHttpError(raised)).toBe(true);
+    expect((raised as createError.HttpError).status).toBe(503);
   });
 
   it('calls a transport failure a reason to come back', () => {
     const raised = replyFailure(new Error("Stream isn't writeable"));
 
-    expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
+    expect((raised as createError.HttpError).status).toBe(503);
   });
 
   it('passes a transport failure through whole, key or no key', () => {
@@ -40,7 +40,7 @@ describe('replyFailure', () => {
       syscall: 'connect',
     });
 
-    const raised = replyFailure(refused, 'category:knitwear') as HttpError;
+    const raised = replyFailure(refused, 'category:knitwear') as createError.HttpError;
 
     // Rebuilding it to carry a key hand-copied the fields the log whitelist
     // emits, which dropped `code` once already and would drop the next field
@@ -55,7 +55,7 @@ describe('replyFailure', () => {
     // let them forge ` at product:7` onto the end of it.
     const refused = new Error('connect ECONNREFUSED 127.0.0.1:6379');
 
-    const raised = replyFailure(refused, 'category:boots at product:7') as HttpError;
+    const raised = replyFailure(refused, 'category:boots at product:7') as createError.HttpError;
 
     expect(JSON.stringify(raised.cause)).not.toContain('product:7');
     expect((raised.cause as Error).message).toBe('connect ECONNREFUSED 127.0.0.1:6379');
@@ -67,6 +67,6 @@ describe('replyFailure', () => {
     // hangs rather than answering anything at all.
     const raised = replyFailure('a string, somehow' as unknown as Error);
 
-    expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
+    expect((raised as createError.HttpError).status).toBe(503);
   });
 });
