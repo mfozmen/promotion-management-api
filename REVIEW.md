@@ -604,6 +604,16 @@ comment, so a violation blocks like any other.
 non-obvious invariant, a unit that is not in the name, a reason the obvious
 approach was rejected, a shortcut's ceiling, a contract a caller must honour.
 
+8b.1a The test is the reader, not the writer. Code a reader understands on
+its own carries no comment. Code a reader cannot understand without help
+carries one comment, simpler than the code it explains — one sentence, plain
+words. A comment that is harder to read than the code, or that a reader has to
+parse twice, is a finding: it adds nothing and costs attention. When the
+explanation needs a paragraph, the code needs a better name or a smaller
+method first, and the paragraph belongs in ADR.md (8b.3). Evidence: PR #39
+went through five comment-trimming rounds; each round's survivors were
+paragraphs that explained the ADR, not the line below them.
+
 Evidence: four source files in flight carried between 34 and 67 per cent
 comment lines, all of them passing the rule this one replaced.
 
