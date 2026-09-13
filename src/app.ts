@@ -2,12 +2,18 @@ import express, { type Express } from 'express';
 import type { AppDependencies } from './app-dependencies.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { productRoutes } from './modules/product/http/product-routes.js';
+import { promotionRoutes } from './modules/promotion/http/promotion-routes.js';
 import { httpLogger, logger as rootLogger } from './shared/logger.js';
 
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0008).
 const BODY_LIMIT = '100kb';
 
-export function createApp({ logger = rootLogger, db, enqueue }: AppDependencies = {}): Express {
+export function createApp({
+  logger = rootLogger,
+  db,
+  enqueue,
+  boundaries,
+}: AppDependencies = {}): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');
@@ -19,6 +25,7 @@ export function createApp({ logger = rootLogger, db, enqueue }: AppDependencies 
     res.status(200).json({ status: 'ok' });
   });
   if (db && enqueue) api.use('/products', productRoutes(db, enqueue));
+  if (db && enqueue && boundaries) api.use('/promotions', promotionRoutes(db, enqueue, boundaries));
   app.use('/api', api);
 
   app.use(notFoundHandler);

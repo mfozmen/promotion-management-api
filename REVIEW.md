@@ -887,6 +887,24 @@ replace that matches nothing, reports success, and ships a document saying the
 opposite of what its commit message claims; that one shipped twice before it
 was noticed.
 
+13.8 A cleanliness check is evidence about the tree at the moment it ran, so a
+check run before a merge says nothing about the tree after it. Re-run it on
+what you are about to commit, and do not treat a merge's own list of conflicted
+files as the list of files to resolve: `git add -A` after a conflict turns an
+unmerged path into a staged one, so the markers stop showing as unmerged and
+`git status` stops mentioning them. The check that holds is `git grep` for the
+markers over the working tree **and** `--cached` over the index, plus
+`git diff --name-only --diff-filter=U`.
+
+Evidence: three conflict markers reached `58c6f87` and the pull request opened
+from it. That merge named two conflicted files in its output, both were
+resolved, and README was a third; the tree grep that would have caught it had
+been run before the merge rather than after, so it was true of an earlier tree
+and the claim was carried forward. Same family as a `complexity` rule that
+arrives in `eslint.config.mjs` after a branch point and is therefore not
+enforced on the branch claiming to meet it: a gate that cannot fire is
+indistinguishable from a gate that passed.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
