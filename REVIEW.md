@@ -688,7 +688,7 @@ written down here so #30, #37 and #39 are judged against the rulebook rather
 than against a comment thread (13b.1).
 
 8c.3 A file is named for the one thing it exports, in kebab-case, the whole
-name: the noun for a type or object, the verb phrase for a function. A bare
+name: the class, interface or type name, or the verb phrase of a free function. A bare
 verb with no subject (`validate.ts`) is a finding. ADR-0008. Evidence:
 `src/middleware/validate.ts` read as an instruction rather than a thing.
 
@@ -726,10 +726,14 @@ never for a kind of syntax: `models/`, `types/`, `interfaces/`, `classes/`,
 aliases, interfaces, zod schemas, message payloads — and `domain/` holds only
 the functions. No other directory is split by syntax. ADR-0008.
 
-8c.9 An interface is the noun of its role (`Discount`), an implementation is
-the variant plus that noun (`fixedDiscount`), the record of them the plural
-(`discounts`). A function starts with a verb (`calculateEffectivePrice`); one
-named for its return value (`effectivePrice`) is a finding. ADR-0008.
+8c.9 Behaviour is a class named for its role (`EffectivePriceCalculator`),
+its methods start with a verb (`calculate`), its collaborators arrive through
+the constructor. A class with no state, no collaborator and no interface is a
+finding: it is a function. An interface is the noun of its role (`Discount`),
+an implementation the variant plus that noun (`PercentageDiscount`). An
+abstract base with fewer than two subclasses, a static-only class, or a helper
+with one user in its own file instead of a private method, is a finding.
+ADR-0008.
 
 8c.10 `src/shared/` is infrastructure: a file there whose name carries a
 business noun (`promotions.ts`, `pricing-rules.ts`) is a finding; it belongs to
