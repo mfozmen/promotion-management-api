@@ -7,7 +7,7 @@ import { ingestionChunks } from './schema/ingestion-chunks.js';
  * ran out of time budget rather than out of rows.
  *
  * Without it the invocation that stopped still holds the lease, and the
- * `ingestion.chunk` job it just enqueued finds the chunk busy and returns having
+ * `chunk.process` job it just enqueued finds the chunk busy and returns having
  * done nothing — the import would stall for a lease duration on every budget
  * window instead of continuing in the next one.
  *

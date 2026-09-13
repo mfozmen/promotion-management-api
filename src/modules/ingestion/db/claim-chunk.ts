@@ -11,7 +11,7 @@ import { ingestionChunks } from './schema/ingestion-chunks.js';
  * statement that decides is the statement that writes. Two invocations racing an
  * expired lease both run it and exactly one matches a row (REVIEW.md 3.1).
  *
- * Duplicate `ingestion.chunk` jobs are expected rather than exceptional — the
+ * Duplicate `chunk.process` jobs are expected rather than exceptional — the
  * registration step enqueues one per chunk and a redelivery costs nothing — so
  * the null return is the ordinary path, not an error.
  *

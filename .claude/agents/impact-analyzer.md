@@ -102,7 +102,7 @@ could still fix stays raised until it is fixed.
      BullMQ queues exist on the logical database `REDIS_QUEUE_DB` names
      (default 1), one per urgency class: `promotions` carrying
      `promotion.changed`, `catalog` carrying `product.upserted`, `ingestion`
-     carrying `ingestion.chunk`, and `maintenance` carrying `readmodel.rebuild`
+     carrying `chunk.process`, and `maintenance` carrying `readmodel.rebuild`
      and `reconciler.run`. A promotion
      boundary is a delayed `promotion.changed` under the write-once job id
      `promo:{id}:{activate|expire}`;

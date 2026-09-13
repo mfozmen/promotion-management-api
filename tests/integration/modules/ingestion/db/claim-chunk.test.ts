@@ -55,7 +55,7 @@ describe('claimChunk', () => {
   });
 
   it('refuses a chunk whose lease is still held, so a duplicate job returns at once', async () => {
-    // Duplicate `ingestion.chunk` jobs are expected — the spec says extra
+    // Duplicate `chunk.process` jobs are expected — the spec says extra
     // invocations are harmless — and the lease is what makes that true.
     const jobId = await newJobWithChunk();
     await claimChunk(db(), jobId, 0, 90_000);

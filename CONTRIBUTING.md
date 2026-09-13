@@ -8,11 +8,13 @@ Modular monolith: one directory per module under `src/modules/`, and inside a mo
 src/
   modules/<module>/
     domain/     behaviour as classes, collaborators through the constructor (REVIEW.md 8c.9); imports no store and no framework
-      dto/      every shape those classes operate on: types, interfaces, enum-like aliases, zod schemas, queue payloads (8c.8)
-    db/         queries and repositories (Drizzle)
+      dto/      every shape those classes operate on: types, interfaces, enum-like aliases, zod schemas (8c.8)
+    queries/    one class per read use case: collaborators in the constructor, `execute(input)`
+    commands/   one class per write use case, same shape
+    db/         the store gateway: the keys or SQL, and what a failed call means
       schema/   this module's tables, one file per table (REVIEW.md 8c.10)
-    http/       routes, handlers, request schemas (zod)
-    jobs/       BullMQ processors
+    http/       routes, handlers and the middleware they mount
+    events/     the events this module owns, one payload schema per file, and one `<Event>Handler` class per event it consumes, `handle(payload)`
   shared/
     db/         the client and the migrator; migrations/ holds the one journal
     http/       error handler, request validator, correlation-id logger
@@ -24,6 +26,8 @@ tests/
   unit/         mirrors src/, one test file per source file
   integration/  real PostgreSQL and Redis
   e2e/
+scripts/        developer commands the image does not carry: the demo seed
+fixtures/       sample input files
 ```
 
 Test files import their subject through the `@src/*` alias — `import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js'` — wired in `tsconfig.json` `paths` and `vitest.workspace.ts`, which declares the alias once and spreads it into both projects (a workspace project does not inherit the root `vitest.config.ts` `resolve` block). Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.

@@ -5,7 +5,7 @@ import { checkpointBatch } from '../db/checkpoint-batch.js';
 import { claimChunk } from '../db/claim-chunk.js';
 import { findIngestionJob } from '../db/find-ingestion-job.js';
 import type { ChunkOutcome } from '../domain/dto/chunk-outcome.js';
-import type { IngestionChunk } from '../domain/dto/ingestion-chunk.js';
+import type { ChunkProcess } from '../events/chunk-process.js';
 import { parseVendorRow } from '../domain/parse-vendor-row.js';
 import { readRangeLines } from '../domain/read-range-lines.js';
 
@@ -53,7 +53,7 @@ export class ChunkProcessor {
     this.leaseMs = options.leaseMs ?? ChunkProcessor.DEFAULT_LEASE_MS;
   }
 
-  async process({ jobId, chunkIndex }: IngestionChunk): Promise<ChunkOutcome> {
+  async process({ jobId, chunkIndex }: ChunkProcess): Promise<ChunkOutcome> {
     const claimed = await claimChunk(this.db, jobId, chunkIndex, this.leaseMs);
     // A duplicate delivery is the ordinary path, not an error: the registration step
     // enqueues one job per chunk and a redelivery costs nothing.
