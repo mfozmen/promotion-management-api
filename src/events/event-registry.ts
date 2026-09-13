@@ -1,4 +1,4 @@
-import { productUpserted } from '../modules/catalog/events/product-upserted.js';
+import { productUpserted } from '../modules/product/events/product-upserted.js';
 import { chunkProcess } from '../modules/ingestion/events/chunk-process.js';
 import { promotionChanged } from '../modules/promotion/events/promotion-changed.js';
 import { readModelRebuild } from '../modules/storefront/events/readmodel-rebuild.js';

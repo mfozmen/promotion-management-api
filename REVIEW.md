@@ -555,9 +555,11 @@ parallel. Shared mutable fixtures across files are a finding.
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
 the tree mirrors `src/`, one test file per source file, with the same name
 (`x.ts` → `x.test.ts`) and the export's name as the top-level `describe`.
-Nothing at `tests/` root, no per-module top-level directories. A test of a
-tree-wide property with no source file (`migration-journal.test.ts`) is named
-for the property, at the path of what it guards. ADR-0008.
+No per-module top-level directories. A test of a tree-wide property with no
+source file (`migration-journal.test.ts`) is named for the property, at the path
+of what it guards. The one thing at `tests/` root is a helper both layers need:
+`app-deps.ts` builds the dependency set `createApp` requires, and a copy per
+layer would be two spellings of one contract. ADR-0008.
 
 7.8 **A test imports its subject through the `@src/*` alias, production code
 never does.** `import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js'`
@@ -619,14 +621,22 @@ never repeats a free-form value the caller sent: a value is not an identifier
 and there is nothing to fix by seeing it again, so a 404 does not echo the path.
 
 This binds every message that reaches a response, not only the ones a
-middleware writes. A handler's own 4xx message crosses as written: the envelope
-bounds its length and inspects nothing, so a message naming a row the caller
-never saw is a finding wherever it was built. A schema's message is the same
-case one layer down — a custom or refinement message must not interpolate the
-value it rejected, because the validator forwards what the schema produced.
+middleware writes. A handler's own 4xx message crosses as written, unbounded and
+uninspected, so a message naming a row the caller never saw is a finding wherever
+it was built. A schema's message is the same case one layer down — a custom or
+refinement message must not interpolate the value it rejected — though under the
+current envelope a schema's message reaches nobody, so the message a caller reads
+is the one the handler passed to `createError`.
+
+There is no carve-out. The one this rule used to grant — `details.conflictingPromotionId`
+on the overlap `409` — cost a query on every conflict whose result the response
+discarded. What removing it costs the admin is a window comparison across the
+active rows for that target, with a filter they already have.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
-another row's fields, which they never had.
+another row's fields, which they never had. Evidence: while the carve-out stood,
+code citing this rule as forbidding the id sat beside a rule mandating it, and
+the next author would have added it back and been right to.
 
 8.4 No internal detail escapes to the client: no stack trace, no SQL text, no
 connection string, no secret, in a response. A log line is read by the operator,
@@ -1073,6 +1083,28 @@ impression. `tsc --noEmit --listFiles` answers the question.
 Evidence: `scripts/` arrived while `include` still read `["src", "tests"]`, so
 `--listFiles` counted nothing in it while `eslint .` walked it clean.
 
+13.11 A cleanliness check is evidence about the tree at the moment it ran, so
+re-run it on what you are about to commit: `git add -A` after a conflict turns
+an unmerged path into a staged one and the markers stop showing as unmerged.
+`git diff --check` and `git diff --cached --check` cover both sides and are
+git's own, so look in the tool before writing a check.
+
+Evidence: three conflict markers reached a pull request because the grep that
+would have caught them ran before the merge rather than after.
+
+13.12 **Two files that have to agree are checked by a test that reads both, not
+by a diff.** Changing one side of a pair — a URL in a compose healthcheck and
+the route that serves it, a port in a Dockerfile and in a config — leaves a diff
+that is individually correct, because the side that did not change is not in the
+diff at all. Land a test that reads the value out of one file and exercises the
+other.
+
+Evidence: moving the health probe under `/api` left `docker-compose.yml`
+fetching `/health`, so the container would never have reported healthy and
+`up --wait` would have hung rather than failed;
+`tests/unit/docs/compose-healthcheck.test.ts` now parses the URL out of compose
+and calls it, and was verified to fail when the path is put back.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
@@ -1102,6 +1134,16 @@ candidate for deletion.
 is not scope creep (12.3): the preamble already says the design wins and the
 rule gets fixed in the same PR. Quote the amendment in the PR description so
 the change to the shared standard is reviewed, not just the code.
+
+13b.5 **A rule's number is allocated once and never reused or compacted.** A
+collision becomes `13.10a` rather than a renumber of everything after it,
+because a number that moves is an edit to every file citing it, in a merge where
+those files did not conflict.
+
+Evidence: section 13 was renumbered twice in one afternoon, and the second time
+the check written that morning to catch it stayed green — a citation off by one
+rule still resolves to a rule that exists. The defect is the scheme, not the
+checker.
 
 ---
 
