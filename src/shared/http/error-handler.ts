@@ -3,13 +3,6 @@ import createError from 'http-errors';
 
 const INTERNAL_MESSAGE = 'Internal server error';
 
-/** A custom property, so its shape is checked rather than trusted. */
-const detailsOf = (err: createError.HttpError): unknown[] | undefined => {
-  const found: unknown = (err as { details?: unknown }).details;
-
-  return Array.isArray(found) ? found : undefined;
-};
-
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Express recognises an error handler by its arity
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (res.headersSent) {
@@ -45,13 +38,5 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
 
   res.set(headers);
 
-  const body: { error: { message: string; details?: unknown[] } } = { error: { message } };
-  // Only when the message is exposed: masking the prose and returning the details
-  // beside it leaks by the other field. A masked 5xx says one sentence and nothing else.
-  const details = err.expose ? detailsOf(err) : undefined;
-  if (details !== undefined) {
-    body.error.details = details;
-  }
-
-  res.status(err.status).json(body);
+  res.status(err.status).json({ error: { message } });
 };

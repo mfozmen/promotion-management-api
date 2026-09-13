@@ -47,41 +47,22 @@ describe('validate', () => {
     expect(res.body.body).toEqual({ sku: 'SKU-1', basePriceCents: 1999 });
   });
 
-  it('names the key the client got wrong, because they cannot fix it otherwise', async () => {
-    const captured = captureLogger();
-    const res = await request(appLogging('/products', captured, validate({ body: createProduct })))
+  it('says which part was invalid and nothing about the value', async () => {
+    // The envelope carries a message and no details: a caller learns which part of
+    // their request failed, never a field name or a value of theirs read back.
+    const res = await request(appWith('/products', validate({ body: createProduct })))
       .post('/products')
       .send({ sku: 'SKU-1', basePriceCents: 1999, basePrice: 19.99 });
 
     expect(res.status).toBe(400);
-    // A key they typed is an identifier they can act on; a value they sent is
-    // not (REVIEW.md 8.3b).
-    expect(res.body.error.details).toContainEqual({
-      path: 'body',
-      message: 'Unrecognized keys: "basePrice"',
-    });
-  });
-
-  it('returns an unknown key whole, however long the caller made it', async () => {
-    const long = `vendor${'x'.repeat(200)}`;
-    const res = await request(appWith('/products', validate({ body: createProduct })))
-      .post('/products')
-      .send({ sku: 'SKU-1', basePriceCents: 1, [long]: 1 });
-
-    const details = res.body.error.details as { message: string }[];
-    // Quoted whole: a key is the caller's own words back, and the line is bounded by
-    // the message cap rather than by a separate rule about keys.
-    expect(details).toContainEqual({ path: 'body', message: `Unrecognized keys: "${long}"` });
+    expect(res.body).toEqual({ error: { message: 'Invalid request body' } });
   });
 
   it('rejects a wrong type', async () => {
     const res = await request(app).post('/products').send({ sku: 'SKU-1', basePriceCents: '1999' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.details).toContainEqual({
-      path: 'body.basePriceCents',
-      message: expect.any(String),
-    });
+    expect(res.body).toEqual({ error: { message: 'Invalid request body' } });
   });
 
   it('rejects a missing body', async () => {
@@ -94,10 +75,7 @@ describe('validate', () => {
     const res = await request(app).post('/products').send({ sku: '', basePriceCents: 1999 });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.details).toContainEqual({
-      path: 'body.sku',
-      message: expect.any(String),
-    });
+    expect(res.body).toEqual({ error: { message: 'Invalid request body' } });
   });
 
   it('accepts a Turkish name unchanged', async () => {
@@ -128,10 +106,7 @@ describe('validate', () => {
       .send({ name: 'x'.repeat(5_000) });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.details).toContainEqual({
-      path: 'body.name',
-      message: expect.any(String),
-    });
+    expect(res.body).toEqual({ error: { message: 'Invalid request body' } });
     // 8.3b held by a test rather than by zod's current defaults: a message
     // built with the received value would sail past every other assertion.
     expect(res.text).not.toContain('x'.repeat(50));
@@ -141,27 +116,6 @@ describe('validate', () => {
     const res = await request(app).post('/products').send({ sku: 1 });
 
     expect(res.text).not.toMatch(/at Object|node_modules|\.ts:/);
-  });
-});
-
-describe('validate — where the problem is', () => {
-  it('points into an array by index, the way the docs promise', async () => {
-    const app = appWith(
-      '/imports',
-      validate({
-        body: z.object({ items: z.array(z.strictObject({ sku: z.string() })) }),
-      }),
-    );
-
-    const res = await request(app)
-      .post('/imports')
-      .send({ items: [{ sku: 'a' }, { sku: 'b' }, { sku: 'c' }, { sku: 42 }] });
-
-    expect(res.status).toBe(400);
-    expect(res.body.error.details).toContainEqual({
-      path: 'body.items[3].sku',
-      message: expect.any(String),
-    });
   });
 });
 
@@ -252,10 +206,7 @@ describe('validate — nested objects', () => {
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.details).toContainEqual({
-      path: 'body.window',
-      message: 'Unrecognized keys: "endAt"',
-    });
+    expect(res.body).toEqual({ error: { message: 'Invalid request body' } });
   });
 });
 

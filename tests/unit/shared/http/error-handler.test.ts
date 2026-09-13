@@ -104,25 +104,18 @@ describe('errorHandler', () => {
     expect(createError(503, 'x', { expose: true }).expose).toBe(true);
   });
 
-  it('returns the details it is given, because one producer bounds them', async () => {
-    // The caps live in the validator now: it is the only producer, and bounding
-    // the work of building details is what the cap was ever for. The envelope
-    // returns what it is handed.
-    const details = [{ path: 'body.sku', message: 'too short' }];
+  it('carries no details, whatever the raiser attached', async () => {
+    // A custom `details` property on the error is not response surface: the envelope
+    // is a message and nothing else, so a raiser cannot widen it by accident.
     const res = await request(
-      appThrowing(createError(400, 'Invalid request body', { details })),
+      appThrowing(
+        createError(400, 'Invalid request body', {
+          details: [{ path: 'body.sku', message: 'too short' }],
+        }),
+      ),
     ).get('/boom');
 
-    expect(res.body.error.details).toEqual(details);
-  });
-
-  it('includes details when the error carries them', async () => {
-    const details = [{ path: 'page', message: 'Too small' }];
-    const res = await request(
-      appThrowing(createError(400, 'Invalid request query', { details: details })),
-    ).get('/boom');
-
-    expect(res.body.error.details).toEqual(details);
+    expect(res.body).toEqual({ error: { message: 'Invalid request body' } });
   });
 
   it('logs the rejection with the correlation id', async () => {

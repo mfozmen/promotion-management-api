@@ -570,17 +570,15 @@ rather than ignored, so a typo in a client is visible.
 8.2 Numeric query parameters are validated as integers with bounds. `page=-1`,
 `page=1e9`, `pageSize=99999` and `page=abc` each have a defined answer.
 
-8.3 Errors are `{ error: { message, details? } }` with the right status: `400`
+8.3 Errors are `{ error: { message } }` with the right status: `400`
 validation, `404` missing, `409` conflict, `429` backpressure, `503` read model
 not ready. The status is the taxonomy a client branches on; the message is for a
-human. A second taxonomy beside it was wrong in three directions across three
-commits (ADR-0009).
+human, and it is the whole body: no code, no field-level breakdown (ADR-0009).
 
 8.3b A response may name where a problem is and which of the caller's own
 fields or identifiers it concerns. It never reproduces a stored value, and it
 never repeats a free-form value the caller sent: a value is not an identifier
-and there is nothing to fix by seeing it again, so a 404 does not echo the path
-and a parser's message is replaced rather than forwarded.
+and there is nothing to fix by seeing it again, so a 404 does not echo the path.
 
 This binds every message that reaches a response, not only the ones a
 middleware writes. A handler's own 4xx message crosses as written, unbounded and
@@ -603,12 +601,9 @@ only way to diagnose a 500 — and never in the body. An error is logged under
 `err`, where pino's own serializer shapes it; a hand-written whitelist beside
 it is a finding (12.9).
 
-A 5xx marked `expose: true` returns its message, so that message is public
-surface and is written for a client — a host, a port, a statement or a
-credential in one is a finding at the raise site, not at the boundary. The
-library masks the forgetful raiser and nothing masks the deliberate one, which
-is the cost of deleting the map that used to supply every public 5xx sentence
-(ADR-0009).
+A 5xx marked `expose: true` returns its message, so a host, a port, a statement
+or a credential in one is a finding at the raise site: the library masks the
+forgetful raiser and nothing masks the deliberate one.
 
 8.5 Handlers log and rethrow; `catch {}` is a finding. A caught error that is
 neither logged nor rethrown is a silent failure.
