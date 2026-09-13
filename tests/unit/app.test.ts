@@ -112,16 +112,21 @@ describe('request body size cap', () => {
     expect(res.status).toBe(404);
   });
 
-  it('rejects a malformed JSON body with a validation error', async () => {
-    const res = await request(createApp(deps(rootLogger)))
+  it('rejects a malformed JSON body without echoing it back', async () => {
+    const { logger, lines } = captureLogger();
+    const res = await request(createApp(deps(logger)))
       .post('/api/health')
       .set('content-type', 'application/json')
       .send('{ not json');
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({
-      error: { message: "Expected property name or '}' in JSON at position 2 (line 1 column 3)" },
-    });
+    // body-parser marks its own message `expose` and puts the parser's position
+    // and the body into it. The caller already knows what it sent.
+    expect(res.body).toEqual({ error: { message: 'Invalid JSON body' } });
+    expect(JSON.stringify(res.body)).not.toContain('not json');
+    expect(JSON.stringify(res.body)).not.toContain('position');
+    // The operator still gets it.
+    expect(lines.map((line) => line.reason).join(' ')).toContain('JSON at position');
   });
 
   it('answers an unsupported charset with 415, not a 500 the on-call is paged for', async () => {

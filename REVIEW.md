@@ -555,9 +555,11 @@ parallel. Shared mutable fixtures across files are a finding.
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
 the tree mirrors `src/`, one test file per source file, with the same name
 (`x.ts` → `x.test.ts`) and the export's name as the top-level `describe`.
-Nothing at `tests/` root, no per-module top-level directories. A test of a
-tree-wide property with no source file (`migration-journal.test.ts`) is named
-for the property, at the path of what it guards. ADR-0008.
+No per-module top-level directories. A test of a tree-wide property with no
+source file (`migration-journal.test.ts`) is named for the property, at the path
+of what it guards. The one thing at `tests/` root is a helper both layers need:
+`app-deps.ts` builds the dependency set `createApp` requires, and a copy per
+layer would be two spellings of one contract. ADR-0008.
 
 7.8 **A test imports its subject through the `@src/*` alias, production code
 never does.** `import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js'`
@@ -1086,29 +1088,17 @@ impression. `tsc --noEmit --listFiles` answers the question.
 Evidence: `scripts/` arrived while `include` still read `["src", "tests"]`, so
 `--listFiles` counted nothing in it while `eslint .` walked it clean.
 
-13.11 A cleanliness check is evidence about the tree at the moment it ran, so a
-check run before a merge says nothing about the tree after it. Re-run it on
-what you are about to commit, and do not treat a merge's own list of conflicted
-files as the list of files to resolve: `git add -A` after a conflict turns an
-unmerged path into a staged one, so the markers stop showing as unmerged and
-`git status` stops mentioning them. The check that holds is `git diff --check` over
-the working tree **and** `git diff --cached --check` over the index. Both are
-git's own, and a thirty-line script that reimplemented them with `git grep` was
-deleted once that was noticed: look for the check in the tool before writing
-one.
+13.11 A cleanliness check is evidence about the tree at the moment it ran, so
+re-run it on what you are about to commit rather than on what you merged into,
+and do not treat a merge's own list of conflicted files as the list to resolve:
+`git add -A` turns an unmerged path into a staged one, and the markers stop
+showing as unmerged. `git diff --check` and `git diff --cached --check` are
+git's own and cover both sides; a script that reimplemented them was written and
+then deleted, so look in the tool before writing a check.
 
 Evidence: three conflict markers reached `58c6f87` and the pull request opened
-from it. That merge named two conflicted files in its output, both were
-resolved, and README was a third; the tree grep that would have caught it had
-been run before the merge rather than after, so it was true of an earlier tree
-and the claim was carried forward. Same family as a `complexity` rule that
-arrives in `eslint.config.mjs` after a branch point and is therefore not
-enforced on the branch claiming to meet it, and as the hand-typed version of
-this very check, which printed `CLEAN` from an unconditional `echo` whatever the
-grep above it found: a gate that cannot fire is indistinguishable from a gate
-that passed. That is why this one exits non-zero and is verified in both
-directions — it fails on a marker in the working tree, and on one that
-`git add -A` has already staged, which is the case that got past it.
+from it, because the grep that would have caught them ran before the merge
+rather than after.
 
 13.12 **Two files that have to agree are checked by a test that reads both, not
 by a diff.** When a value is written twice — a URL in a compose healthcheck and

@@ -17,22 +17,8 @@ import type { CreatePromotion } from '../domain/dto/create-promotion-schema.js';
 import { createPromotionSchema } from '../domain/dto/create-promotion-schema.js';
 import type { ListPromotionsQuery } from '../domain/dto/list-promotions-query-schema.js';
 import { listPromotionsQuerySchema } from '../domain/dto/list-promotions-query-schema.js';
+import { promotionIdInput, type PromotionIdInput } from '../domain/dto/promotion-id-input.js';
 import { promotionWriteError } from './promotion-write-error.js';
-
-// Anything that is not one positive decimal integer is a URL naming no
-// promotion, which is a 404 rather than a 400: the caller asked for a thing, not
-// with a bad body.
-//
-// The pattern does the work rather than `Number`, which accepts `0x10` as 16 and
-// `1e20` as an integer — and `1e20` reaches a `bigint` column, where PostgreSQL
-// raises 22003 and the request ends as a 500 (REVIEW.md 8.2).
-const ID_PATTERN = /^[1-9]\d*$/;
-
-const idFrom = (value: unknown): number => {
-  const id = typeof value === 'string' && ID_PATTERN.test(value) ? Number(value) : Number.NaN;
-  if (!Number.isSafeInteger(id)) throw createError(404, 'No such promotion');
-  return id;
-};
 
 export function promotionRoutes(db: Db, publish: Publish, scheduler: PromotionScheduler): Router {
   const router = Router();
@@ -58,9 +44,14 @@ export function promotionRoutes(db: Db, publish: Publish, scheduler: PromotionSc
 
   router.post(
     '/:id/assign',
+    validate({ params: promotionIdInput }),
     validate({ body: assignPromotionSchema }),
     async (req: Request, res: Response) => {
-      const outcome = await assignPromotion(db, idFrom(req.params.id), req.body as AssignPromotion);
+      const outcome = await assignPromotion(
+        db,
+        (req.params as unknown as PromotionIdInput).id,
+        req.body as AssignPromotion,
+      );
       if (!outcome.ok) throw promotionWriteError(outcome);
 
       await announcePromotion(outcome.promotion, outcome.now, {
@@ -72,16 +63,20 @@ export function promotionRoutes(db: Db, publish: Publish, scheduler: PromotionSc
     },
   );
 
-  router.post('/:id/cancel', async (req: Request, res: Response) => {
-    const id = idFrom(req.params.id);
-    const outcome = await cancelPromotion(db, id);
-    if (!outcome.ok) throw promotionWriteError(outcome);
+  router.post(
+    '/:id/cancel',
+    validate({ params: promotionIdInput }),
+    async (req: Request, res: Response) => {
+      const id = (req.params as unknown as PromotionIdInput).id;
+      const outcome = await cancelPromotion(db, id);
+      if (!outcome.ok) throw promotionWriteError(outcome);
 
-    // Only when this call is what cancelled it: a repeat is a success the
-    // caller asked for, and re-announcing would fan out over the category again.
-    if (outcome.changed) await announceCancellation(id, { publish, scheduler, log: req.log });
-    res.status(200).json(outcome.promotion);
-  });
+      // Only when this call is what cancelled it: a repeat is a success the
+      // caller asked for, and re-announcing would fan out over the category again.
+      if (outcome.changed) await announceCancellation(id, { publish, scheduler, log: req.log });
+      res.status(200).json(outcome.promotion);
+    },
+  );
 
   router.get(
     '/',
@@ -93,11 +88,15 @@ export function promotionRoutes(db: Db, publish: Publish, scheduler: PromotionSc
     },
   );
 
-  router.get('/:id', async (req: Request, res: Response) => {
-    const promotion = await findPromotion(db, idFrom(req.params.id));
-    if (!promotion) throw createError(404, 'No such promotion');
-    res.status(200).json(promotion);
-  });
+  router.get(
+    '/:id',
+    validate({ params: promotionIdInput }),
+    async (req: Request, res: Response) => {
+      const promotion = await findPromotion(db, (req.params as unknown as PromotionIdInput).id);
+      if (!promotion) throw createError(404, 'No such promotion');
+      res.status(200).json(promotion);
+    },
+  );
 
   return router;
 }

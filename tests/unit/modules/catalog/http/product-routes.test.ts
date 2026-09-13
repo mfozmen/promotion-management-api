@@ -54,21 +54,6 @@ describe('POST /api/products when the write fails', () => {
     expect(JSON.stringify(res.body)).not.toContain('products_sku_key');
   });
 
-  it('answers 500 rather than a half-built product when the insert returns no row', async () => {
-    const returningNothing = {
-      insert: () => ({ values: () => ({ returning: () => Promise.resolve([]) }) }),
-    } as unknown as Db;
-
-    const res = await request(
-      createApp(appDeps({ logger: captureLogger().logger, db: returningNothing, publish })),
-    )
-      .post('/api/products')
-      .send(validBody('MC-9003'));
-
-    expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
-  });
-
   it('logs an enqueue failure that is not an Error at all', async () => {
     // A rejection with a string reaches the same handler, and the log line must
     // still be written rather than throwing inside the error path.

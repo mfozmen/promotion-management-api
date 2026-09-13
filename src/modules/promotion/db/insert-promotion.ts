@@ -1,6 +1,6 @@
 import type { Db } from '../../../shared/db/client.js';
-import { isExclusionViolation } from '../../../shared/db/exclusion-violation.js';
-import { isForeignKeyViolation } from '../../../shared/db/foreign-key-violation.js';
+import { hasSqlState } from '../../../shared/db/has-sql-state.js';
+import { SqlState } from '../../../shared/db/sql-state.js';
 import { promotions } from './schema/promotions.js';
 import { promotionColumns } from './promotion-columns.js';
 import type { CreatePromotion } from '../domain/dto/create-promotion-schema.js';
@@ -22,7 +22,7 @@ export async function insertPromotion(
 ): Promise<PromotionWriteOutcome> {
   const hasTarget = input.productId !== undefined || input.category !== undefined;
   try {
-    const [row] = await db
+    const rows = await db
       .insert(promotions)
       .values({
         name: input.name,
@@ -35,15 +35,17 @@ export async function insertPromotion(
         status: hasTarget ? 'active' : 'draft',
       })
       .returning({ ...promotionColumns, now: databaseNow });
-    if (!row) throw new Error('insert returned no row');
+    // One row or a throw, so the result is read as the one-tuple it is.
+    const [row] = rows as [(typeof rows)[number]];
 
     const { now, ...promotion } = row;
     return { ok: true, now: new Date(now), promotion };
   } catch (error) {
     // A productId naming no product is an admin's typo, not a server fault: the
     // foreign key rejects it and the route answers 404 rather than paging someone.
-    if (isForeignKeyViolation(error)) return { ok: false, reason: 'no-such-product' };
-    if (!isExclusionViolation(error)) throw error;
+    if (hasSqlState(error, SqlState.foreignKeyViolation))
+      return { ok: false, reason: 'no-such-product' };
+    if (!hasSqlState(error, SqlState.exclusionViolation)) throw error;
     return { ok: false, reason: 'overlap' };
   }
 }

@@ -101,24 +101,6 @@ describe('POST /api/promotions when the announcement fails', () => {
       ),
     ).toBe(true);
   });
-
-  it('answers 500 rather than a half-built promotion when the insert returns no row', async () => {
-    const res = await request(
-      createApp(
-        appDeps({
-          logger: captureLogger().logger,
-          db: insertReturning([]),
-          publish: noopPublish,
-          scheduler: silentScheduler,
-        }),
-      ),
-    )
-      .post('/api/promotions')
-      .send(body);
-
-    expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
-  });
 });
 
 describe('POST /api/promotions/:id/cancel when the announcement fails', () => {

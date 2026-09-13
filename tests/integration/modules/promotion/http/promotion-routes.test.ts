@@ -500,17 +500,17 @@ describe('reading the whole list', () => {
     expect(res.body.items.length).toBeGreaterThan(0);
   });
 
-  it('answers 404 for an id that is not a number', async () => {
+  it('answers 400 for an id that is not a number, as the storefront does', async () => {
     const res = await request(app()).get('/api/promotions/not-an-id');
 
-    expect(res.status).toBe(404);
-    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toBe('Invalid request params');
   });
 
-  it('answers 404 when cancelling an id that is not a number', async () => {
+  it('answers 400 when cancelling an id that is not a number', async () => {
     const res = await request(app()).post('/api/promotions/not-an-id/cancel').send();
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(400);
   });
 });
 
@@ -537,18 +537,18 @@ describe('two admins assigning one draft at the same moment', () => {
 });
 
 describe('an id in the URL that no promotion could have', () => {
-  it('answers 404 rather than 500 for an id larger than the column can hold', async () => {
+  it('answers 400 rather than 500 for an id larger than the column can hold', async () => {
     // Number.isInteger(1e20) is true and the column is bigint, so an unguarded
     // id reaches PostgreSQL and comes back as 22003 — a 500 for a bad URL.
     const res = await request(app()).get('/api/promotions/99999999999999999999');
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(400);
   });
 
   it('does not read a hexadecimal id as a decimal one', async () => {
     const res = await request(app()).get('/api/promotions/0x10');
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(400);
   });
 });
 

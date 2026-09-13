@@ -1,6 +1,7 @@
 import type { Db } from '../../../shared/db/client.js';
 import { products } from './schema/products.js';
-import { isUniqueViolation } from '../../../shared/db/unique-violation.js';
+import { hasSqlState } from '../../../shared/db/has-sql-state.js';
+import { SqlState } from '../../../shared/db/sql-state.js';
 import type { CreateProduct } from '../domain/dto/create-product-schema.js';
 import type { InsertProductOutcome } from '../domain/dto/insert-product-outcome.js';
 
@@ -10,15 +11,12 @@ import type { InsertProductOutcome } from '../domain/dto/insert-product-outcome.
  * still fails at the index, so the check only moves the error somewhere less
  * expected (REVIEW.md 3.1).
  */
-export async function insertProduct(
-  db: Db,
-  input: CreateProduct,
-): Promise<InsertProductOutcome> {
+export async function insertProduct(db: Db, input: CreateProduct): Promise<InsertProductOutcome> {
   try {
-    const [row] = await db.insert(products).values(input).returning();
-    // `returning()` on a single-row insert yields exactly one row, or the insert
-    // threw. The check is for the type, not for a case that can happen.
-    if (!row) throw new Error('insert returned no row');
+    const rows = await db.insert(products).values(input).returning();
+    // A single-row insert returns one row or throws, so the result is read as
+    // the one-tuple it is rather than guarded for a length that cannot occur.
+    const [row] = rows as [(typeof rows)[number]];
     return {
       ok: true,
       product: {
@@ -31,7 +29,7 @@ export async function insertProduct(
       },
     };
   } catch (error) {
-    if (isUniqueViolation(error)) return { ok: false, reason: 'sku-exists' };
+    if (hasSqlState(error, SqlState.uniqueViolation)) return { ok: false, reason: 'sku-exists' };
     throw error;
   }
 }
