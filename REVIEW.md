@@ -676,6 +676,13 @@ one short line per variable in `.env.example`.
 
 Evidence: a 121-line compose file with 45 comment lines (PR #34).
 
+8b.7 A sentence found stale in review is deleted unless the code cannot be read
+without it; correcting it keeps the maintenance that produced the finding.
+
+Evidence: seventeen open review threads on one pull request were all prose that
+had drifted from the code, and each earlier round had answered them with more
+prose.
+
 ---
 
 ## 8c. Names match
@@ -707,6 +714,14 @@ a registry and a factory, all of them sharing the concept "discount
 calculation". The alias clause is the owner's reading of 2026-09-13 on PR #29,
 written down here so #30, #37 and #39 are judged against the rulebook rather
 than against a comment thread (13b.1).
+
+8c.2a One export per file is not one declaration per file. A type read at one
+site is written in that signature, and a constant with one reader is a
+non-exported constant in the file that reads it; a file that exists only to
+satisfy 8c.2 is a finding.
+
+Evidence: an HTTP boundary held seven one-line files — three shared constants,
+two interfaces, two lookup tables — every one of them with a single reader.
 
 8c.3 A file is named for the one thing it exports, in kebab-case, the whole
 name: the class, interface or type name, or the verb phrase of a free function. A bare
@@ -856,8 +871,14 @@ path, so the reviewer can tell a decision from an oversight.
 12.3 A PR delivers one story. Scope creep is a finding; the extra work goes in
 its own pull request, not in an issue to be dealt with later.
 
-12.4 Dependencies: prefer the standard library, then something already
-installed. A new dependency for a few lines of code is a finding.
+12.4 Dependencies: prefer the standard library, then a package already
+installed, then a widely used package, and only then code of our own. A
+hand-written solution to a problem a widely used package already solves is a
+finding, and so is a package that a few lines would express more readably.
+
+Evidence: an HTTP boundary re-implemented status, expose and headers from the
+error package its framework installs, and the error serialiser its logger
+ships.
 
 12.5 Startup validation checks only what would otherwise fail late and
 quietly (a URL that connects to the wrong database, two components sharing one
@@ -880,6 +901,22 @@ is deleted, not improved.
 Evidence: an HTTP skeleton scrubbed SQL from driver errors, froze tables
 nothing assigns to and logged a misconfigured client fleet before any route
 queried a database; every open review thread on it was that prose going stale.
+
+12.8 A value is bounded once, where it is produced. A second bound on the same
+value downstream, or a bound on a value already bounded upstream, guards
+nothing and is a finding.
+
+Evidence: validation details were capped in count and length by the validator,
+capped again by the error envelope, and both sat under a body limit that
+already bounded them.
+
+12.9 A well-known package is used the way its own documentation shows before
+anything of ours wraps it, and a class of ours exists only for a raise, a call
+or a shape that recurs at several sites.
+
+Evidence: three files and two tables re-implemented the status, expose and
+headers properties that the error package already installed with the framework
+documents.
 
 ---
 
