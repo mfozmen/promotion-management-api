@@ -13,7 +13,7 @@ const MAX_OFFSET = 10_000;
 const digits = (max: number) =>
   z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(max));
 
-export const listQuery = z
+export const listProductsInput = z
   .strictObject({
     category: z.string().min(1).max(MAX_CATEGORY).optional(),
     // Naming the one sort is how a client learns the parameter was read.
@@ -25,4 +25,4 @@ export const listQuery = z
   // No message: the validator discards a schema's own wording (ADR-0009).
   .refine(({ page, pageSize }) => (page - 1) * pageSize <= MAX_OFFSET);
 
-export type ListQuery = z.infer<typeof listQuery>;
+export type ListProductsInput = z.infer<typeof listProductsInput>;

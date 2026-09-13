@@ -1,5 +1,5 @@
 import { ProductReadRepository } from '../db/product-read-repository.js';
-import type { ListQuery } from '../domain/dto/list-query.js';
+import type { ListProductsInput } from '../domain/dto/list-products-input.js';
 import { productView } from '../domain/dto/product-view.js';
 
 /** A page of a category, ordered by the price a shopper would pay. Three round
@@ -7,7 +7,7 @@ import { productView } from '../domain/dto/product-view.js';
 export class ListProductsQuery {
   constructor(private readonly products: ProductReadRepository) {}
 
-  async execute({ category, order, page, pageSize }: ListQuery) {
+  async execute({ category, order, page, pageSize }: ListProductsInput) {
     const offset = (page - 1) * pageSize;
 
     const [ids, total] = await Promise.all([
