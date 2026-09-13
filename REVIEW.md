@@ -517,10 +517,10 @@ Evidence: twice in one pull request a control passed review while never firing
 in production. Express prints a raw stack on every environment except `test`,
 which is the one the suite runs in, and a compensating `debug` log line sat
 under a root logger running at `info` while the capture logger in the test ran
-at `trace`. A third time, a test asserted the assignment a shallow
-`Object.freeze` does stop and never the one it does not: the rows inside the
-frozen table stayed writable, and a row's fields are what the response is built
-from. Assert the reachable breach, not the one the control obviously covers.
+at `trace`. A third time, a test asserted the assignment a shallow `Object.freeze`
+does stop and never the one it does not: the rows inside the frozen table stayed
+writable, and a row's fields are what the response is built from. Assert the
+reachable breach, not the one the control obviously covers.
 
 7.5 **Determinism.** Fixed clocks (injected `now` or fake timers), fixed
 fixtures, no random data, no `sleep` to wait for a worker. Poll a condition with
@@ -570,15 +570,20 @@ rather than ignored, so a typo in a client is visible.
 8.2 Numeric query parameters are validated as integers with bounds. `page=-1`,
 `page=1e9`, `pageSize=99999` and `page=abc` each have a defined answer.
 
-8.3 Errors are `{ error: { code, message, details? } }` with the right status:
-`400` validation, `404` missing, `409` conflict, `429` backpressure, `503` read
-model not ready. The message is for a human; the code is for a client.
+8.3 Errors are `{ error: { message } }` with the right status: `400`
+validation, `404` missing, `409` conflict, `429` backpressure, `503` read model
+not ready. The status is the taxonomy a client branches on; the message is for a
+human, and it is the whole body: no code, no field-level breakdown (ADR-0009).
 
 8.3b A response may name where a problem is and which of the caller's own
 fields or identifiers it concerns. It never reproduces a stored value, and it
 never repeats a free-form value the caller sent: a value is not an identifier
-and there is nothing to fix by seeing it again, so a 404 does not echo the path
-and a parser's message is replaced rather than forwarded.
+and there is nothing to fix by seeing it again, so a 404 does not echo the path.
+
+This binds every message that reaches a response, not only the ones a
+middleware writes. A handler's own 4xx message crosses as written, unbounded and
+uninspected, so a message naming a row the caller
+never saw is a finding wherever it was built.
 
 One identifier is carved out, and only one: `409 PROMOTION_OVERLAP` returns
 `details.conflictingPromotionId`, the id of the active promotion whose window the
@@ -596,30 +601,18 @@ case one layer down — a custom or refinement message must not interpolate the
 value it rejected, because the validator forwards what the schema produced.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
-another row's fields, which they never had. `Unrecognized key: "discountTyp"` is
-correct: the client cannot fix the request without knowing which of its own keys
-was wrong. The interpolation hole was found by probe on PR #30: a refinement
-message naming the received value reached the response body, past every other
-guard.
-
-8.3c Cap an echoed field name or identifier at 64 characters and truncate
-rather than omit, so a long key cannot turn an error body into a mirror.
-
-Evidence: the first draft of the exception had no bound, so a multi-kilobyte key
-would have come straight back in the error body.
+another row's fields, which they never had.
 
 8.4 No internal detail escapes to the client: no stack trace, no SQL text, no
 connection string, no secret, in a response. A log line is read by the operator,
 not the caller, so the stack of an unexpected error belongs there — it is the
-only way to diagnose a 500 — but SQL text, bound parameters and secrets do not.
-A driver or ORM error carries the failing statement and the bound row on its own
-fields — and composes its message out of them — so an error is reduced to a
-whitelist before it is logged: its type, a message it did not build from the
-statement, the SQLSTATE, and the frames of its stack. One shared implementation
-does this (`serializeError` in `src/shared/serialize-error.ts`), every logging site calls
-it, and the result is logged under an `error` key. Handing a logger the error
-itself, under `err` or any other key, is a finding, and so is a second copy of
-the whitelist.
+only way to diagnose a 500 — and never in the body. An error is logged under
+`err`, where pino's own serializer shapes it; a hand-written whitelist beside
+it is a finding (12.9).
+
+A 5xx marked `expose: true` returns its message, so a host, a port, a statement
+or a credential in one is a finding at the raise site: the library masks the
+forgetful raiser and nothing masks the deliberate one.
 
 8.5 Handlers log and rethrow; `catch {}` is a finding. A caught error that is
 neither logged nor rethrown is a silent failure.
@@ -710,6 +703,13 @@ one short line per variable in `.env.example`.
 
 Evidence: a 121-line compose file with 45 comment lines (PR #34).
 
+8b.7 A sentence found stale in review is deleted unless the code cannot be read
+without it; correcting it keeps the maintenance that produced the finding.
+
+Evidence: seventeen open review threads on one pull request were all prose that
+had drifted from the code, and each earlier round had answered them with more
+prose.
+
 ---
 
 ## 8c. Names match
@@ -741,6 +741,14 @@ a registry and a factory, all of them sharing the concept "discount
 calculation". The alias clause is the owner's reading of 2026-09-13 on PR #29,
 written down here so #30, #37 and #39 are judged against the rulebook rather
 than against a comment thread (13b.1).
+
+8c.2a One export per file is not one declaration per file. A type read at one
+site is written in that signature, and a constant with one reader is a
+non-exported constant in the file that reads it; a file that exists only to
+satisfy 8c.2 is a finding.
+
+Evidence: an HTTP boundary held seven one-line files — three shared constants,
+two interfaces, two lookup tables — every one of them with a single reader.
 
 8c.3 A file is named for the one thing it exports, in kebab-case, the whole
 name: the class, interface or type name, or the verb phrase of a free function. A bare
@@ -876,7 +884,9 @@ was defeated by sorting the journal, which left both its assertions true.
 
 ## 12. Keep it small
 
-**Severity: suggestion.**
+**Severity: warning.** It was a suggestion, and a suggestion is adopted only
+when cheaper than deferring, so no review ever raised it; the rules below were
+true of a branch that grew the way they forbid.
 
 12.1 No abstraction with one implementation, no configuration for a value that
 never changes, no feature the case does not ask for. Deleting is the preferred
@@ -888,8 +898,14 @@ path, so the reviewer can tell a decision from an oversight.
 12.3 A PR delivers one story. Scope creep is a finding; the extra work goes in
 its own pull request, not in an issue to be dealt with later.
 
-12.4 Dependencies: prefer the standard library, then something already
-installed. A new dependency for a few lines of code is a finding.
+12.4 Dependencies: prefer the standard library, then a package already
+installed, then a widely used package, and only then code of our own. A
+hand-written solution to a problem a widely used package already solves is a
+finding, and so is a package that a few lines would express more readably.
+
+Evidence: an HTTP boundary re-implemented status, expose and headers from the
+error package its framework installs, and the error serialiser its logger
+ships.
 
 12.5 Startup validation checks only what would otherwise fail late and
 quietly (a URL that connects to the wrong database, two components sharing one
@@ -902,6 +918,32 @@ Evidence: a 149-line validator plus 296 test lines replaced by 37 lines (PR #34)
 (cyclomatic, gates `npm run lint`) and Sonar S3776 (cognitive, on the PR). Above
 it, Extract Function or Replace Nested Conditional with Guard Clauses — never a
 disable comment.
+
+12.7 A guard against a failure nothing in this repository can produce today is
+a finding, however careful it is: the branch that adds the producer adds the
+guard, against the real failure. Prose has the same rule — a comment, an ADR
+bullet or a test that defends the code against a reader who has not arrived
+is deleted, not improved.
+
+Evidence: an HTTP skeleton scrubbed SQL from driver errors, froze tables
+nothing assigns to and logged a misconfigured client fleet before any route
+queried a database; every open review thread on it was that prose going stale.
+
+12.8 A value is bounded once, where it is produced. A second bound on the same
+value downstream, or a bound on a value already bounded upstream, guards
+nothing and is a finding.
+
+Evidence: validation details were capped in count and length by the validator,
+capped again by the error envelope, and both sat under a body limit that
+already bounded them.
+
+12.9 A well-known package is used the way its own documentation shows before
+anything of ours wraps it, and a class of ours exists only for a raise, a call
+or a shape that recurs at several sites.
+
+Evidence: three files and two tables re-implemented the status, expose and
+headers properties that the error package already installed with the framework
+documents.
 
 ---
 
@@ -972,24 +1014,22 @@ opposite of what its commit message claims; that one shipped twice before it
 was noticed.
 
 13.8 **A merged configuration file is checked by parsing it, not by reading
-it.** A merge can leave two blocks under the same key: git is content, because
-each side's lines are kept and neither deleted the other's; the parser is
-content, because a duplicate key is legal in YAML and the last occurrence wins;
-and a reader is content, because each block is individually correct. Load the
-merged file and compare the parsed result against what you meant it to say —
-for a workflow, the service list, the step list, the environment.
+it.** A merge can leave two blocks under one key, and git, the parser and a
+reader are each content: every line is kept, a duplicate key is legal, and each
+block is individually correct.
 
-Evidence: merging the storefront branch onto the HTTP skeleton put two
-`services:` blocks in `ci.yml`, one bringing up Redis and one PostgreSQL. YAML
-kept the second, so every integration test would have run in CI against no
-Redis at all, and the diff read as two correct additions. This is the fourth of
-a family this week — a gate that cannot fire is indistinguishable from a gate
-that passed. The others were a label-strip step that removed no labels,
-`drizzle-kit` exiting 0 on a failure, and a migration-count assertion that
-could not fail (11.5). The question that separates them is not "did it pass"
-but "what would make it fail, and has anyone seen it do that".
+Evidence: two `services:` blocks in `ci.yml` after a merge, of which YAML kept
+the second, so every integration test would have run against no Redis.
 
-13.9 A cleanliness check is evidence about the tree at the moment it ran, so a
+13.9 **After a merge, re-read the prose against the merged tree — a conflict
+marker is not the list of what the merge broke.** The sentences most likely to
+be wrong afterwards are the ones that never conflicted, because one side's code
+made the other side's claim false while touching none of its lines.
+
+Evidence: the queue story added a `SIGTERM` handler while this branch's ADR
+said, thirty lines from anything either side edited, that the process had none.
+
+13.10 A cleanliness check is evidence about the tree at the moment it ran, so a
 check run before a merge says nothing about the tree after it. Re-run it on
 what you are about to commit, and do not treat a merge's own list of conflicted
 files as the list of files to resolve: `git add -A` after a conflict turns an
@@ -1013,7 +1053,7 @@ that passed. That is why this one exits non-zero and is verified in both
 directions — it fails on a marker in the working tree, and on one that
 `git add -A` has already staged, which is the case that got past it.
 
-13.10 **Two files that have to agree are checked by a test that reads both, not
+13.11 **Two files that have to agree are checked by a test that reads both, not
 by a diff.** When a value is written twice — a URL in a compose healthcheck and
 the route that serves it, a port in a Dockerfile and in a config, a queue name
 in a producer and a consumer — changing one side leaves a diff that is

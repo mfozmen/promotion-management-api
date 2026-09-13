@@ -30,6 +30,10 @@ const NAMED_BUT_ABSENT = new Map([
     'src/middleware/',
     'the directory the HTTP boundary was moved out of, named by ADR-0009 as what it replaced',
   ],
+  [
+    'src/shared/safe-request-id.ts',
+    'where ADR-0010 sends the correlation-id pattern when a second caller needs it, so the move is decided rather than improvised',
+  ],
   ['src/shared/db/schema/', 'where the table schemas were before they moved into their modules'],
   ['src/modules/vendor/', 'a module the agent triggers name before it is written'],
 ]);

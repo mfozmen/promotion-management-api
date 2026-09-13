@@ -9,11 +9,11 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Node.js 22
 - Express 5
 - TypeScript (strict mode)
-- zod (request validation at the boundary)
+- zod (request and event-payload validation)
 - pino + pino-http (structured JSON logging)
+- http-errors (the error envelope: status, `expose`, response headers)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
 - BullMQ on Redis 7 (event queue; see [ADR-0003](./ADR.md))
-- zod (payload validation at the queue boundary)
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
@@ -86,7 +86,7 @@ checks the tool's own success line, then `git add -AN src/shared/db/migrations` 
 `git diff --exit-code src/shared/db/migrations`, so a schema change committed without its
 migration fails the build. It reads the success line rather than the exit code because
 `drizzle-kit generate` exits 0 even when it fails and writes nothing; `git add -AN` is what
-makes an untracked new migration visible to the diff (ADR-0003, commit `c14fa50`).
+makes an untracked new migration visible to the diff (ADR-0003).
 
 Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data` and `redis-data` volumes as well. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
 
@@ -126,18 +126,7 @@ queues anyway (ADR-0003).
 
 ## Project structure
 
-```
-src/                 app.ts (the Express app and the /api router), server.ts (the process entry point)
-src/modules/         one module per directory, each owning its tables under db/schema/ and using
-                     domain/, db/ and http/ as it needs them
-src/shared/db/       the client, the migrator and the SQL migrations
-src/shared/http/     the HTTP boundary: the error type and its status table, the error handler,
-                     the not-found handler, the request validator and the request logger
-src/shared/          config.ts, logger.ts (the root logger), serialize-error.ts (the error
-                     whitelist every log site uses), max-message.ts
-tests/               unit, integration and e2e, each layer mirroring src/
-docs/                design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
-```
+Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7). The tree and the naming rules are in [CONTRIBUTING.md](./CONTRIBUTING.md) under "Source layout"; this file does not repeat them.
 
 Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7).
 
@@ -147,7 +136,9 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 
 The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), and `0002_active_promotions.sql` creates the `active_promotions` view. Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/workers/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
 
-`active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver (#36) selects from it instead of restating the predicate (ADR-0004, commit `1aaaffc`). The admin reads do not: `GET /api/promotions` has to show drafts, scheduled and expired promotions too, which the view by definition does not hold, so they project a five-valued `state` from the same half-open window in SQL (`src/modules/promotion/db/promotion-state-sql.ts`, PR #75). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed (commit `2142664`). It is not an endpoint; no route exposes it.
+`active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver and the admin reads select from it instead of restating the predicate (ADR-0004). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
+
+`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
 
 ## Dynamic pricing rules
 
@@ -173,50 +164,34 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 ## API
 
-Every route is mounted under `/api` (ADR-0009). Request bodies are JSON, capped at 100 kB, and validated strictly: an unknown field is a `400`, never a silently dropped one. The Errors column lists the codes a route decides for itself; `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE` and `INTERNAL` come from the shared boundary and can answer any of them.
+All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are JSON, capped at 100 kB, and validated strictly: an unknown field is a `400`, never a silently dropped one. The Statuses column lists what a route decides for itself; `400`, `413` and `415` come from the shared boundary and can answer any of them.
 
-| Method | Path                         | Description                                                                                                             | Errors                                                           |
-| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | —                                                                |
-| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `VALIDATION_ERROR`, `SKU_EXISTS`                                 |
-| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `VALIDATION_ERROR`, `PROMOTION_OVERLAP`                          |
-| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `PROMOTION_OVERLAP` |
-| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `NOT_FOUND`                                                      |
-| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `VALIDATION_ERROR`                                               |
-| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `NOT_FOUND`                                                      |
+| Method | Path                         | Description                                                                                                             | Statuses            |
+| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`               |
+| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`        |
+| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `201`, `409`        |
+| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `200`, `404`, `409` |
+| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`        |
+| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`               |
+| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`        |
 
-`GET /api/promotions` takes five optional query parameters, combined with `AND`. Three are filters: `status` (`draft`, `active` or `cancelled`), `category` (exact match) and `productId`. Two page the result: `limit` (a positive integer, default `50`, maximum `100`) and `after`, a keyset cursor holding the last `id` of the previous page. The list is ordered by `id` and the response is `{ "items": [...] }` with no cursor of its own — the caller reads the last id it received, and a page shorter than `limit` is the end. Keyset rather than `OFFSET`, because `id` never changes, so a promotion created mid-read cannot make a page repeat or skip a row (REVIEW.md 5.5). There is no sort parameter: the storefront listing that needs one is a separate endpoint (PR #76). Filtering on the derived `state` is deliberately absent — that is a predicate on `now()`, and time predicates are PostgreSQL's (REVIEW.md 2.7).
+`GET /api/promotions` takes five optional query parameters, combined with `AND`. Three are filters: `status` (`draft`, `active` or `cancelled`), `category` (exact match) and `productId`. Two page the result: `limit` (a positive integer, default `50`, maximum `100`) and `after`, a keyset cursor holding the last `id` of the previous page. The list is ordered by `id` and the response is `{ "items": [...] }` with no cursor of its own — the caller reads the last id it received, and a page shorter than `limit` is the end. Keyset rather than `OFFSET`, because `id` never changes, so a promotion created mid-read cannot make a page repeat or skip a row (REVIEW.md 5.5). There is no sort parameter: the storefront listing that needs one is a separate endpoint. Filtering on the derived `state` is deliberately absent — that is a predicate on `now()`, and time predicates are PostgreSQL's (REVIEW.md 2.7).
 
 Every promotion response carries both `status`, the value an admin set (`draft`, `active`, `cancelled`), and `state`, what the promotion is doing right now (`draft`, `scheduled`, `live`, `expired`, `cancelled`). `state` is computed by PostgreSQL in every read and in every write's `returning` clause (`src/modules/promotion/db/promotion-state-sql.ts`), never derived in TypeScript, so no Node clock can drift against it (ADR-0004).
 
-Errors share one envelope, `{ "error": { "code", "message", "details"? } }`, with `code` drawn from a closed set — the `ErrorCode` type in `src/shared/http/error-code.ts`, and the compiler rejects anything outside it (ADR-0009):
-
-| Code                     | Status | Meaning                                                                                                                              |
-| ------------------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `VALIDATION_ERROR`       | 400    | Body, query or params rejected; `details` lists `{ path, message }` per field                                                        |
-| `BAD_REQUEST`            | 400    | An exposed client error the body parser raised under a status with no wording of its own                                             |
-| `NOT_FOUND`              | 404    | No such route, or no promotion with that id                                                                                          |
-| `CONFLICT`               | 409    | The row is not in a state the operation accepts: assigning to a promotion that is not a draft, or to a draft whose window has passed |
-| `SKU_EXISTS`             | 409    | A product with that SKU already exists                                                                                               |
-| `PROMOTION_OVERLAP`      | 409    | Another active promotion covers that window; `details.conflictingPromotionId` names it, or is `null` if it was cancelled in between  |
-| `PAYLOAD_TOO_LARGE`      | 413    | Body over the 100 kB cap                                                                                                             |
-| `UNSUPPORTED_MEDIA_TYPE` | 415    | Body encoding the parser will not decode                                                                                             |
-| `BACKPRESSURE`           | 429    | Queue depth over its bound (ADR-0007); carries `Retry-After`                                                                         |
-| `INTERNAL`               | 500    | Server fault; the message is ours and the stack goes only to the log                                                                 |
-| `READ_MODEL_NOT_READY`   | 503    | Read model not warm yet (ADR-0003); carries `Retry-After`                                                                            |
-
-`PROMOTION_OVERLAP` is raised from SQLSTATE `23P01` — the two GiST exclusion constraints on `promotions` firing — never from a check-then-insert query: two admins creating the same window at once both pass such a check, so one of them has to lose in the database (ADR-0004). The conflicting id is looked up only after the violation, to fill in `details`.
+The overlap `409` is raised from SQLSTATE `23P01` — the two GiST exclusion constraints on `promotions` firing — never from a check-then-insert query: two admins creating the same window at once both pass such a check, so one of them has to lose in the database (ADR-0004). It names no promotion: the envelope carries a message and nothing else, and another row's identifier is not the caller's to read (REVIEW.md 8.3b).
 
 An id that is not a positive integer answers `404`, not `400`: the caller named a promotion that does not exist rather than sending a bad body.
 
-`src/server.ts` builds the pool and the queues from the configuration and passes `db`, `enqueue` and `boundaries` into `createApp`, so every route below is served by `npm run dev`. The routers are mounted only when those dependencies are present (`src/app-dependencies.ts`), which is what lets a test build an app with just the middleware — and is why an omission in `server.ts` would be a 404 in production with a green suite, the file being the one excluded from coverage (REVIEW.md 7.2).
+`src/server.ts` builds the pool and the queues from the configuration and passes `db`, `publish` and `scheduler` into `createApp`, so every route above is served by `npm run dev`. The routers are mounted only when those dependencies are present (`src/app-dependencies.ts`), which is what lets a test build an app with just the middleware — and is why an omission in `server.ts` would be a 404 in production with a green suite, the file being the one excluded from coverage (REVIEW.md 7.2).
 
-The product and promotion endpoints land on PR #75 (`POST /api/products` in commit `3c35837`, issue #10; the promotion routes for issue #11). Storefront read endpoints are PR #76; the ingestion upload is ADR-0005's PR.
+### Conventions
 
-- **A 4xx explains itself; a 5xx does not.** A client error carries a message written for the caller. A server error never returns the message its handler wrote — that goes to the log. A 5xx answers with the status its code maps to, and keeps that code only where the API wrote public words for it: `READ_MODEL_NOT_READY` answers `503` with `"The read model is not ready yet; retry shortly"`, and any 5xx code without public wording answers `500 INTERNAL` (PR #30, commits `af38e0c`, `4f10c7f`, `a218bf2` and `9f27f8d`). The code-to-status list above is one-way — it is the status the API answers with for a code it raises, not a reverse map: a foreign client error keeps its own status and is given the nearest code, so a `418` answers `BAD_REQUEST` even though that code's own status is `400`. An unexpected error is returned as `500 INTERNAL` only — no internal detail reaches the client — and is logged under an `error` key as `{ type, message, stack, code }`, taken from the driver error underneath so no SQL text or bound parameter reaches the log either (ADR-0010).
-- **Validation.** Request bodies, query strings and path parameters are validated at the boundary with strict zod schemas: an unknown field is a `400 VALIDATION_ERROR`, not a silently ignored typo. Strictness is top-level; a nested object declares its own with `z.strictObject(...)` (ADR-0009).
-- **A rejection names where, and which of your own keys.** `details` is a list of `{ path, message }`. The path is generated by the API (`body`, `query`, `body.window`, `body.items[3].sku`) and points at what to fix. An unknown field is named — `Unrecognized keys (1): "basePriceCent"` — because you cannot correct a typo you cannot see; keys are truncated at 64 characters rather than omitted, the list is capped, and the count is given so a truncated list is visibly truncated. What never comes back is a **value**: neither one you sent nor one we store. `details` is capped at the first 20 issues. The same key names, bounded the same way and never their values, are also logged at `warn` with the correlation id so a fleet of clients misconfigured the same way shows up in one place (ADR-0009, PR #30, commits `de3bf9e`, `af38e0c`, `4f10c7f`, `a218bf2`, `ec623cc` and `30bc002`).
-- **Request bodies** are capped at 100kb; a larger body is `413 PAYLOAD_TOO_LARGE`. A body that cannot be read is `400 VALIDATION_ERROR` whatever made it unreadable — malformed JSON, a connection dropped mid-upload, a body that will not decompress — and a charset the parser will not decode is `415 UNSUPPORTED_MEDIA_TYPE` (ADR-0009).
+- **Errors.** Every failure returns `{ "error": { "message": "..." } }`, and the status is what a client branches on. A 4xx carries the message its raiser wrote; a 5xx carries `Internal server error` unless the raiser marked it readable, which is `http-errors`' own `expose` rather than a rule of ours (ADR-0009).
+- **An unexpected error** — anything the `http-errors` library does not recognise — answers `500` with `Internal server error` and nothing else; the stack goes to the log under `err` and never to the response (ADR-0010).
+- **Validation.** Request bodies, query strings and path parameters are validated at the boundary with strict zod schemas: an unknown field is a `400`, not a silently ignored typo. The rejection names the failing part and nothing more (`Invalid request body`): no field path, no issue list, no echo of what you sent. Strictness is top-level; a nested object declares its own with `z.strictObject(...)` (ADR-0009).
+- **Request bodies** are capped at 100kb. Everything body-parser refuses keeps the status that says which failure it was — 400 for a body that cannot be read, 413 for one over the cap, 415 for a charset it will not decode — and its own message, which describes the caller's own request rather than anything of ours (ADR-0009).
 - **Correlation id.** Send `x-request-id` (matching `^[A-Za-z0-9._-]{1,128}$`) to trace a request; anything else is replaced by a generated uuid. The id used is returned in the `x-request-id` response header and appears as `reqId` on every JSON log line (ADR-0010).
 
 ## Development workflow

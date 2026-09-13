@@ -103,7 +103,9 @@ describe('POST /api/products', () => {
       visibleWhenEnqueued = rows.length;
     };
 
-    await request(createApp({ db: db(), publish })).post('/api/products').send(newBody());
+    await request(createApp({ db: db(), publish }))
+      .post('/api/products')
+      .send(newBody());
 
     expect(visibleWhenEnqueued).toBe(1);
   });
@@ -120,7 +122,7 @@ describe('POST /api/products', () => {
       .send({ ...body, name: 'A different name' });
 
     expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('SKU_EXISTS');
+    expect(res.body.error).toEqual({ message: 'A product with this SKU already exists' });
     expect(queue.enqueued).toEqual([]);
   });
 
@@ -153,7 +155,7 @@ describe('POST /api/products', () => {
       .send({ ...newBody(), ...patch });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toMatch(/^Invalid request /);
     expect(queue.enqueued).toEqual([]);
   });
 
@@ -171,6 +173,6 @@ describe('POST /api/products', () => {
     const res = await request(createApp()).post('/api/products').send(newBody());
 
     expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('NOT_FOUND');
+    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
   });
 });

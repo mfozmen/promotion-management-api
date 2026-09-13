@@ -120,7 +120,12 @@ describe('POST /api/promotions', () => {
   it('reports a promotion already running as live rather than scheduled', async () => {
     const res = await request(app())
       .post('/api/promotions')
-      .send({ ...draftBody(), startsAt: past(hour), endsAt: future(hour), category: uniqueCategory() });
+      .send({
+        ...draftBody(),
+        startsAt: past(hour),
+        endsAt: future(hour),
+        category: uniqueCategory(),
+      });
 
     expect(res.status).toBe(201);
     expect(res.body.state).toBe('live');
@@ -137,8 +142,12 @@ describe('POST /api/promotions', () => {
       .send({ ...draftBody(), name: 'A second sale', category });
 
     expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('PROMOTION_OVERLAP');
-    expect(res.body.error.details).toEqual({ conflictingPromotionId: first.body.id });
+    expect(res.body.error).toEqual({
+      message: 'An active promotion already covers that target for this window',
+    });
+    // The conflicting promotion is named nowhere: the envelope carries a message
+    // and another row's identifier is not the caller's to read (REVIEW.md 8.3b).
+    expect(JSON.stringify(res.body)).not.toContain(String(first.body.id));
   });
 
   it('allows two active promotions on one category when their windows do not meet', async () => {
@@ -168,14 +177,19 @@ describe('POST /api/promotions', () => {
       .send({ ...draftBody(), ...patch });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toMatch(/^Invalid request /);
     expect(rec.events).toEqual([]);
   });
 
   it('accepts a start in the past, which means now', async () => {
     const res = await request(app())
       .post('/api/promotions')
-      .send({ ...draftBody(), startsAt: past(hour), endsAt: future(hour), category: uniqueCategory() });
+      .send({
+        ...draftBody(),
+        startsAt: past(hour),
+        endsAt: future(hour),
+        category: uniqueCategory(),
+      });
 
     expect(res.status).toBe(201);
   });
@@ -259,8 +273,10 @@ describe('POST /api/promotions/:id/assign', () => {
       .send({ category });
 
     expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('PROMOTION_OVERLAP');
-    expect(res.body.error.details).toEqual({ conflictingPromotionId: running.body.id });
+    expect(res.body.error).toEqual({
+      message: 'An active promotion already covers that target for this window',
+    });
+    expect(JSON.stringify(res.body)).not.toContain(String(running.body.id));
   });
 
   it('answers 404 for a promotion that does not exist', async () => {
@@ -338,7 +354,12 @@ describe('GET /api/promotions', () => {
   it('returns a promotion by id with its derived state', async () => {
     const created = await request(app())
       .post('/api/promotions')
-      .send({ ...draftBody(), startsAt: past(hour), endsAt: future(hour), category: uniqueCategory() });
+      .send({
+        ...draftBody(),
+        startsAt: past(hour),
+        endsAt: future(hour),
+        category: uniqueCategory(),
+      });
 
     const res = await request(app()).get(`/api/promotions/${created.body.id}`);
 
@@ -350,7 +371,7 @@ describe('GET /api/promotions', () => {
     const res = await request(app()).get('/api/promotions/999999');
 
     expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('NOT_FOUND');
+    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
   });
 
   it('filters by category', async () => {
@@ -379,14 +400,16 @@ describe('GET /api/promotions', () => {
     const byStatus = await request(app()).get('/api/promotions').query({ status: 'draft' });
 
     expect(byProduct.body.items.map((row: { id: number }) => row.id)).toEqual([created.body.id]);
-    expect(byStatus.body.items.every((row: { status: string }) => row.status === 'draft')).toBe(true);
+    expect(byStatus.body.items.every((row: { status: string }) => row.status === 'draft')).toBe(
+      true,
+    );
   });
 
   it('rejects an unknown status rather than returning everything', async () => {
     const res = await request(app()).get('/api/promotions').query({ status: 'live-ish' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toMatch(/^Invalid request /);
   });
 
   it('reports an expired promotion as expired', async () => {
@@ -422,22 +445,21 @@ describe('the write store, not the handler, is what enforces one promotion at a 
 
     const [a, b] = await Promise.all([
       request(app()).post('/api/promotions').send(body),
-      request(app()).post('/api/promotions').send({ ...body, name: 'The other one' }),
+      request(app())
+        .post('/api/promotions')
+        .send({ ...body, name: 'The other one' }),
     ]);
 
     const statuses = [a.status, b.status].sort((x, y) => x - y);
     expect(statuses).toEqual([201, 409]);
 
-    const stored = await db()
-      .select()
-      .from(promotions)
-      .where(eq(promotions.category, category));
+    const stored = await db().select().from(promotions).where(eq(promotions.category, category));
     expect(stored).toHaveLength(1);
   });
 });
 
 describe('product-level targets take the same route as category ones', () => {
-  it('rejects an overlapping product promotion with the conflicting id', async () => {
+  it('rejects an overlapping product promotion without naming the one it collided with', async () => {
     const productId = await newProduct();
     const first = await request(app())
       .post('/api/promotions')
@@ -448,10 +470,13 @@ describe('product-level targets take the same route as category ones', () => {
       .send({ ...draftBody(), name: 'Second', productId });
 
     expect(res.status).toBe(409);
-    expect(res.body.error.details).toEqual({ conflictingPromotionId: first.body.id });
+    expect(res.body.error).toEqual({
+      message: 'An active promotion already covers that target for this window',
+    });
+    expect(JSON.stringify(res.body)).not.toContain(String(first.body.id));
   });
 
-  it('rejects an overlapping assign to a product with the conflicting id', async () => {
+  it('rejects an overlapping assign without naming the promotion in place', async () => {
     const productId = await newProduct();
     const running = await request(app())
       .post('/api/promotions')
@@ -463,7 +488,10 @@ describe('product-level targets take the same route as category ones', () => {
       .send({ productId });
 
     expect(res.status).toBe(409);
-    expect(res.body.error.details).toEqual({ conflictingPromotionId: running.body.id });
+    expect(res.body.error).toEqual({
+      message: 'An active promotion already covers that target for this window',
+    });
+    expect(JSON.stringify(res.body)).not.toContain(String(running.body.id));
   });
 });
 
@@ -481,7 +509,7 @@ describe('reading the whole list', () => {
     const res = await request(app()).get('/api/promotions/not-an-id');
 
     expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('NOT_FOUND');
+    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
   });
 
   it('answers 404 when cancelling an id that is not a number', async () => {
@@ -507,14 +535,10 @@ describe('two admins assigning one draft at the same moment', () => {
 
     expect([first.status, second.status].sort((a, b) => a - b)).toEqual([200, 409]);
 
-    const [stored] = await db()
-      .select()
-      .from(promotions)
-      .where(eq(promotions.id, created.body.id));
+    const [stored] = await db().select().from(promotions).where(eq(promotions.id, created.body.id));
     expect(stored?.status).toBe('active');
     expect(rec.events).toHaveLength(1);
   });
-
 });
 
 describe('an id in the URL that no promotion could have', () => {
@@ -540,7 +564,13 @@ describe('the admin list is bounded and pages by keyset', () => {
     for (let i = 0; i < 3; i += 1) {
       const created = await request(app())
         .post('/api/promotions')
-        .send({ ...draftBody(), name: `Sale ${i}`, category, startsAt: future((i + 1) * 10 * hour), endsAt: future((i + 1) * 10 * hour + hour) });
+        .send({
+          ...draftBody(),
+          name: `Sale ${i}`,
+          category,
+          startsAt: future((i + 1) * 10 * hour),
+          endsAt: future((i + 1) * 10 * hour + hour),
+        });
       ids.push(created.body.id);
     }
 
@@ -557,7 +587,7 @@ describe('the admin list is bounded and pages by keyset', () => {
     const res = await request(app()).get('/api/promotions').query({ limit: 1000 });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toMatch(/^Invalid request /);
   });
 });
 
@@ -570,7 +600,7 @@ describe('a promotion aimed at a product that does not exist', () => {
       .send({ ...draftBody(), productId: 424242 });
 
     expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('NOT_FOUND');
+    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
   });
 
   it('answers 404 on assign too', async () => {
@@ -581,7 +611,7 @@ describe('a promotion aimed at a product that does not exist', () => {
       .send({ productId: 424242 });
 
     expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('NOT_FOUND');
+    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
   });
 });
 
@@ -591,7 +621,12 @@ describe('a promotion that is already running when it is created', () => {
     // the queue milliseconds behind the first, and each rescans the whole category.
     const res = await request(app())
       .post('/api/promotions')
-      .send({ ...draftBody(), startsAt: past(hour), endsAt: future(hour), category: uniqueCategory() });
+      .send({
+        ...draftBody(),
+        startsAt: past(hour),
+        endsAt: future(hour),
+        category: uniqueCategory(),
+      });
 
     expect(res.status).toBe(201);
     expect(res.body.state).toBe('live');

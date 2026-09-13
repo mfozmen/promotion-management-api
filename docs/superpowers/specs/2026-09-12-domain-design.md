@@ -663,7 +663,7 @@ configuration, not application code.
 
 ## 10. API
 
-All routes under `/api`; JSON errors `{ error: { code, message, details? } }`;
+All routes under `/api`; JSON errors `{ error: { message } }`;
 zod validation at every boundary; OpenAPI generated from the zod schemas and
 served at `/api/docs` (Swagger UI) and `/api/openapi.json` (issue #2).
 
@@ -706,8 +706,8 @@ src/
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       one entry point per queue: promotions.ts, catalog.ts, ingestion.ts, maintenance.ts   (thin: create worker, register handler, start; `event-handler` runs the first two, `ingestion-worker` the third, `reconciler` the fourth plus its schedule)
-  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue/ (the BullMQ queues), graceful-shutdown.ts, logger.ts (pino, request ids)
-    http/        the HTTP boundary: error-code.ts, status-by-code.ts, http-error.ts, client-errors.ts, other-client-error.ts, error-mapping.ts, error-handler.ts, not-found-handler.ts, request-schemas.ts, request-validator.ts, validation-detail.ts, http-logger.ts (correlation id)
+  shared/        config.ts, db/ (client, migrator, SQL migrations; each module owns its tables under db/schema/), redis.ts, queue/ (the BullMQ queues), graceful-shutdown.ts, logger.ts (the pino root logger)
+    http/        the HTTP boundary: error-handler.ts, request-validator.ts, http-logger.ts (correlation id)
   events/        event-registry.ts and event-routing.ts: the event catalogue and its four-queue partition
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
   unit/          effective-price-calculator, csv-lines, base-price-calculator, base-price-calculator-cache, schemas, the HTTP boundary; capture-logger.ts and any other shared helper live here rather than at the tests/ root, which 7.7 keeps empty

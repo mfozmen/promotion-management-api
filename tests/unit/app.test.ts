@@ -17,7 +17,7 @@ describe('unknown routes', () => {
 
     expect(res.status).toBe(404);
     expect(res.type).toBe('application/json');
-    expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
+    expect(res.body).toEqual({ error: { message: 'Route not found' } });
   });
 
   it('does not echo the requested path back to the client', async () => {
@@ -85,7 +85,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(413);
     expect(res.body).toEqual({
-      error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' },
+      error: { message: 'request entity too large' },
     });
   });
 
@@ -106,7 +106,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
-      error: { code: 'VALIDATION_ERROR', message: 'Request body could not be read' },
+      error: { message: "Expected property name or '}' in JSON at position 2 (line 1 column 3)" },
     });
   });
 
@@ -118,10 +118,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(415);
     expect(res.body).toEqual({
-      error: {
-        code: 'UNSUPPORTED_MEDIA_TYPE',
-        message: 'Request body encoding is not supported',
-      },
+      error: { message: 'unsupported charset "ISO-8859-9"' },
     });
   });
 
@@ -137,7 +134,7 @@ describe('request body size cap', () => {
 
     expect(res.status).toBe(400);
     expect(res.body).toEqual({
-      error: { code: 'VALIDATION_ERROR', message: 'Request body could not be read' },
+      error: { message: 'Decompression failed' },
     });
   });
 });
@@ -169,6 +166,6 @@ describe('GET /api/health', () => {
     const res = await request(createApp()).get('/health');
 
     expect(res.status).toBe(404);
-    expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
+    expect(res.body).toEqual({ error: { message: 'Route not found' } });
   });
 });

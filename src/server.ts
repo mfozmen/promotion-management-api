@@ -45,11 +45,11 @@ process.on('SIGTERM', () => {
     .run(server)
     .then(async (path) => {
       await pool.end();
-      logger.info({ path, durationMs: Date.now() - startedAt }, 'shutdown complete');
+      logger.info({ path, ms: Date.now() - startedAt }, 'shutdown complete');
       process.exit(0);
     })
-    .catch((error: Error) => {
-      logger.error({ error: { message: error.message } }, 'shutdown failed');
+    .catch((error: unknown) => {
+      logger.error({ err: error }, 'shutdown failed');
       process.exit(1);
     });
 });

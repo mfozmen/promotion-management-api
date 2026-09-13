@@ -1,8 +1,8 @@
 import { Router, type Request, type Response } from 'express';
+import createError from 'http-errors';
 import { validate } from '../../../shared/http/request-validator.js';
 import type { Db } from '../../../shared/db/client.js';
 import type { Publish } from '../../../events/publish.js';
-import { HttpError } from '../../../shared/http/http-error.js';
 import type { PromotionScheduler } from '../domain/promotion-scheduler.js';
 import { assignPromotion } from '../db/assign-promotion.js';
 import { cancelPromotion } from '../db/cancel-promotion.js';
@@ -30,15 +30,11 @@ const ID_PATTERN = /^[1-9]\d*$/;
 
 const idFrom = (value: unknown): number => {
   const id = typeof value === 'string' && ID_PATTERN.test(value) ? Number(value) : Number.NaN;
-  if (!Number.isSafeInteger(id)) throw new HttpError('NOT_FOUND', 'No such promotion');
+  if (!Number.isSafeInteger(id)) throw createError(404, 'No such promotion');
   return id;
 };
 
-export function promotionRoutes(
-  db: Db,
-  publish: Publish,
-  scheduler: PromotionScheduler,
-): Router {
+export function promotionRoutes(db: Db, publish: Publish, scheduler: PromotionScheduler): Router {
   const router = Router();
 
   router.post(
@@ -76,36 +72,32 @@ export function promotionRoutes(
     },
   );
 
-  router.post(
-    '/:id/cancel',
-    async (req: Request, res: Response) => {
-      const id = idFrom(req.params.id);
-      const outcome = await cancelPromotion(db, id);
-      if (!outcome.ok) throw promotionWriteError(outcome);
+  router.post('/:id/cancel', async (req: Request, res: Response) => {
+    const id = idFrom(req.params.id);
+    const outcome = await cancelPromotion(db, id);
+    if (!outcome.ok) throw promotionWriteError(outcome);
 
-      // Only when this call is what cancelled it: a repeat is a success the
-      // caller asked for, and re-announcing would fan out over the category again.
-      if (outcome.changed) await announceCancellation(id, { publish, scheduler, log: req.log });
-      res.status(200).json(outcome.promotion);
-    },
-  );
+    // Only when this call is what cancelled it: a repeat is a success the
+    // caller asked for, and re-announcing would fan out over the category again.
+    if (outcome.changed) await announceCancellation(id, { publish, scheduler, log: req.log });
+    res.status(200).json(outcome.promotion);
+  });
 
   router.get(
     '/',
     validate({ query: listPromotionsQuerySchema }),
     async (req: Request, res: Response) => {
-      res.status(200).json({ items: await listPromotions(db, req.query as unknown as ListPromotionsQuery) });
+      res
+        .status(200)
+        .json({ items: await listPromotions(db, req.query as unknown as ListPromotionsQuery) });
     },
   );
 
-  router.get(
-    '/:id',
-    async (req: Request, res: Response) => {
-      const promotion = await findPromotion(db, idFrom(req.params.id));
-      if (!promotion) throw new HttpError('NOT_FOUND', 'No such promotion');
-      res.status(200).json(promotion);
-    },
-  );
+  router.get('/:id', async (req: Request, res: Response) => {
+    const promotion = await findPromotion(db, idFrom(req.params.id));
+    if (!promotion) throw createError(404, 'No such promotion');
+    res.status(200).json(promotion);
+  });
 
   return router;
 }

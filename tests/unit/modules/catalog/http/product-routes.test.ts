@@ -31,7 +31,7 @@ const validBody = (sku: string) => ({
 });
 
 describe('POST /api/products when the write fails', () => {
-  it('answers 500 INTERNAL and tells the client nothing about the failure', async () => {
+  it('answers 500 and tells the client nothing about the failure', async () => {
     const { logger } = captureLogger();
     const failure = Object.assign(new Error('violates check constraint "products_sku_key"'), {
       code: '23514',
@@ -48,7 +48,7 @@ describe('POST /api/products when the write fails', () => {
       });
 
     expect(res.status).toBe(500);
-    expect(res.body.error.code).toBe('INTERNAL');
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
     // The constraint name is a detail of our schema, not the caller's business.
     expect(JSON.stringify(res.body)).not.toContain('products_sku_key');
   });
@@ -65,7 +65,7 @@ describe('POST /api/products when the write fails', () => {
       .send(validBody('MC-9003'));
 
     expect(res.status).toBe(500);
-    expect(res.body.error.code).toBe('INTERNAL');
+    expect(res.body).toEqual({ error: { message: 'Internal server error' } });
   });
 
   it('logs an enqueue failure that is not an Error at all', async () => {
@@ -86,7 +86,11 @@ describe('POST /api/products when the write fails', () => {
       .send(validBody('MC-9004'));
 
     expect(res.status).toBe(201);
-    expect(lines.some((line: Record<string, unknown>) => String(line.msg).includes('could not be enqueued'))).toBe(true);
+    expect(
+      lines.some((line: Record<string, unknown>) =>
+        String(line.msg).includes('could not be enqueued'),
+      ),
+    ).toBe(true);
   });
 
   it('logs the enqueue failure without failing the request', async () => {
@@ -121,6 +125,10 @@ describe('POST /api/products when the write fails', () => {
       });
 
     expect(res.status).toBe(201);
-    expect(lines.some((line: Record<string, unknown>) => String(line.msg).includes('could not be enqueued'))).toBe(true);
+    expect(
+      lines.some((line: Record<string, unknown>) =>
+        String(line.msg).includes('could not be enqueued'),
+      ),
+    ).toBe(true);
   });
 });
