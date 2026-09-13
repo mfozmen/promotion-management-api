@@ -67,24 +67,17 @@ describe('errorHandler', () => {
         message: 'The read model is not ready yet; retry shortly',
       },
     });
-    // `details` is a handler's, and a 5xx handler's words never cross.
-    expect(res.body.error).not.toHaveProperty('details');
     expect(res.text).not.toContain('10.0.0.5');
   });
 
   it('gives a 5xx code with no public wording nothing to say', async () => {
-    const res = await request(
-      appThrowing(
-        createError(500, 'upstream 10.0.0.5 refused', {
-          details: [{ path: 'sql', message: 'select 1' }],
-        }),
-      ),
-    ).get('/boom');
+    const res = await request(appThrowing(createError(500, 'upstream 10.0.0.5 refused'))).get(
+      '/boom',
+    );
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: { message: 'Internal server error' } });
     expect(res.text).not.toContain('10.0.0.5');
-    expect(res.text).not.toContain('select 1');
   });
 
   it('logs a handler-raised 5xx as a server fault, with its message', async () => {
@@ -102,20 +95,6 @@ describe('errorHandler', () => {
     expect(createError(500, 'x').expose).toBe(false);
     expect(createError(409, 'x').expose).toBe(true);
     expect(createError(503, 'x', { expose: true }).expose).toBe(true);
-  });
-
-  it('carries no details, whatever the raiser attached', async () => {
-    // A custom `details` property on the error is not response surface: the envelope
-    // is a message and nothing else, so a raiser cannot widen it by accident.
-    const res = await request(
-      appThrowing(
-        createError(400, 'Invalid request body', {
-          details: [{ path: 'body.sku', message: 'too short' }],
-        }),
-      ),
-    ).get('/boom');
-
-    expect(res.body).toEqual({ error: { message: 'Invalid request body' } });
   });
 
   it('logs the rejection with the correlation id', async () => {

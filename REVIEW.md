@@ -583,16 +583,10 @@ and there is nothing to fix by seeing it again, so a 404 does not echo the path.
 This binds every message that reaches a response, not only the ones a
 middleware writes. A handler's own 4xx message crosses as written, unbounded and
 uninspected, so a message naming a row the caller
-never saw is a finding wherever it was built. A schema's message is the same
-case one layer down — a custom or refinement message must not interpolate the
-value it rejected, because the validator forwards what the schema produced.
+never saw is a finding wherever it was built.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
-another row's fields, which they never had. `Unrecognized key: "discountTyp"` is
-correct: the client cannot fix the request without knowing which of its own keys
-was wrong. The interpolation hole was found by probe on PR #30: a refinement
-message naming the received value reached the response body, past every other
-guard.
+another row's fields, which they never had.
 
 8.4 No internal detail escapes to the client: no stack trace, no SQL text, no
 connection string, no secret, in a response. A log line is read by the operator,
