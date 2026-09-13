@@ -327,7 +327,7 @@ The first two modules were reviewed file by file, and the same three findings ca
 ```
 src/modules/<module>/
   domain/        the module's rules as functions; imports no store and no framework
-    dto/         the types, interfaces and enum-like aliases those functions operate on
+    dto/         every shape those functions operate on: types, interfaces, enum-like aliases, zod schemas, queue payloads
   db/            queries and repositories (Drizzle)
   http/          routes, handlers, request schemas (zod)
   jobs/          BullMQ processors
