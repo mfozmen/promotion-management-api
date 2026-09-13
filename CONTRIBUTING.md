@@ -10,10 +10,11 @@ src/
     domain/     behaviour as classes, collaborators through the constructor (REVIEW.md 8c.9); imports no store and no framework
       dto/      every shape those classes operate on: types, interfaces, enum-like aliases, zod schemas, queue payloads (8c.8)
     db/         queries and repositories (Drizzle)
+      schema/   this module's tables, one file per table (REVIEW.md 8c.10)
     http/       routes, handlers, request schemas (zod)
     jobs/       BullMQ processors
   shared/
-    db/schema/  one file per table, schema.ts re-exports
+    db/         the client and the migrator; migrations/ holds the one journal
     http/       error type, error handler, request validator, logger
     config.ts
 tests/
@@ -22,7 +23,7 @@ tests/
   e2e/
 ```
 
-Test files import their subject through the `@src/*` alias — `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'` — wired in `tsconfig.json` `paths` and `vitest.workspace.ts`, which declares the alias once and spreads it into both projects (a workspace project does not inherit the root `vitest.config.ts` `resolve` block). Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
+Test files import their subject through the `@src/*` alias — `import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js'` — wired in `tsconfig.json` `paths` and `vitest.workspace.ts`, which declares the alias once and spreads it into both projects (a workspace project does not inherit the root `vitest.config.ts` `resolve` block). Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
 
 A module opens a directory when it has a file for it, not before. No `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/` anywhere, except `domain/dto/` (REVIEW.md 8c.8).
 
@@ -87,7 +88,7 @@ An agent definition is in both groups: the agent itself must be exercised, and e
 
 ## Local agents
 
-Four Claude Code agents live in `.claude/agents/`. They are part of the process, not optional:
+Five Claude Code agents live in `.claude/agents/`. They are part of the process, not optional:
 
 | Agent                 | When it runs                                                                                                                                                 | Output                                                                                           |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |

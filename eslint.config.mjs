@@ -12,6 +12,20 @@ export default tseslint.config(
   {
     rules: {
       complexity: ['error', 10],
+      '@typescript-eslint/member-ordering': [
+        'error',
+        {
+          default: [
+            'field',
+            'constructor',
+            'public-static-method',
+            'public-method',
+            'protected-method',
+            'private-static-method',
+            'private-method',
+          ],
+        },
+      ],
     },
   },
   {

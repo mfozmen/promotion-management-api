@@ -7,8 +7,8 @@ export const ingestionJobs = pgTable(
   {
     id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
     vendor: text('vendor').notNull(),
-    fileRef: text('file_ref').notNull(), // path under UPLOAD_DIR, blob key in production
-    fileSha256: text('file_sha256').notNull().unique(), // same file twice is a 409, never a second job
+    fileRef: text('file_ref').notNull(),
+    fileSha256: text('file_sha256').notNull().unique(),
     fileSizeBytes: bigint('file_size_bytes', { mode: 'number' }).notNull(),
     chunksTotal: integer('chunks_total').notNull(),
     chunksDone: integer('chunks_done').notNull().default(0),
