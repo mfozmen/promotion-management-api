@@ -32,8 +32,10 @@ Your findings outlive one run, and nothing else remembers them. Keep them in
 alone — writing there is not editing the work under review.
 
 ```sh
-BRANCH=$(git rev-parse --abbrev-ref HEAD | tr '/' '-')
-STATE=".claude/review-state/impact-analyzer/$BRANCH.md"
+# --abbrev-ref is "HEAD" when detached, which would give every detached run one
+# shared notebook; the sha keeps them apart.
+REF=$(git symbolic-ref --quiet --short HEAD || git rev-parse --short HEAD)
+STATE=".claude/review-state/impact-analyzer/$(echo "$REF" | tr '/' '-').md"
 ```
 
 **First thing, every run:** read it. If it is missing this is your first pass on
