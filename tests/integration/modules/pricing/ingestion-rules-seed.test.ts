@@ -63,9 +63,9 @@ describe('the seeded rules through the engine wrapper', () => {
   });
 
   it('prices through the cached loader, the way a batch will', async () => {
-    const loader = new RuleSetLoader(loadSeededRules, () => 0);
+    const loader = new RuleSetLoader({ source: loadSeededRules, now: () => 0 });
 
-    const [first, second] = await Promise.all([loader.current(), loader.current()]);
+    const [first, second] = await Promise.all([loader.load(), loader.load()]);
 
     expect(second).toBe(first);
     await expect(new RowPricer(first).price(vendorRow())).resolves.toMatchObject({
