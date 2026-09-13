@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
+import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
 import type { Db } from '@src/shared/db/client.js';
 import type { Publish } from '@src/events/publish.js';
@@ -37,7 +38,7 @@ describe('POST /api/products when the write fails', () => {
       code: '23514',
     });
 
-    const res = await request(createApp({ logger, db: throwingDb(failure), publish }))
+    const res = await request(createApp(appDeps({ logger, db: throwingDb(failure), publish })))
       .post('/api/products')
       .send({
         sku: 'MC-9001',
@@ -59,7 +60,7 @@ describe('POST /api/products when the write fails', () => {
     } as unknown as Db;
 
     const res = await request(
-      createApp({ logger: captureLogger().logger, db: returningNothing, publish }),
+      createApp(appDeps({ logger: captureLogger().logger, db: returningNothing, publish })),
     )
       .post('/api/products')
       .send(validBody('MC-9003'));
@@ -81,7 +82,7 @@ describe('POST /api/products when the write fails', () => {
       }),
     } as unknown as Db;
 
-    const res = await request(createApp({ logger, db, publish: rejectsWithString }))
+    const res = await request(createApp(appDeps({ logger, db, publish: rejectsWithString })))
       .post('/api/products')
       .send(validBody('MC-9004'));
 
@@ -114,7 +115,7 @@ describe('POST /api/products when the write fails', () => {
       }),
     } as unknown as Db;
 
-    const res = await request(createApp({ logger, db, publish: failing }))
+    const res = await request(createApp(appDeps({ logger, db, publish: failing })))
       .post('/api/products')
       .send({
         sku: 'MC-9002',

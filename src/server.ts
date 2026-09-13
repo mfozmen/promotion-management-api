@@ -7,6 +7,8 @@ import { createDb, createPool } from './shared/db/client.js';
 import { runMigrations } from './shared/db/migrate.js';
 import { GracefulShutdown } from './shared/graceful-shutdown.js';
 import { logger } from './shared/logger.js';
+import { ProductReadRepository } from './modules/storefront/db/product-read-repository.js';
+import { createReadModelClient } from './shared/read-model-client.js';
 import { EventQueue } from './shared/queue/event-queue.js';
 
 const config = loadConfig();
@@ -22,15 +24,14 @@ const queue = EventQueue.connect(
   eventRouting,
 );
 
-// Every dependency the routes need is passed here, because `createApp` mounts a
-// route only when it has them: an omission is a 404 in production and a green
-// suite, since every test builds its own. This file is excluded from coverage
-// (REVIEW.md 7.2), so nothing but reading it catches that.
 const app = createApp({
   logger,
   db: createDb(pool),
   publish: (name, payload) => queue.publish(name, payload).then(() => undefined),
   scheduler: new PromotionScheduler(queue),
+  products: new ProductReadRepository(
+    createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB),
+  ),
 });
 
 const server = app.listen(config.PORT, () => {

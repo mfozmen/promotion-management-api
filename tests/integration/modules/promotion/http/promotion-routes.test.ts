@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
 import { products } from '@src/modules/catalog/db/schema/products.js';
 import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
@@ -77,7 +78,7 @@ const draftBody = () => ({
 });
 
 let rec: ReturnType<typeof recorder>;
-const app = () => createApp({ db: db(), publish: rec.publish, scheduler: rec.scheduler });
+const app = () => createApp(appDeps({ db: db(), publish: rec.publish, scheduler: rec.scheduler }));
 
 beforeEach(() => {
   rec = recorder();
@@ -429,12 +430,6 @@ describe('GET /api/promotions', () => {
     const res = await request(app()).get(`/api/promotions/${row!.id}`);
 
     expect(res.body.state).toBe('expired');
-  });
-
-  it('is not mounted without a database', async () => {
-    const res = await request(createApp()).get('/api/promotions');
-
-    expect(res.status).toBe(404);
   });
 });
 

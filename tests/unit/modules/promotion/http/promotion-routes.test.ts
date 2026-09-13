@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
+import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
 import type { Db } from '@src/shared/db/client.js';
 import type { Publish } from '@src/events/publish.js';
@@ -57,12 +58,14 @@ describe('POST /api/promotions when the announcement fails', () => {
     const failing: Publish = () => Promise.reject(new Error('Redis is down'));
 
     const res = await request(
-      createApp({
-        logger,
-        db: insertReturning([stored]),
-        publish: failing,
-        scheduler: silentScheduler,
-      }),
+      createApp(
+        appDeps({
+          logger,
+          db: insertReturning([stored]),
+          publish: failing,
+          scheduler: silentScheduler,
+        }),
+      ),
     )
       .post('/api/promotions')
       .send(body);
@@ -79,12 +82,14 @@ describe('POST /api/promotions when the announcement fails', () => {
     const { logger, lines } = captureLogger();
 
     const res = await request(
-      createApp({
-        logger,
-        db: insertReturning([stored]),
-        publish: noopPublish,
-        scheduler: failingScheduler('Redis is down'),
-      }),
+      createApp(
+        appDeps({
+          logger,
+          db: insertReturning([stored]),
+          publish: noopPublish,
+          scheduler: failingScheduler('Redis is down'),
+        }),
+      ),
     )
       .post('/api/promotions')
       .send(body);
@@ -99,12 +104,14 @@ describe('POST /api/promotions when the announcement fails', () => {
 
   it('answers 500 rather than a half-built promotion when the insert returns no row', async () => {
     const res = await request(
-      createApp({
-        logger: captureLogger().logger,
-        db: insertReturning([]),
-        publish: noopPublish,
-        scheduler: silentScheduler,
-      }),
+      createApp(
+        appDeps({
+          logger: captureLogger().logger,
+          db: insertReturning([]),
+          publish: noopPublish,
+          scheduler: silentScheduler,
+        }),
+      ),
     )
       .post('/api/promotions')
       .send(body);
@@ -125,12 +132,14 @@ describe('POST /api/promotions/:id/cancel when the announcement fails', () => {
     } as unknown as Db;
 
     const res = await request(
-      createApp({
-        logger,
-        db,
-        publish: () => Promise.reject(new Error('Redis is down')),
-        scheduler: silentScheduler,
-      }),
+      createApp(
+        appDeps({
+          logger,
+          db,
+          publish: () => Promise.reject(new Error('Redis is down')),
+          scheduler: silentScheduler,
+        }),
+      ),
     )
       .post('/api/promotions/7/cancel')
       .send();
@@ -141,16 +150,6 @@ describe('POST /api/promotions/:id/cancel when the announcement fails', () => {
         String(line.msg).includes('could not be announced'),
       ),
     ).toBe(true);
-  });
-});
-
-describe('the promotion routes are not mounted without their dependencies', () => {
-  it('answers 404 when the app has a database but no boundary scheduler', async () => {
-    const res = await request(
-      createApp({ db: insertReturning([stored]), publish: noopPublish }),
-    ).get('/api/promotions');
-
-    expect(res.status).toBe(404);
   });
 });
 
@@ -168,15 +167,17 @@ describe('POST /api/promotions/:id/cancel when the boundaries cannot be dropped'
     } as unknown as Db;
 
     const res = await request(
-      createApp({
-        logger,
-        db,
-        publish: noopPublish,
-        scheduler: new PromotionScheduler({
-          publish: () => Promise.resolve({} as never),
-          remove: () => Promise.reject(new Error('Redis is down')),
+      createApp(
+        appDeps({
+          logger,
+          db,
+          publish: noopPublish,
+          scheduler: new PromotionScheduler({
+            publish: () => Promise.resolve({} as never),
+            remove: () => Promise.reject(new Error('Redis is down')),
+          }),
         }),
-      }),
+      ),
     )
       .post('/api/promotions/7/cancel')
       .send();
@@ -201,12 +202,14 @@ describe('a rejection that is not an Error still reaches the log', () => {
     } as unknown as Db;
 
     const res = await request(
-      createApp({
-        logger,
-        db,
-        publish: noopPublish,
-        scheduler: failingScheduler('gone'),
-      }),
+      createApp(
+        appDeps({
+          logger,
+          db,
+          publish: noopPublish,
+          scheduler: failingScheduler('gone'),
+        }),
+      ),
     )
       .post('/api/promotions/7/cancel')
       .send();
@@ -239,15 +242,17 @@ describe('a failing boundary call never costs the event', () => {
     };
 
     const res = await request(
-      createApp({
-        logger: captureLogger().logger,
-        db: cancellingDb,
-        publish: recording,
-        scheduler: new PromotionScheduler({
-          publish: () => Promise.resolve({} as never),
-          remove: () => Promise.reject(new Error('Redis is down')),
+      createApp(
+        appDeps({
+          logger: captureLogger().logger,
+          db: cancellingDb,
+          publish: recording,
+          scheduler: new PromotionScheduler({
+            publish: () => Promise.resolve({} as never),
+            remove: () => Promise.reject(new Error('Redis is down')),
+          }),
         }),
-      }),
+      ),
     )
       .post('/api/promotions/7/cancel')
       .send();
@@ -261,22 +266,24 @@ describe('a failing boundary call never costs the event', () => {
     // only delays one. Sequential awaits meant one failure took the other.
     const scheduled: string[] = [];
     const res = await request(
-      createApp({
-        logger: captureLogger().logger,
-        db: insertReturning([stored]),
-        publish: noopPublish,
-        scheduler: new PromotionScheduler({
-          publish: (_name, _payload, options) => {
-            const boundary = String(options?.jobId ?? '').endsWith(':activate')
-              ? 'activate'
-              : 'expire';
-            if (boundary === 'activate') return Promise.reject(new Error('Redis is down'));
-            scheduled.push(boundary);
-            return Promise.resolve({} as never);
-          },
-          remove: () => Promise.resolve(1),
+      createApp(
+        appDeps({
+          logger: captureLogger().logger,
+          db: insertReturning([stored]),
+          publish: noopPublish,
+          scheduler: new PromotionScheduler({
+            publish: (_name, _payload, options) => {
+              const boundary = String(options?.jobId ?? '').endsWith(':activate')
+                ? 'activate'
+                : 'expire';
+              if (boundary === 'activate') return Promise.reject(new Error('Redis is down'));
+              scheduled.push(boundary);
+              return Promise.resolve({} as never);
+            },
+            remove: () => Promise.resolve(1),
+          }),
         }),
-      }),
+      ),
     )
       .post('/api/promotions')
       .send(body);

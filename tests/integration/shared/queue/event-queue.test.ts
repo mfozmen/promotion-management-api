@@ -193,7 +193,7 @@ describe('EventQueue', () => {
       ),
     );
 
-    const job = await bus.publish('ingestion.chunk', { jobId: 1, chunkIndex: 0 });
+    const job = await bus.publish('chunk.process', { jobId: 1, chunkIndex: 0 });
 
     // This job, not the queue's failed count: a sibling worktree's suite writes here too.
     await waitFor(
@@ -214,7 +214,7 @@ describe('EventQueue', () => {
       await readModel.flushdb();
 
       await bus.publish('product.upserted', { productIds: [1] });
-      await bus.publish('ingestion.chunk', { jobId: 1, chunkIndex: 0 });
+      await bus.publish('chunk.process', { jobId: 1, chunkIndex: 0 });
 
       expect(await readModel.dbsize()).toBe(0);
       expect(await queueDb.exists(`${PREFIX}:catalog:meta`)).toBe(1);

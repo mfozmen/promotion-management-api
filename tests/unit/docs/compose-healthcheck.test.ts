@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
+import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
 
 /**
@@ -20,7 +21,7 @@ function probePath(): string {
 
 describe('the api healthcheck', () => {
   it('fetches a path the application actually serves', async () => {
-    const res = await request(createApp()).get(probePath());
+    const res = await request(createApp(appDeps())).get(probePath());
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: 'ok' });

@@ -1,7 +1,9 @@
 import { connect } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
+import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
+import { logger as rootLogger } from '@src/shared/logger.js';
 import { eventRegistry } from '@src/events/event-registry.js';
 import { eventRouting } from '@src/events/event-routing.js';
 import { EventQueue } from '@src/shared/queue/event-queue.js';
@@ -15,7 +17,7 @@ describe('GracefulShutdown', () => {
     server: ReturnType<typeof createApp.prototype.listen>;
     port: number;
   }> => {
-    const server = createApp().listen(0);
+    const server = createApp(appDeps({ logger: rootLogger })).listen(0);
     await new Promise((resolve) => server.once('listening', resolve));
     return { server, port: (server.address() as AddressInfo).port };
   };

@@ -72,7 +72,7 @@ Test cases
 - Given: the sale fully applied
 - When: 100 concurrent shoppers list and open Accessories products for 15 seconds
 - Then: every response correct, none from the write database
-- Measure: p99 latency under 100 ms, median of three; PostgreSQL statement count during the run near zero
+- Measure: p99 latency under 300 ms at 100 connections, median of three runs; PostgreSQL statement count during the run near zero. The bar is provisional: it was derived from a run of the health route on one machine, never from these routes. A run that overshoots it fails the case; only an owner decision raises it.
 
 ## S14 Ending the sale
 

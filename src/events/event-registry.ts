@@ -1,14 +1,14 @@
-import { productUpserted } from '../modules/catalog/domain/dto/product-upserted.js';
-import { ingestionChunk } from '../modules/ingestion/domain/dto/ingestion-chunk.js';
-import { promotionChanged } from '../modules/promotion/domain/dto/promotion-changed.js';
-import { readmodelRebuild } from './readmodel-rebuild.js';
+import { productUpserted } from '../modules/catalog/events/product-upserted.js';
+import { chunkProcess } from '../modules/ingestion/events/chunk-process.js';
+import { promotionChanged } from '../modules/promotion/events/promotion-changed.js';
+import { readModelRebuild } from '../modules/storefront/events/readmodel-rebuild.js';
 import { reconcilerRun } from './reconciler-run.js';
 
 /** The application's event catalogue; it sits above the modules, not in `shared/`. ADR-0008. */
 export const eventRegistry = {
   'product.upserted': productUpserted,
   'promotion.changed': promotionChanged,
-  'readmodel.rebuild': readmodelRebuild,
+  'readmodel.rebuild': readModelRebuild,
   'reconciler.run': reconcilerRun,
-  'ingestion.chunk': ingestionChunk,
+  'chunk.process': chunkProcess,
 } as const;

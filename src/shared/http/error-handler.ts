@@ -31,9 +31,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   const retriable = headers['retry-after'] !== undefined;
 
   if (err.status < 500 || retriable) {
-    // The message too: the client is told which part failed, and without this the
-    // operator greps the reqId and finds only a status — knowing less than the caller.
-    req.log.warn({ status: err.status, reason: err.message }, 'request rejected');
+    // `err` too: a retriable 5xx carries the driver failure as its cause, and
+    // without it every outage line reads the same and nothing says which.
+    req.log.warn({ status: err.status, reason: err.message, err }, 'request rejected');
   } else {
     req.log.error({ status: err.status, err }, 'server fault raised by a handler');
   }

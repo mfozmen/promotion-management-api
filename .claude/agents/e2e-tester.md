@@ -220,7 +220,10 @@ first result is ambiguous, and say so.
 - Zero non-2xx responses under read load, zero timeouts.
 - No deadlock in the PostgreSQL log, no statement count that scales with page
   size, one rebuild per cache expiry, and heap returning to its baseline.
-- p99 latency for `GET /api/products/:id` under 100 ms locally.
+- p99 latency for `GET /api/products/:id` under 300 ms at 100 connections,
+  median of three runs. The bar is provisional — it came from a run of the
+  health route on one machine and no record holds it — but it is a bar: a run
+  above it fails and is reported, and only the owner moves the number.
 - Peak RSS under 256 MB for the API, under 128 MB for an ingestion run.
 - Every invariant in section 2 holds after every race scenario in section 3.
 

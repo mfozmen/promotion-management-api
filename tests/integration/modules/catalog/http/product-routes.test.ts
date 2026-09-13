@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
+import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
 import { products } from '@src/modules/catalog/db/schema/products.js';
 import type { Publish } from '@src/events/publish.js';
@@ -42,7 +43,7 @@ describe('POST /api/products', () => {
   it('stores the product and answers 201 with it', async () => {
     const body = newBody();
     const queue = recordingQueue();
-    const res = await request(createApp({ db: db(), publish: queue.publish }))
+    const res = await request(createApp(appDeps({ db: db(), publish: queue.publish })))
       .post('/api/products')
       .send(body);
 
@@ -63,7 +64,7 @@ describe('POST /api/products', () => {
 
   it('returns only the fields the API owns, never the ingestion columns', async () => {
     const queue = recordingQueue();
-    const res = await request(createApp({ db: db(), publish: queue.publish }))
+    const res = await request(createApp(appDeps({ db: db(), publish: queue.publish })))
       .post('/api/products')
       .send(newBody());
 
@@ -79,7 +80,7 @@ describe('POST /api/products', () => {
 
   it('enqueues product.upserted with the new id', async () => {
     const queue = recordingQueue();
-    const res = await request(createApp({ db: db(), publish: queue.publish }))
+    const res = await request(createApp(appDeps({ db: db(), publish: queue.publish })))
       .post('/api/products')
       .send(newBody());
 
@@ -103,7 +104,7 @@ describe('POST /api/products', () => {
       visibleWhenEnqueued = rows.length;
     };
 
-    await request(createApp({ db: db(), publish }))
+    await request(createApp(appDeps({ db: db(), publish })))
       .post('/api/products')
       .send(newBody());
 
@@ -113,7 +114,7 @@ describe('POST /api/products', () => {
   it('answers 409 SKU_EXISTS for a duplicate sku, and enqueues nothing', async () => {
     const body = newBody();
     const queue = recordingQueue();
-    const app = createApp({ db: db(), publish: queue.publish });
+    const app = createApp(appDeps({ db: db(), publish: queue.publish }));
     await request(app).post('/api/products').send(body);
     queue.enqueued.length = 0;
 
@@ -130,7 +131,7 @@ describe('POST /api/products', () => {
     // The row is committed; losing the event costs read-model freshness until
     // the reconciler sweeps, which is a smaller failure than losing the write.
     const body = newBody();
-    const res = await request(createApp({ db: db(), publish: failingPublish }))
+    const res = await request(createApp(appDeps({ db: db(), publish: failingPublish })))
       .post('/api/products')
       .send(body);
 
@@ -150,7 +151,7 @@ describe('POST /api/products', () => {
     ['an unknown field', { colour: 'red' }],
   ])('answers 400 VALIDATION_ERROR for %s', async (_case, patch) => {
     const queue = recordingQueue();
-    const res = await request(createApp({ db: db(), publish: queue.publish }))
+    const res = await request(createApp(appDeps({ db: db(), publish: queue.publish })))
       .post('/api/products')
       .send({ ...newBody(), ...patch });
 
@@ -161,18 +162,11 @@ describe('POST /api/products', () => {
 
   it('does not echo the rejected value back to the caller', async () => {
     // REVIEW.md 8.4: the response names the field, never what the client sent.
-    const res = await request(createApp({ db: db(), publish: recordingQueue().publish }))
+    const res = await request(createApp(appDeps({ db: db(), publish: recordingQueue().publish })))
       .post('/api/products')
       .send({ ...newBody(), sku: 'secret-looking-value'.repeat(20) });
 
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body)).not.toContain('secret-looking-value');
-  });
-
-  it('is not mounted when the app has no database', async () => {
-    const res = await request(createApp()).post('/api/products').send(newBody());
-
-    expect(res.status).toBe(404);
-    expect(res.body.error.message).toMatch(/^(No such|Route not found)/);
   });
 });
