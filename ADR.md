@@ -50,7 +50,7 @@ Use Vitest as the test runner, paired with Supertest for HTTP integration tests 
 
 ---
 
-## ADR-0003: PostgreSQL write store, Redis read model, BullMQ event bus (CQRS)
+## ADR-0003: PostgreSQL write store, Redis read model, BullMQ event queue (CQRS)
 
 **Status:** Accepted — see `docs/superpowers/specs/2026-09-12-domain-design.md`
 
@@ -100,7 +100,7 @@ It does **not** catch a changed `POSTGRES_PASSWORD`, and nothing in the containe
 - Correlation-id transport across the queue boundary is undecided: payloads are strict, so an id has to be added to the event schemas, and that decision belongs with the work that introduces the logger.
 - The queue's logical database comes from `REDIS_QUEUE_DB` through `config.ts`, passed into `EventQueue.connect`. It was a `QUEUE_DB = 1` constant until this branch, which made the configuration's own refusal to let the queue and the read model share a database unable to fire: it validated a value nothing read.
 - **A delayed boundary job fires on the producer's clock, not PostgreSQL's.** `schedulePromotionBoundary` computes its delay from two database timestamps, but BullMQ counts that delay from the producer's own `Date.now()`. An API process running ahead of the database fires `expire` early, the handler reads `active_promotions` on the database clock, still finds the promotion live, and republishes the discounted price; nothing re-fires. The reconciler's boundary sweep is what closes it, which is why the sweep is the mechanism of record rather than the job.
-- **Queues are partitioned by urgency, and nothing is prioritised inside a queue.** Four of them: `promotions` (`promotion.changed` and the delayed boundary jobs), `catalog` (`product.upserted`), `ingestion` (`ingestion.chunk`) and `maintenance` (`readmodel.rebuild`, `reconcile.run`). Routing stays a name-keyed map, `queueOfEvent`, so a producer cannot choose a queue and an event's urgency is a property of the event rather than of the caller. The partition was two queues until an architecture round showed the split did not isolate what it claimed: `product.upserted` shared the `events` queue with `promotion.changed`, so a 500 000-row import's ~500 announcements queued in front of a flash sale on a `concurrency: 1` consumer — roughly three minutes of backlog before the sale's own rescan started, and each scenario passed alone, so no test saw it. A per-publish queue argument and a job priority were both rejected: the first makes urgency the caller's to remember, the second leaves the two workloads sharing one consumer's throughput. One BullMQ `Worker` per queue, in the same process where that is convenient; separate workers, not separate containers, is the requirement.
+- **Queues are partitioned by urgency, and nothing is prioritised inside a queue.** Four of them: `promotions` (`promotion.changed` and the delayed boundary jobs), `catalog` (`product.upserted`), `ingestion` (`ingestion.chunk`) and `maintenance` (`readmodel.rebuild`, `reconcile.run`). Routing stays a name-keyed map, `routing`, so a producer cannot choose a queue and an event's urgency is a property of the event rather than of the caller. The partition was two queues until an architecture round showed the split did not isolate what it claimed: `product.upserted` shared the `events` queue with `promotion.changed`, so a 500 000-row import's ~500 announcements queued in front of a flash sale on a `concurrency: 1` consumer — roughly three minutes of backlog before the sale's own rescan started, and each scenario passed alone, so no test saw it. A per-publish queue argument and a job priority were both rejected: the first makes urgency the caller's to remember, the second leaves the two workloads sharing one consumer's throughput. One BullMQ `Worker` per queue, in the same process where that is convenient; separate workers, not separate containers, is the requirement.
 - **It is an event queue, not pub/sub.** A job is taken by one consumer and survives until it is; delivery is at-least-once, so every handler recomputes from PostgreSQL rather than applying a delta it was handed. The class is `EventQueue` for that reason: "bus" would promise fan-out this does not do.
 - `EventQueue.inspect` returns a queue narrowed to three reads. Anything that writes stays off it: `add` would skip both the payload parse and the 2 s bound, which are the two guarantees `publish` exists to give.
 
@@ -310,7 +310,7 @@ A category promotion must affect tens of thousands of products the moment it is 
 
 ### Context
 
-The read model, the event bus and chunked ingestion each introduce a way for state to diverge or work to stall. The system must both repair itself and expose handles for an operator to intervene when a backlog builds.
+The read model, the event queue and chunked ingestion each introduce a way for state to diverge or work to stall. The system must both repair itself and expose handles for an operator to intervene when a backlog builds.
 
 ### Decision
 

@@ -10,7 +10,7 @@ phase).
 CQRS on a modular monolith. PostgreSQL 16 is the write store and the only
 source of truth. Redis 7 holds the read model the storefront queries (sorted
 sets for price-ordered listings, hashes for product detail) and never falls
-back to PostgreSQL. BullMQ (Redis-backed) is the event bus: every write emits
+back to PostgreSQL. BullMQ (Redis-backed) is the event queue: every write emits
 a job, the event-handler worker recomputes the affected read-model entries
 from PostgreSQL, the ingestion worker processes vendor-file chunks under
 serverless-shaped limits, and a reconciler repairs drift. One codebase, one

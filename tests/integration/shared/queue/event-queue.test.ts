@@ -16,11 +16,7 @@ const QUEUE_DB = 1;
 const PREFIX = `bulltest-${randomUUID().slice(0, 8)}`;
 const QUEUE_NAMES = ['promotions', 'catalog', 'ingestion', 'maintenance'] as const;
 
-/**
- * Cleanup owns its own handles rather than a method on `EventQueue`: obliterating a
- * queue is not something a running process should be able to do, and scoping it to
- * this run's prefix is what makes it safe to do here at all.
- */
+/** Obliterating a queue is not something a running process should be able to do. */
 async function clearOwnQueues(): Promise<void> {
   const options = { connection: { url: redisUrl, db: QUEUE_DB }, prefix: PREFIX };
   const queues = QUEUE_NAMES.map((name) => new Queue(name, options));
@@ -117,37 +113,22 @@ describe('EventQueue', () => {
     expect(await bus.inspect('promotions').getWaitingCount()).toBe(0);
   });
 
-  it('deduplicates a promotion boundary job by its deterministic id', async () => {
-    const startsAt = new Date('2026-09-13T00:00:00.000Z');
-    const now = new Date('2026-09-12T00:00:00.000Z');
+  it('deduplicates a job by the id its caller supplies', async () => {
+    const options = { jobId: 'promo:5:activate', delay: 86_400_000 };
 
-    const first = await bus.schedulePromotionBoundary(5, 'activate', startsAt, now);
-    const second = await bus.schedulePromotionBoundary(5, 'activate', startsAt, now);
+    const first = await bus.publish('promotion.changed', { promotionId: 5 }, options);
+    const second = await bus.publish('promotion.changed', { promotionId: 5 }, options);
 
     expect(first.id).toBe('promo:5:activate');
     expect(second.id).toBe(first.id);
     expect(await bus.inspect('promotions').getDelayedCount()).toBe(1);
   });
 
-  it('enqueues a boundary immediately when its instant has already passed', async () => {
-    const startsAt = new Date('2026-09-11T00:00:00.000Z');
-    const now = new Date('2026-09-12T00:00:00.000Z');
-
-    await bus.schedulePromotionBoundary(6, 'activate', startsAt, now);
-
-    expect(await bus.inspect('promotions').getDelayedCount()).toBe(0);
-    expect(await bus.inspect('promotions').getWaitingCount()).toBe(1);
-  });
-
   it.each([
-    ['one millisecond before the boundary', 1, 'delayed'],
-    ['exactly at the boundary', 0, 'waiting'],
-    ['one millisecond after the boundary', -1, 'waiting'],
-  ] as const)('schedules a boundary %s', async (_case, offsetMs, expected) => {
-    const at = new Date('2026-09-12T12:00:00.000Z');
-    const now = new Date(at.getTime() - offsetMs);
-
-    const job = await bus.schedulePromotionBoundary(8, 'expire', at, now);
+    ['a delay of one millisecond', 1, 'delayed'],
+    ['no delay at all', 0, 'waiting'],
+  ] as const)('enqueues a job with %s', async (_case, delay, expected) => {
+    const job = await bus.publish('promotion.changed', { promotionId: 8 }, { delay });
 
     expect(await bus.inspect('promotions').getDelayedCount()).toBe(expected === 'delayed' ? 1 : 0);
     expect(await bus.inspect('promotions').getWaitingCount()).toBe(expected === 'waiting' ? 1 : 0);
@@ -155,22 +136,24 @@ describe('EventQueue', () => {
     expect(job.opts.backoff).toEqual({ type: 'exponential', delay: 1000 });
   });
 
-  it('removes both boundary jobs by id when a promotion is cancelled', async () => {
-    const now = new Date('2026-09-12T00:00:00.000Z');
-    await bus.schedulePromotionBoundary(7, 'activate', new Date('2026-09-13T00:00:00.000Z'), now);
-    await bus.schedulePromotionBoundary(7, 'expire', new Date('2026-09-14T00:00:00.000Z'), now);
-    expect(await bus.inspect('promotions').getDelayedCount()).toBe(2);
+  it('removes a delayed job by its id', async () => {
+    await bus.publish(
+      'promotion.changed',
+      { promotionId: 7 },
+      { jobId: 'promo:7:activate', delay: 86_400_000 },
+    );
+    expect(await bus.inspect('promotions').getDelayedCount()).toBe(1);
 
-    expect(await bus.removePromotionBoundaries(7)).toEqual({ activate: 1, expire: 1 });
+    expect(await bus.remove('promotions', 'promo:7:activate')).toBe(1);
 
     expect(await bus.inspect('promotions').getDelayedCount()).toBe(0);
   });
 
-  it('reports success when a cancelled promotion had no boundary job at all', async () => {
-    expect(await bus.removePromotionBoundaries(999)).toEqual({ activate: 1, expire: 1 });
+  it('reports success when there was no such job to remove', async () => {
+    expect(await bus.remove('promotions', 'promo:999:expire')).toBe(1);
   });
 
-  it('reports a removal code of zero when a boundary job is already being processed', async () => {
+  it('reports a removal code of zero when a worker already holds the job', async () => {
     let started: () => void = () => {};
     const hasStarted = new Promise<void>((resolve) => {
       started = resolve;
@@ -190,11 +173,10 @@ describe('EventQueue', () => {
       ),
     );
 
-    const now = new Date('2026-09-12T00:00:00.000Z');
-    await bus.schedulePromotionBoundary(9, 'activate', now, now);
+    await bus.publish('promotion.changed', { promotionId: 9 }, { jobId: 'promo:9:activate' });
     await hasStarted;
 
-    expect(await bus.removePromotionBoundaries(9)).toEqual({ activate: 0, expire: 1 });
+    expect(await bus.remove('promotions', 'promo:9:activate')).toBe(0);
 
     release();
   });
@@ -214,10 +196,7 @@ describe('EventQueue', () => {
 
     const job = await bus.publish('ingestion.chunk', { jobId: 1, chunkIndex: 0 });
 
-    // This job, not the queue's failed count: that count is one number for a Redis
-    // database a sibling worktree's suite also writes to, so it can reach 1 on a
-    // job this test never enqueued and the assertion below then reads a job that
-    // has tried once.
+    // This job, not the queue's failed count: a sibling worktree's suite writes here too.
     await waitFor(
       async () => (await bus.inspect('ingestion').getJob(job.id!))?.finishedOn !== undefined,
       30_000,
@@ -284,7 +263,7 @@ describe('EventQueue', () => {
     }
   });
 
-  it('bounds boundary removal against an unavailable queue too', async () => {
+  it('bounds a removal against an unavailable queue too', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const unreachable = EventQueue.connect(
       'redis://127.0.0.1:1',
@@ -294,8 +273,8 @@ describe('EventQueue', () => {
       PREFIX,
     );
     try {
-      await expect(unreachable.removePromotionBoundaries(5)).rejects.toThrow(
-        /removePromotionBoundaries\(5\) did not confirm within 2000 ms/,
+      await expect(unreachable.remove('promotions', 'promo:5:activate')).rejects.toThrow(
+        /remove\("promo:5:activate"\) did not confirm within 2000 ms/,
       );
     } finally {
       errors.mockRestore();

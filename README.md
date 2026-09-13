@@ -10,7 +10,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - Express 5
 - TypeScript (strict mode)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
-- BullMQ on Redis 7 (event bus; see [ADR-0003](./ADR.md))
+- BullMQ on Redis 7 (event queue; see [ADR-0003](./ADR.md))
 - zod (payload validation at the queue boundary)
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
@@ -94,7 +94,7 @@ The compose file holds the two stores, the `api` service built from this reposit
 
 ### The queue
 
-Four queues, one per urgency class, and `queueOfEvent` routes an event to one of
+Four queues, one per urgency class, and `routing` maps an event to one of
 them — the caller never picks. `promotions` carries `promotion.changed` and the
 delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
 `ingestion.chunk`, and `maintenance` carries `readmodel.rebuild` and

@@ -11,8 +11,6 @@ const QUEUE_DB = 1;
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
 
 describe('GracefulShutdown', () => {
-  // Neither test writes a job, and `shutdown` closes the queues it is given, so
-  // there is nothing to clean up afterwards.
   const listening = async (): Promise<{
     server: ReturnType<typeof createApp.prototype.listen>;
     port: number;
@@ -33,8 +31,7 @@ describe('GracefulShutdown', () => {
     const { server, port } = await listening();
     const queues = EventQueue.connect(redisUrl, QUEUE_DB, registry, routing);
 
-    // A half-sent request: the connection is active, not idle, so `server.close`
-    // waits for it and would wait for ever. This is the hang the bound exists for.
+    // A half-sent request is active, not idle, so `server.close` would wait for ever.
     const socket = connect(port, '127.0.0.1');
     await new Promise((resolve) => socket.once('connect', resolve));
     socket.write('GET /health HTTP/1.1\r\nHost: localhost\r\n');

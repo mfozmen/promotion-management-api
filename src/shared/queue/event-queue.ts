@@ -1,24 +1,12 @@
 import { Queue, type Job, type JobsOptions } from 'bullmq';
 import type { z, ZodType } from 'zod';
-import type { PromotionBoundary } from '../../modules/promotion/domain/dto/promotion-boundary.js';
 import type { QueueName } from './queue-name.js';
 
 /** A catalogue of event names to the schema each payload is parsed against. */
 type Registry = Record<string, ZodType>;
 
-/**
- * The boundary methods name one event, so a catalogue without it is a compile error.
- * A name is not an import: `shared/` still depends on no module.
- */
-type PromotionRegistry = { 'promotion.changed': ZodType<{ promotionId: number }> };
-
-/**
- * The producer side of the queues: policy, routing and the boundary job ids. ADR-0003.
- *
- * Generic over the catalogue, which is passed in rather than imported, because
- * `shared/` imports no module; the concrete one lives in `src/events/`.
- */
-export class EventQueue<R extends Registry & PromotionRegistry> {
+/** The producer side of the queues: policy and routing, generic over its catalogue. ADR-0003. */
+export class EventQueue<R extends Registry> {
   /** `removeOnFail: false` is what makes the failed set the dead-letter queue. */
   static readonly defaultJobOptions = {
     attempts: 3,
@@ -39,11 +27,8 @@ export class EventQueue<R extends Registry & PromotionRegistry> {
     private readonly routing: Record<keyof R, QueueName>,
   ) {}
 
-  /**
-   * `db` is passed, not fixed, so `config.ts`'s refusal to share a database with the
-   * read model is reachable. `prefix` scopes every key, so a test's counts are its own.
-   */
-  static connect<R extends Registry & PromotionRegistry>(
+  /** `prefix` scopes every key, so a test's counts are its own. */
+  static connect<R extends Registry>(
     redisUrl: string,
     db: number,
     registry: R,
@@ -68,49 +53,22 @@ export class EventQueue<R extends Registry & PromotionRegistry> {
     return new EventQueue(queues, registry, routing);
   }
 
+  /** The payload is parsed here, so a malformed one fails in the request that made it. */
   async publish<N extends keyof R & string>(
     name: N,
     payload: z.infer<R[N]>,
     options?: JobsOptions,
   ): Promise<Job> {
-    return this.add(name, payload, options);
-  }
-
-  /**
-   * `now` is a parameter so one clock decides: PostgreSQL's, never the process's. Write-once
-   * per id: BullMQ ignores an `add` for an id it still holds, and the returned `Job` then
-   * describes the request rather than what is stored. ADR-0007.
-   */
-  async schedulePromotionBoundary(
-    promotionId: number,
-    boundary: PromotionBoundary,
-    at: Date,
-    now: Date,
-  ): Promise<Job> {
-    return this.add(
-      'promotion.changed',
-      { promotionId },
-      {
-        jobId: EventQueue.boundaryJobId(promotionId, boundary),
-        delay: Math.max(0, at.getTime() - now.getTime()),
-      },
+    const schema = this.registry[name] as ZodType;
+    return this.bounded(
+      `publish("${name}")`,
+      this.queues[this.routing[name]].add(name, schema.parse(payload), options),
     );
   }
 
-  /**
-   * BullMQ's codes: `1` when nothing blocked it, including when there was no such
-   * job, `0` when a worker already holds it. A cancel racing a running activate
-   * gets `0` but still ends correct: cancel publishes `promotion.changed` anyway.
-   */
-  async removePromotionBoundaries(promotionId: number): Promise<Record<PromotionBoundary, number>> {
-    const [activate, expire] = await this.bounded(
-      `removePromotionBoundaries(${promotionId})`,
-      Promise.all([
-        this.queues.promotions.remove(EventQueue.boundaryJobId(promotionId, 'activate')),
-        this.queues.promotions.remove(EventQueue.boundaryJobId(promotionId, 'expire')),
-      ]),
-    );
-    return { activate, expire };
+  /** BullMQ's codes: `1` when nothing blocked it, `0` when a worker already holds it. */
+  async remove(name: QueueName, jobId: string): Promise<number> {
+    return this.bounded(`remove("${jobId}")`, this.queues[name].remove(jobId));
   }
 
   /** Reads only: `add` here would skip the parse and the timeout `publish` exists to give. */
@@ -121,21 +79,6 @@ export class EventQueue<R extends Registry & PromotionRegistry> {
   /** Closing does not drain, so `SIGTERM` stops the producers first; it frees the socket. */
   async close(): Promise<void> {
     await Promise.all(Object.values(this.queues).map((queue) => queue.close()));
-  }
-
-  private static boundaryJobId(promotionId: number, boundary: PromotionBoundary): string {
-    return `promo:${promotionId}:${boundary}`;
-  }
-
-  /**
-   * The parse is at the producer, so a malformed payload fails in the request that made
-   * it. `publish` and the boundary methods share this rather than each other, because a
-   * boundary names one event and the generic signature cannot narrow to it.
-   */
-  private async add(name: string, payload: unknown, options?: JobsOptions): Promise<Job> {
-    const schema = this.registry[name] as ZodType;
-    const queue = this.queues[this.routing[name as keyof R]];
-    return this.bounded(`publish("${name}")`, queue.add(name, schema.parse(payload), options));
   }
 
   private async bounded<T>(operation: string, work: Promise<T>): Promise<T> {
