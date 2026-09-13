@@ -201,10 +201,12 @@ pool. `SELECT FOR UPDATE` without `SKIP LOCKED` on a work-queue table is a
 finding.
 
 3.9 **Redis atomicity.** A read-then-write across two Redis commands is a race
-unless one of the §3.1 mechanisms serialises the writers; the read-model writer
-is safe only because a single event-handler instance runs at concurrency 1,
-and a change that adds a second consumer must add a lock or a Lua script in the
-same PR. Elsewhere use a single command, a pipeline that does not depend on
+unless one of the §3.1 mechanisms serialises the writers. The read-model writer
+has four consumers, one per queue, so concurrency 1 is not available to it: every
+read-model write is a Lua compare-and-set on the `readAt` of the PostgreSQL query
+it recomputed from, and a consumer that writes without it is a finding. The rule
+changed when the queues were partitioned by urgency and the guarantee that a
+single consumer had been providing went with it, silently. Elsewhere use a single command, a pipeline that does not depend on
 intermediate reads, `SET NX`, or a Lua script. `WATCH`/`MULTI` without a retry
 loop is a finding.
 
