@@ -1,6 +1,8 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
+import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
+import { logger as rootLogger } from '@src/shared/logger.js';
 import type { QueueStats } from '@src/modules/admin/domain/dto/queue-stats.js';
 import { captureLogger } from '../../../capture-logger.js';
 
@@ -18,10 +20,14 @@ const STATS: QueueStats[] = [
 
 const reporterOf = (report: () => Promise<QueueStats[]>) => ({ report });
 
+/** No case here reaches a product route, so the read repository is never called. */
+const products = {} as ProductReadRepository;
+
 describe('adminRouter', () => {
   it('answers the queue stats an operator asks for', async () => {
     const app = createApp(
-      undefined,
+      rootLogger,
+      products,
       reporterOf(() => Promise.resolve(STATS)),
     );
 
@@ -34,7 +40,7 @@ describe('adminRouter', () => {
   it('is absent rather than empty when the queue is not wired', async () => {
     // A route answering `{ queues: [] }` with no bus behind it would read as four idle
     // queues, which is the one answer an operator must never be given wrongly.
-    const res = await request(createApp()).get('/api/admin/queues/stats');
+    const res = await request(createApp(rootLogger, products)).get('/api/admin/queues/stats');
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ error: { message: 'Route not found' } });
@@ -44,6 +50,7 @@ describe('adminRouter', () => {
     const { logger, lines } = captureLogger();
     const app = createApp(
       logger,
+      products,
       reporterOf(() => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:6379'))),
     );
 

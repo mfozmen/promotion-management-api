@@ -122,7 +122,8 @@ export class EventQueue<R extends Registry> {
       ]);
     } finally {
       clearTimeout(timer);
-      // The loser still settles, and an unhandled rejection would take the process down.
+      // `Promise.race` has already handled the loser, so this is not a crash guard: it is
+      // the only place a failure arriving after the bound is recorded.
       work.catch((error: unknown) => {
         logger.error({ operation, err: error }, 'queue operation failed');
       });

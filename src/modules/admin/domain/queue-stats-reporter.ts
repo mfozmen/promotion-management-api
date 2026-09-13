@@ -36,9 +36,8 @@ export class QueueStatsReporter {
 
   private async readOne(queue: QueueName): Promise<QueueStats> {
     const reader = this.bus.inspect(queue);
-    // One `Promise.all` on one connection, so five reads cost about one round trip. They are
-    // still five commands: the counts and the oldest job describe instants that can differ,
-    // which is why the age's contract is about what was returned rather than what is waiting.
+    // Separate commands, so the counts and the oldest job describe instants that can differ:
+    // the age's contract is about what the read returned, not about what is waiting.
     const [waiting, active, delayed, failed, oldest] = await Promise.all([
       reader.getWaitingCount(),
       reader.getActiveCount(),
@@ -53,9 +52,8 @@ export class QueueStatsReporter {
   }
 
   /**
-   * `timestamp` is stamped by the process that published the job, so the disagreement this
-   * absorbs is between publishers, not with Redis. Negative is the visible tip of a skew that
-   * also understates every positive age.
+   * `timestamp` is stamped by the publishing process, whose clock can step backwards, not by
+   * Redis. Negative is the visible tip of a skew that also understates every positive age.
    */
   private age(oldest: { timestamp: number }[]): number | null {
     const first = oldest[0];
@@ -65,6 +63,7 @@ export class QueueStatsReporter {
       : Math.max(0, Math.floor((this.now().getTime() - first.timestamp) / 1000));
   }
 
+  /** A read that fails after the bound is lost: the domain holds no logger to record it. */
   private async bounded(work: Promise<QueueStats[]>): Promise<QueueStats[]> {
     let timer: NodeJS.Timeout | undefined;
     try {
