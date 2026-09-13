@@ -1,6 +1,6 @@
-import type { DiscountCalculator } from './dto/discount-calculator.js';
+import type { Discount } from './dto/discount.js';
 
-export const fixedDiscount: DiscountCalculator = {
+export const fixedDiscount: Discount = {
   valueError() {
     return null;
   },
