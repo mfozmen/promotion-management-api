@@ -4,6 +4,7 @@ import { Redis } from 'ioredis';
 import { eventRegistry } from '@src/events/event-registry.js';
 import { eventRouting } from '@src/events/event-routing.js';
 import { EventQueue } from '@src/shared/queue/event-queue.js';
+import { logger } from '@src/shared/logger.js';
 import { randomUUID } from 'node:crypto';
 
 // These tests need a real Redis: docker run -d --rm -p 6399:6379 redis:7-alpine
@@ -238,7 +239,7 @@ describe('EventQueue', () => {
   });
 
   it('fails an enqueue against an unavailable queue instead of hanging the caller', async () => {
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const errors = vi.spyOn(logger, 'error').mockReturnValue(undefined);
     // Port 1 is never listening, and ioredis reconnects for ever, so this is the
     // "queue unavailable" case rather than a connection refused once.
     const unreachable = EventQueue.connect(
@@ -255,6 +256,12 @@ describe('EventQueue', () => {
       );
       expect(Date.now() - startedAt).toBeLessThan(EventQueue.OPERATION_TIMEOUT_MS * 3);
       expect(errors).toHaveBeenCalled();
+      // What the line carries, not just that there is one (ADR-0010). pino's own
+      // serializer builds the shape from `err`, so that is the key to assert on.
+      for (const [fields] of errors.mock.calls) {
+        expect(fields).toHaveProperty('err.name');
+        expect(fields).toHaveProperty('err.message');
+      }
     } finally {
       errors.mockRestore();
       await unreachable.close().catch(() => undefined);
@@ -262,7 +269,7 @@ describe('EventQueue', () => {
   });
 
   it('bounds a removal against an unavailable queue too', async () => {
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const errors = vi.spyOn(logger, 'error').mockReturnValue(undefined);
     const unreachable = EventQueue.connect(
       'redis://127.0.0.1:1',
       QUEUE_DB,
