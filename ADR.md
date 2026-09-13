@@ -391,7 +391,7 @@ tests/
 
 **A comment is for the reader who is stuck, and it is simpler than the code.** Code that reads on its own has no comment. Code that does not gets one plain sentence, never a paragraph; a paragraph means the code needs a better name or a smaller method, and the reasoning belongs in this record. A comment harder than the code it sits on is a defect (REVIEW.md 8b.1a).
 
-**One exported declaration per file, and the file is named for it.** A file holds one class, interface, type alias or function, plus the private helpers only it uses. The name is the same in the file, the export, the ADR and the spec — and in the test: `tests/` mirrors `src/` one file to one file, `effective-price-calculator.ts` is tested by `effective-price-calculator.test.ts` at the same path under `tests/unit/`, and its top-level `describe` is the export's name.
+**One exported declaration per file, and the file is named for it.** A file holds one class, interface, type alias or function, plus the private helpers only it uses. It is one export per file, not one declaration: a type with one reader is written in that signature and a constant with one reader is a non-exported constant in its reader's file, so the tree holds no file whose only reason is the rule. The name is the same in the file, the export, the ADR and the spec — and in the test: `tests/` mirrors `src/` one file to one file, `effective-price-calculator.ts` is tested by `effective-price-calculator.test.ts` at the same path under `tests/unit/`, and its top-level `describe` is the export's name.
 
 **Behaviour is a class.** Every unit of behaviour in a module — a domain rule, a repository, a service, a loader, a job processor — is a class named for its role, taking its collaborators through the constructor and reached through an interface wherever a second implementation or a test stand-in is plausible. The rule that keeps this honest: a class holds state, or holds collaborators, or implements an interface; one that does none of the three is a function wearing a class, and stays a function. An abstract base exists only once it has two concrete subclasses; there are no static-only utility classes and no class that knows the whole module. A helper that serves one class is a private method of that class (Fowler's Extract Method), not a file: a file exists for a second user, and one declaration per file (8c.2) counts exports, not private methods. Decided on 2026-09-13, after the first two modules had been written as free functions: the pricing module was carrying per-engine state in a `WeakMap` because it had no object to put it on, and the promotion calculator was reaching its collaborator, the set of discounts, as an import. Both are what a class is for. The 2026-09-12 decision this replaces was against an abstraction with one user — a shared base for promotion and ingestion pricing — not against classes.
 
@@ -411,3 +411,57 @@ tests/
 - The promotion and pricing modules were written as free functions before this record and are converted rather than grandfathered, because an exception survives longer than the reason for it: `EffectivePriceCalculator` (constructor takes the `Discount` set; the lookup is inline in `calculate` and `validateBasePriceAndDiscount` is a private method, replacing `discount-calculators.ts`, `discount-calculator-for.ts` and `pricing-input-error.ts`), `PercentageDiscount` and `FixedDiscount` implementing `Discount`, `BasePriceCalculator` (the engine run queue becomes a field, replacing the `WeakMap`), `BasePriceCalculatorCache` (the cache becomes a field). Files and test files follow the class names (7.7).
 - A class reads top-down: fields, constructor, public methods, private methods. The interface a caller uses is the first thing on the screen; the mechanics come after it. ESLint `@typescript-eslint/member-ordering` holds the order, so a review never has to.
 - `REVIEW.md` 7.7, 8c.2, 8c.3, 8c.7, 8c.8, 8c.9 and 8c.10 carry the enforceable form, one sentence each with a pointer here; the reasoning lives in this record only, so a change here changes them in the same pull request.
+
+## ADR-0009: HTTP boundary contract — `/api` prefix, strict validation, one JSON error envelope
+
+**Status:** Accepted
+
+### Context
+
+Every endpoint in ADR-0003 to ADR-0007 has to agree on where it is mounted, how a request is validated and what a failure looks like, or each story invents its own and a client sees three shapes of the same error.
+
+### Decision
+
+- **Prefix.** Everything is mounted on an `express.Router()` under `/api`, including the liveness probe, which moves from `GET /health` to `GET /api/health`. No operator surface exists yet; a queue dashboard or a metrics scrape mounts outside the prefix and outside the envelope, because neither is client-facing.
+- **Validation at the boundary.** `validate({ body?, query?, params? })` takes zod object schemas, calls `.strict()` on them once at route construction, and replaces each declared part with the parsed value. A schema's own message is not a response: the rejection says `Invalid request <part>` and nothing else, so a message a caller has to read is raised by the handler rather than written into a schema. The body is a message; the diagnosis is the log line, which carries the same sentence under `reason`. An unknown field is a `400`, not a silently ignored client typo. `req.query` is a getter in Express 5, so the parsed value is installed with `Object.defineProperty`.
+- **Errors are `http-errors`, used as its README documents.** `createError(status, message, properties)`; `expose` decides what a client may read, and it is already `false` for a 5xx unless the raiser says otherwise, so operator prose is withheld because the library withholds it rather than because someone remembered to. `headers` carries a `Retry-After`. We keep no error classes and no code-to-status table: the status is the taxonomy. A class extending the constructor is allowed only where the same raise — status, message and properties — would be rebuilt at several sites; nothing here raises the same error twice, so none is written.
+- **A foreign error is trusted only when the library itself recognises it** — `createError.isHttpError`, which wants `status` and `statusCode` agreeing and a boolean `expose`. Anything else answers `500` with `Internal server error`, message and all, rather than the handler guessing at a half-shaped error.
+- **`100kb` JSON body cap.** Multipart does not pass through this layer, so the vendor upload brings its own bound.
+
+### Consequences
+
+- A client branches on the status, not on a code field: the envelope is `{ error: { message } }`. body-parser's own 4xx messages therefore reach the caller — checked, and each describes the caller's own request ("unsupported charset", a JSON position, "request entity too large") rather than anything of ours.
+- The boundary lives in `src/shared/http/`, so a story adds a route rather than an error convention.
+
+### Trade-offs
+
+- A library's wording reaches the caller wherever that library marks it exposed, so body-parser's and any future middleware's 4xx messages are part of the public surface and are read once when the middleware is mounted.
+- Validation costs one `safeParse` per declared part per request; the read-path story budgets against that rather than against the parse alone.
+
+## ADR-0010: Structured logging with a validated correlation id
+
+**Status:** Accepted
+
+### Context
+
+A request does not end at the HTTP response: it emits an event a worker picks up later, so diagnosing one means joining an API line to a worker line. `console.log` gives neither structure nor a join key.
+
+### Decision
+
+- `src/shared/logger.ts` exports the pino root logger and `src/shared/http/http-logger.ts` the `pino-http` middleware, mounted first in `createApp` so every later handler has `req.log`.
+- **Correlation id.** Taken from `x-request-id` only when it matches `^[A-Za-z0-9._-]{1,128}$`, otherwise generated. The header is untrusted input: a newline forges log lines and a CR injects a response header. It is echoed back and bound as `reqId` on every line.
+- **Narrowed serializers.** `req` is `{ id, method, path }` and `res` is `{ statusCode }`, so headers, body and query string are never serialised and no credential reaches a line.
+- **The stack goes to the log and never to a response.**
+- **No `console`.** Every line the process emits is JSON with the same fields.
+
+### Consequences
+
+- A grep on one `reqId` returns the whole request, provided the caller's id is unique, which is the caller's responsibility once it supplies one.
+- A 4xx logs at `warn` with its status, and so does a 5xx carrying a `Retry-After`, which is an operating condition rather than a fault; every other 5xx logs at `error` under `err`, which makes real 500s an alertable signal rather than noise.
+- The id is the join key the queue boundary will have to carry. It is not implemented: every payload schema is a `z.strictObject`, so an id attached by a producer throws inside `publish`, and adding it is a change to all five contracts.
+
+### Trade-offs
+
+- A diagnosis needing a request header or query string has to reproduce the request rather than read it back.
+- pino's serializer walks `cause`, so a driver error's message and every wrapper around it reach the log line whole — the failing statement and its bound parameters with them. No route at this layer touches a database; the first story that queries PostgreSQL owns reducing a driver error against its real shape.
+- A caller-supplied id is accepted, not verified to be unique, so a fleet sending one constant id collapses onto a single `reqId`.

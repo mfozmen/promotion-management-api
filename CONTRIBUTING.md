@@ -15,7 +15,7 @@ src/
     jobs/       BullMQ processors
   shared/
     db/         the client and the migrator; migrations/ holds the one journal
-    http/       error type, error handler, request validator, logger
+    http/       error handler, request validator, correlation-id logger
     config.ts
     queue/      the BullMQ queues, generic over the catalogue they are given
     graceful-shutdown.ts
@@ -29,6 +29,10 @@ tests/
 Test files import their subject through the `@src/*` alias — `import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js'` — wired in `tsconfig.json` `paths` and `vitest.workspace.ts`, which declares the alias once and spreads it into both projects (a workspace project does not inherit the root `vitest.config.ts` `resolve` block). Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
 
 A module opens a directory when it has a file for it, not before. No `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/` anywhere, except `domain/dto/` (REVIEW.md 8c.8).
+
+## Dependencies
+
+The order is the standard library, then a package already in the tree, then a widely used package on npm, and only then code of our own. A widely used package is used as its documentation shows before anything of ours wraps it. Readability decides between a package and a few lines of our own, not line count. A new dependency is named in the pull request body with what it replaces (REVIEW.md 12.4).
 
 ## Branch naming
 
