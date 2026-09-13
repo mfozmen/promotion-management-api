@@ -40,6 +40,20 @@ It is one verb rather than two because a one-shot migration service cannot be wa
 
 For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
 
+Demo data. Once the schema is up, one more command fills it:
+
+```bash
+DATABASE_URL=postgres://promo:promo@localhost:5432/promotion npm run seed
+```
+
+It applies [`scripts/demo-seed.sql`](./scripts/demo-seed.sql) as a single transaction: 1 000 products over `Electronics`, `Apparel`, `Home` and `Sports`, and one seven-day 20 % flash sale on `Electronics`. It is a script rather than a migration because a production database must be able to skip it; the `ingestion` pricing rules a vendor import applies are reference data, not demo data, and are seeded by migration `0001_seed_pricing_rules.sql`.
+
+Run it as often as you like: what you get depends on the migrations and this run alone, never on what a previous run left. Products upsert on `sku` and rewrite only a row whose values or provenance differ from what this run would leave, so a row an import had claimed goes back to being a demo row, provenance columns and all. The flash sale is deleted by name and re-inserted rather than updated, because the `promotions_no_overlapping_active_category` exclusion constraint would reject a second active row over the same category and window; its window opens at the moment of the run, so re-running is also how a demo database left for more than a week gets a live sale back.
+
+Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own: an active `Electronics` promotion under another name is not deleted by name, so the insert aborts on `23P01` and the whole file rolls back, leaving no half-written catalogue behind.
+
+[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet — the upload endpoint and chunk worker arrive with issue #16 — and no worker service runs, so the read model the storefront reads is not built by `npm run seed`; that half of issue #19 is still open.
+
 Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
 
 ```bash

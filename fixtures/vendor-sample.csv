@@ -1,0 +1,9 @@
+sku,name,category,vendor_price,stock_quantity
+DEMO-0004,Demo product 0004,Electronics,799.90,150
+DEMO-0008,Demo product 0008,Electronics,1249.00,12
+DEMO-0001,Demo product 0001,Apparel,89.95,420
+DEMO-0003,Demo product 0003,Sports,45.50,8
+VND-0001,Vendor headphones,Electronics,199.99,340
+VND-0002,"Vendor jacket, lined",Apparel,349.00,26
+VND-0003,Vendor kettle,Home,59.00,101
+VND-0004,Vendor yoga mat,Sports,120.00,0
