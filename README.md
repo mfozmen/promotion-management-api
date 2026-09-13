@@ -30,7 +30,7 @@ docker compose up -d --wait   # PostgreSQL on 5432, Redis on 6379, schema migrat
 npm run dev
 ```
 
-Migrating is not a step anyone has to remember: the `migrate` one-shot service applies `src/shared/db/migrations/` as part of `up`, and `--wait` does not return until it has exited cleanly. That single step creates the tables, constraints and the `active_promotions` view and seeds the `type = 'ingestion'` pricing rules of migration `0001`; there is no separate seed step. It is a stopgap — once the `api` image lands (issue #19) the migration moves into that image's entrypoint and the one-shot service goes, so the two never both run migrations.
+Migrating is not a step anyone has to remember: the `migrate` one-shot service applies `src/shared/db/migrations/` as part of `up`, and `--wait` does not return until it has exited cleanly. That single step creates the tables, constraints and the `active_promotions` view and seeds the `type = 'ingestion'` pricing rules of migration `0001`; there is no separate seed step. A failed migration is not retried — the service carries `restart: 'no'` — so `up -d --wait` exits non-zero with PostgreSQL and Redis running and the schema partially applied. Read the cause with `docker compose logs migrate`, fix it, and re-run the migration with `docker compose up migrate`; a second `up -d` is not the recovery verb (ADR-0003, commit `c14fa50`). It is a stopgap — once the `api` image lands (issue #19) the migration moves into that image's entrypoint and the one-shot service goes, so the two never both run migrations.
 
 `npm run db:migrate` does the same thing from the host against whatever `DATABASE_URL` names, for a database that is not the compose one (`drizzle.config.ts` reads it from the environment, not from `.env`). There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
 
@@ -77,7 +77,7 @@ checks the tool's own success line, then `git add -AN src/shared/db/migrations` 
 `git diff --exit-code src/shared/db/migrations`, so a schema change committed without its
 migration fails the build. It reads the success line rather than the exit code because
 `drizzle-kit generate` exits 0 even when it fails and writes nothing; `git add -AN` is what
-makes an untracked new migration visible to the diff (ADR-0003).
+makes an untracked new migration visible to the diff (ADR-0003, commit `c14fa50`).
 
 Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data` and `redis-data` volumes as well.
 
