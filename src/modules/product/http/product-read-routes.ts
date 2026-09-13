@@ -4,11 +4,11 @@ import { detailParams, type DetailParams } from '../domain/dto/detail-params.js'
 import { listQuery, type ListQuery } from '../domain/dto/list-query.js';
 import type { FindProductQuery } from '../queries/find-product-query.js';
 import type { ListProductsQuery } from '../queries/list-products-query.js';
-import type { ProductReadModel } from '../db/product-read-model.js';
+import type { ProductReadRepository } from '../db/product-read-repository.js';
 import { requireReadModel } from './require-read-model.js';
 
 interface Queries {
-  readModel: ProductReadModel;
+  readModel: ProductReadRepository;
   find: FindProductQuery;
   list: ListProductsQuery;
 }

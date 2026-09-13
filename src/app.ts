@@ -1,7 +1,7 @@
 import express, { type Express } from 'express';
 import createError from 'http-errors';
 import type { Logger } from 'pino';
-import type { ProductReadModel } from './modules/product/db/product-read-model.js';
+import type { ProductReadRepository } from './modules/product/db/product-read-repository.js';
 import { FindProductQuery } from './modules/product/queries/find-product-query.js';
 import { ListProductsQuery } from './modules/product/queries/list-products-query.js';
 import { productReadRoutes } from './modules/product/http/product-read-routes.js';
@@ -11,7 +11,7 @@ import { httpLogger } from './shared/http/http-logger.js';
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
 
-export function createApp(logger: Logger, readModel: ProductReadModel): Express {
+export function createApp(logger: Logger, readModel: ProductReadRepository): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');

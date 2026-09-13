@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import createError from 'http-errors';
-import type { ProductReadModel } from '@src/modules/product/db/product-read-model.js';
+import type { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
 import { FindProductQuery } from '@src/modules/product/queries/find-product-query.js';
 
 const stored = {
@@ -13,8 +13,8 @@ const stored = {
   stockQuantity: '3',
 };
 
-const readModel = (hash: () => Promise<Record<string, string>>) =>
-  ({ hash }) as unknown as ProductReadModel;
+const readModel = (find: () => Promise<Record<string, string>>) =>
+  ({ find }) as unknown as ProductReadRepository;
 
 describe('FindProductQuery', () => {
   it('answers the product a shopper asked for, mapped to the view', async () => {

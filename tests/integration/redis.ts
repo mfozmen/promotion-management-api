@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis';
-import { ProductReadModel } from '@src/modules/product/db/product-read-model.js';
+import { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 
 /** A logical database of its own, so a run cannot disturb the read model or
@@ -54,7 +54,7 @@ export type SeedProduct = SeedFields & SeedPromotion;
 export async function seedProducts(redis: Redis, products: readonly SeedProduct[]): Promise<void> {
   const pipeline = redis.pipeline();
   for (const product of products) {
-    pipeline.hset(ProductReadModel.productKey(product.id), {
+    pipeline.hset(ProductReadRepository.productKey(product.id), {
       id: String(product.id),
       sku: product.sku,
       name: product.name,
@@ -69,12 +69,16 @@ export async function seedProducts(redis: Redis, products: readonly SeedProduct[
       updatedAt: '2026-09-12T00:00:00.000Z',
     });
     pipeline.zadd(
-      ProductReadModel.categoryKey(product.category),
+      ProductReadRepository.categoryKey(product.category),
       product.effectivePriceCents,
       String(product.id),
     );
-    pipeline.zadd(ProductReadModel.ALL_PRODUCTS, product.effectivePriceCents, String(product.id));
+    pipeline.zadd(
+      ProductReadRepository.ALL_PRODUCTS,
+      product.effectivePriceCents,
+      String(product.id),
+    );
   }
-  pipeline.set(ProductReadModel.READY_KEY, '1');
+  pipeline.set(ProductReadRepository.READY_KEY, '1');
   await pipeline.exec();
 }

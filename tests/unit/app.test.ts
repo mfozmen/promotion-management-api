@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '@src/app.js';
-import { ProductReadModel } from '@src/modules/product/db/product-read-model.js';
+import { ProductReadRepository } from '@src/modules/product/db/product-read-repository.js';
 import { logger as rootLogger } from '@src/shared/logger.js';
 import { captureLogger } from './capture-logger.js';
 
 /** These cases exercise the health route, the 404 and the logger; none reaches a
  *  product route, so the client is never called. */
-const readModel = {} as ProductReadModel;
+const readModel = {} as ProductReadRepository;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
