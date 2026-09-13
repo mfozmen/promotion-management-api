@@ -28,49 +28,77 @@ export class BasePriceCalculator {
   ) {}
 
   static async compile(rows: readonly PricingRuleRow[]): Promise<BasePriceCalculator> {
-    const active = rows
-      .filter((row) => row.active && row.type === 'ingestion')
-      .sort((a, b) => b.priority - a.priority || a.id - b.id);
+    const active = BasePriceCalculator.activeIngestionRules(rows);
     if (active.length === 0) {
       throw new Error('no active ingestion pricing rules (none seeded, or every rule deactivated)');
     }
-    const engine = new Engine();
 
+    const engine = new Engine();
     for (const [rank, row] of active.entries()) {
-      const where = `pricing rule ${row.id} ("${row.name}")`;
-      const event = adjustmentEvent.safeParse(row.event);
-      if (!event.success) {
-        throw new Error(`${where} has a malformed event: ${event.error.issues[0]?.message}`);
-      }
-      if (BasePriceCalculator.hasEmptyGroup(row.conditions)) {
-        throw new Error(`${where} has an empty all or any, which matches every row or none`);
-      }
-      const properties: RuleProperties = {
-        // A fired rule is reported by name only, so the id rides in the name to reach
-        // `rejectedBy`; the rank, not the stored priority, gives one rule per priority set.
-        name: where,
-        priority: active.length - rank,
-        conditions: row.conditions as TopLevelCondition,
-        event: event.data,
-      };
-      try {
-        engine.addRule(properties);
-        await new Engine([
-          {
-            ...properties,
-            conditions: BasePriceCalculator.withoutPriorities(row.conditions) as TopLevelCondition,
-          },
-        ]).run(PROBE_ROW);
-      } catch (error) {
-        throw new Error(`${where} cannot be compiled: ${(error as Error).message}`);
-      }
+      engine.addRule(await BasePriceCalculator.toRule(row, active.length - rank));
     }
 
     return new BasePriceCalculator(
       engine,
       active.map((row) => row.id),
-      active.reduce((max, row) => Math.max(max, row.updatedAt.getTime()), 0),
+      BasePriceCalculator.newestVersion(active),
     );
+  }
+
+  private static activeIngestionRules(rows: readonly PricingRuleRow[]): PricingRuleRow[] {
+    return rows
+      .filter((row) => row.active && row.type === 'ingestion')
+      .sort((a, b) => b.priority - a.priority || a.id - b.id);
+  }
+
+  private static async toRule(row: PricingRuleRow, priority: number): Promise<RuleProperties> {
+    const where = `pricing rule ${row.id} ("${row.name}")`;
+    const properties: RuleProperties = {
+      // A fired rule is reported by name only, so the id rides in the name to reach `rejectedBy`.
+      name: where,
+      priority,
+      conditions: row.conditions as TopLevelCondition,
+      event: BasePriceCalculator.parseEvent(row, where),
+    };
+
+    BasePriceCalculator.rejectEmptyGroup(row, where);
+    await BasePriceCalculator.probe(properties, row, where);
+    return properties;
+  }
+
+  private static parseEvent(row: PricingRuleRow, where: string): AdjustmentEvent {
+    const event = adjustmentEvent.safeParse(row.event);
+    if (!event.success) {
+      throw new Error(`${where} has a malformed event: ${event.error.issues[0]?.message}`);
+    }
+    return event.data;
+  }
+
+  private static rejectEmptyGroup(row: PricingRuleRow, where: string): void {
+    if (BasePriceCalculator.hasEmptyGroup(row.conditions)) {
+      throw new Error(`${where} has an empty all or any, which matches every row or none`);
+    }
+  }
+
+  private static async probe(
+    properties: RuleProperties,
+    row: PricingRuleRow,
+    where: string,
+  ): Promise<void> {
+    try {
+      await new Engine([
+        {
+          ...properties,
+          conditions: BasePriceCalculator.withoutPriorities(row.conditions) as TopLevelCondition,
+        },
+      ]).run(PROBE_ROW);
+    } catch (error) {
+      throw new Error(`${where} cannot be compiled: ${(error as Error).message}`);
+    }
+  }
+
+  private static newestVersion(rows: readonly PricingRuleRow[]): number {
+    return rows.reduce((max, row) => Math.max(max, row.updatedAt.getTime()), 0);
   }
 
   /** A bad row is a returned rejection, never a throw: one row cannot abort the batch. */
@@ -97,22 +125,8 @@ export class BasePriceCalculator {
     let cents = BigInt(facts.data.vendorPriceCents);
     for (const result of results) {
       const next = this.apply(cents, result.event as AdjustmentEvent);
-      if (next < 0n) {
-        return {
-          ok: false,
-          fault: 'row',
-          rejectedBy: result.name,
-          reason: `price ${next} is below zero`,
-        };
-      }
-      if (next > MAX_CENTS) {
-        return {
-          ok: false,
-          fault: 'row',
-          rejectedBy: result.name,
-          reason: `price ${next} is above the largest exact cent value ${MAX_CENTS}`,
-        };
-      }
+      const outOfRange = BasePriceCalculator.outOfRange(next, result.name as string);
+      if (outOfRange !== undefined) return outOfRange;
       cents = next;
     }
 
@@ -121,6 +135,21 @@ export class BasePriceCalculator {
       basePriceCents: Number(cents),
       pricingRulesVersion: this.pricingRulesVersion,
     };
+  }
+
+  private static outOfRange(cents: bigint, rejectedBy: string): PricingOutcome | undefined {
+    if (cents < 0n) {
+      return { ok: false, fault: 'row', rejectedBy, reason: `price ${cents} is below zero` };
+    }
+    if (cents > MAX_CENTS) {
+      return {
+        ok: false,
+        fault: 'row',
+        rejectedBy,
+        reason: `price ${cents} is above the largest exact cent value ${MAX_CENTS}`,
+      };
+    }
+    return undefined;
   }
 
   private run(facts: VendorRowFacts) {
