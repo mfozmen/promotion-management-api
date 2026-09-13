@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { products } from '@src/modules/catalog/db/schema/products.js';
+import { products } from '@src/modules/product/db/schema/products.js';
 import { chunkStatus } from '@src/modules/ingestion/db/schema/chunk-status.js';
 import { ingestionStatus } from '@src/modules/ingestion/db/schema/ingestion-status.js';
 import { pricingRuleType } from '@src/modules/pricing/db/schema/pricing-rule-type.js';

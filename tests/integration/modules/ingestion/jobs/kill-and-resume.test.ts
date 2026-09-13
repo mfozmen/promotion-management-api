@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { products } from '@src/modules/catalog/db/schema/products.js';
+import { products } from '@src/modules/product/db/schema/products.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { ChunkProcessor } from '@src/modules/ingestion/jobs/chunk-processor.js';

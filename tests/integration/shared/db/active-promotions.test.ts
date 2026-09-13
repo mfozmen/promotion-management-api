@@ -1,6 +1,6 @@
 import { inArray, sql } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { products } from '@src/modules/catalog/db/schema/products.js';
+import { products } from '@src/modules/product/db/schema/products.js';
 import { activePromotions } from '@src/modules/promotion/db/schema/active-promotions.js';
 import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
 import { useTestDatabase } from '../../db.js';

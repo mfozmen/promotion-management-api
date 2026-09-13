@@ -1,5 +1,5 @@
 import type { Db } from '../../../shared/db/client.js';
-import { upsertProducts, type ProductUpsert } from '../../catalog/db/upsert-products.js';
+import { upsertProducts, type ProductUpsert } from '../../product/db/upsert-products.js';
 import type { BasePriceCalculatorCache } from '../../pricing/domain/base-price-calculator-cache.js';
 import { checkpointBatch } from '../db/checkpoint-batch.js';
 import { claimChunk } from '../db/claim-chunk.js';

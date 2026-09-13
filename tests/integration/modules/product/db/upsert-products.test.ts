@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { products } from '@src/modules/catalog/db/schema/products.js';
-import { upsertProducts } from '@src/modules/catalog/db/upsert-products.js';
+import { products } from '@src/modules/product/db/schema/products.js';
+import { upsertProducts } from '@src/modules/product/db/upsert-products.js';
 import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
