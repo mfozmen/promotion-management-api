@@ -116,7 +116,8 @@ starts and serves without a Redis
 there: connection errors are logged and every publish fails at its 2 s bound
 rather than hanging. Connecting has its own 10 s budget. `SIGTERM` closes the
 HTTP server first and the queues last, and waits at most `SHUTDOWN_DRAIN_TIMEOUT_MS`
-(default 10 s, `0` exits immediately) for open connections before closing the
+(default 10 s; digits only, so a blank value is rejected rather than read as the
+`0` that exits immediately) for open connections before closing the
 queues anyway (ADR-0003).
 
 ## Project structure

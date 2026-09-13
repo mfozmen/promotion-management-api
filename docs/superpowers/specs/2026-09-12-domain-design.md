@@ -445,14 +445,15 @@ where p.id = any($1);
   round trip.
 - Every read-model write is a **recompute from PostgreSQL** (section 4
   query), never a delta applied to Redis. Handlers are therefore idempotent
-  and safe to retry; ordering between handlers is enforced by running
-  exactly one event-handler instance with `concurrency: 1` (the compose file
-  does not scale this service).
+  and safe to retry. Ordering is a property of the write, not of the consumer
+  count: each recompute carries the `readAt` of the PostgreSQL query it was
+  computed from, and the write is a Lua compare-and-set that applies only when
+  that instant is newer than the one stored beside the hash (ADR-0003,
+  REVIEW.md 3.9). No consumer exists yet; the first one to write the read model
+  implements it.
 - Redis unreachable: storefront routes answer `503`; admin writes still
   commit to PostgreSQL, their enqueue fails and is logged, and the reconciler
   repairs the read model once Redis is back.
-  The handler runs as a single serialised instance; per-category locks are
-  the upgrade if one instance cannot keep up with write volume.
 
 ## 6. Events (BullMQ, the Redis database `REDIS_QUEUE_DB` names, default 1)
 
@@ -703,7 +704,7 @@ src/
       db/        resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
-  workers/       one entry point per queue: promotions.ts, catalog.ts, ingestion.ts, reconciler.ts   (thin: create worker, register handler, start)
+  workers/       one entry point per queue: promotions.ts, catalog.ts, ingestion.ts, maintenance.ts   (thin: create worker, register handler, start)
   shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue/ (the BullMQ queues), graceful-shutdown.ts, logger.ts (pino, request ids)
   events/        event-registry.ts and event-routing.ts: the event catalogue and its four-queue partition
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)

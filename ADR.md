@@ -60,7 +60,7 @@ Two workloads pull in opposite directions: the storefront reads (`GET /products`
 
 ### Decision
 
-CQRS on a modular monolith. PostgreSQL 16 is the write store and the only source of truth, accessed through Drizzle ORM with SQL migrations (which double as the DDL deliverable). Redis 7 holds the read model the storefront queries: a hash per product and price-ordered sorted sets per category and for all products. BullMQ, running on a separate Redis logical database, carries events from writes to the event-handler worker, which recomputes affected read-model entries from PostgreSQL. One Docker image runs four commands: `api`, `event-handler`, `ingestion-worker`, `reconciler`.
+CQRS on a modular monolith. PostgreSQL 16 is the write store and the only source of truth, accessed through Drizzle ORM with SQL migrations (which double as the DDL deliverable). Redis 7 holds the read model the storefront queries: a hash per product and price-ordered sorted sets per category and for all products. BullMQ, running on a separate Redis logical database, carries events from writes to the queue workers, which recompute affected read-model entries from PostgreSQL. One Docker image runs four commands: `api`, `event-handler`, `ingestion-worker`, `reconciler`.
 
 Money is stored as integer minor units, percentages as basis points, timestamps as `timestamptz`.
 
@@ -293,7 +293,7 @@ A category promotion must affect tens of thousands of products the moment it is 
 ### Trade-offs
 
 - During the seconds a 50 000-product recompute takes, listing pages mix old and new prices. Accepted for a catalogue; the atomic upgrade is building `category:{c}:new` and `RENAME`.
-- A single serialised event handler is the throughput ceiling for write-to-read latency; per-category locks are the upgrade if one instance falls behind.
+- One Worker on the `promotions` queue is the throughput ceiling for write-to-read latency, and a category recompute is the longest job on it (ADR-0003). Adding consumers is the upgrade, and it is available only because ordering no longer depends on how many there are: the cost of that is one stored instant per read-model entry and a Lua call per write instead of a plain `MULTI`.
 - Offset pagination can skip or duplicate a row across a price change between two page requests; cursor pagination is the upgrade.
 - Stock is part of the read model and therefore also eventually consistent.
 
