@@ -21,6 +21,34 @@ function appThrowing(error: unknown, captured: CapturedLogger = captureLogger())
   return app;
 }
 
+describe('the logged error', () => {
+  // `pino-http` installs pino's own `err` serializer and applies it as a child logger, and a
+  // child's serializers override the root's — so proving the root logger is wired proves
+  // nothing about `req.log`, which is where every handler's error is written (REVIEW.md 7.4b).
+  it('carries no statement or bound value down the request path', async () => {
+    const captured = captureLogger();
+    const driverShaped = Object.assign(
+      new Error('Failed query: insert into products (sku) values ($1)\nparams: sk-live-SECRET'),
+      {
+        query: 'insert into products (sku) values ($1)',
+        params: ['sk-live-SECRET'],
+        cause: Object.assign(new Error('duplicate key'), {
+          code: '23505',
+          constraint: 'products_sku_unique',
+        }),
+      },
+    );
+
+    await request(appThrowing(driverShaped, captured)).get('/boom');
+
+    const logged = JSON.stringify(captured.lines);
+    expect(logged).not.toContain('sk-live-SECRET');
+    expect(logged).not.toContain('insert into products');
+    expect(logged).not.toContain('params');
+    expect(captured.lines.some((line) => line['msg'] === 'unhandled error')).toBe(true);
+  });
+});
+
 describe('errorHandler', () => {
   it.each([
     [400, 'Invalid request body'],
@@ -149,12 +177,12 @@ describe('errorHandler: unexpected errors', () => {
     const logged = captured.lines.find((line) => line.level === 40);
     expect(logged).toMatchObject({ status: 503, reason: 'rebuild running' });
     expect(captured.lines.some((line) => line.level === 50)).toBe(false);
-    // The cause reaches the line: without `err` on it, every outage during a
-    // rotated password or a refused connection reads identically and an
-    // operator has nothing to go on.
-    // pino folds the cause into the serialized message, so this is what
-    // reaching the line looks like — and it is absent entirely without `err`.
-    expect(logged).toMatchObject({ err: { message: expect.stringContaining('ECONNREFUSED') } });
+    // The cause still reaches the line, and has to: without it every outage during a rotated
+    // password or a refused connection reads identically and an operator has nothing to go on.
+    // It arrives as the code rather than folded into the message, because folding a cause's
+    // message is what carried a statement and its bound values (REVIEW.md 8.4) — and a code
+    // separates those two outages more sharply than a substring ever did.
+    expect(logged).toMatchObject({ err: { code: 'ECONNREFUSED' } });
   });
 
   it("passes the raiser's retry hint through untouched", async () => {
@@ -180,10 +208,11 @@ describe('errorHandler: unexpected errors', () => {
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: { message: 'Internal server error' } });
-    // pino passes a non-Error through as it found it, so the thrown value itself is
-    // on the line. It never reaches the response, which is the boundary that matters.
+    // Reduced to its type and its string form rather than passed through: pino would put the
+    // thrown value on the line as it found it, and a thrown object can carry a statement and
+    // its bound values as readily as an `Error` can.
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      err: 'something went wrong',
+      err: { type: 'string', message: 'something went wrong' },
     });
   });
 

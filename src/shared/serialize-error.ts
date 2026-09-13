@@ -11,23 +11,43 @@ interface Serialized {
   constraint?: string;
 }
 
-function describe(error: unknown): Serialized {
-  if (!(error instanceof Error)) return { type: typeof error, message: String(error) };
-
-  const fault = driverFault(error);
-  const frames = (error.stack ?? '')
+/** Frames only. A stack begins with its message, so keeping it whole keeps the leak. */
+function framesOf(stack: string | undefined): string | undefined {
+  const frames = (stack ?? '')
     .split('\n')
     .filter((line) => FRAME.test(line))
     .join('\n');
 
-  return {
+  return frames === '' ? undefined : frames;
+}
+
+/**
+ * Replaced on the wrapper, not on the fault: `drizzle-orm` wraps every query failure in a
+ * `DrizzleQueryError` whose message is the statement and its bound values, and a connection loss
+ * or a pool timeout carries no SQLSTATE at all. Keying on the fault would keep the message on
+ * exactly the failures an incident is made of.
+ */
+function messageOf(error: Error, sqlState: string | undefined): string {
+  return sqlState === undefined && !('query' in error) ? error.message : 'database error';
+}
+
+function describe(error: unknown): Serialized {
+  if (!(error instanceof Error)) return { type: typeof error, message: String(error) };
+
+  const fault = driverFault(error);
+  const stack = framesOf(error.stack);
+  const serialized: Serialized = {
     type: error.constructor.name,
-    // A driver message is replaced rather than trimmed: `invalid input syntax for type
-    // integer: "..."` quotes the caller's value, so no driver message is safe by inspection.
-    message: fault === undefined ? error.message : 'database error',
-    ...(frames === '' ? {} : { stack: frames }),
-    ...fault,
+    message: messageOf(error, fault?.sqlState),
   };
+
+  if (stack !== undefined) serialized.stack = stack;
+  // The code of whatever failed, whatever shape it is: without it a refused connection and a
+  // rotated password read identically once the message is gone.
+  if (fault?.code !== undefined) serialized.code = fault.code;
+  if (fault?.constraint !== undefined) serialized.constraint = fault.constraint;
+
+  return serialized;
 }
 
 /**
