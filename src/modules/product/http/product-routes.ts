@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import type { Enqueue } from '../../shared/enqueue.js';
-import type { Db } from '../../shared/db/client.js';
-import { validate } from '../../middleware/request-validator.js';
-import { HttpError } from '../../shared/http-error.js';
+import type { Enqueue } from '../../../shared/enqueue.js';
+import type { Db } from '../../../shared/db/client.js';
+import { validate } from '../../../middleware/request-validator.js';
+import { HttpError } from '../../../shared/http-error.js';
 import { createProductSchema } from './create-product-schema.js';
-import { insertProduct } from './insert-product.js';
+import { insertProduct } from '../db/insert-product.js';
 
 /**
  * `POST /api/products` only. There is no update or delete: the vendor feed is

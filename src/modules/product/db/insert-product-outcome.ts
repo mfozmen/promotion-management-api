@@ -1,4 +1,4 @@
-import type { Product } from './product.js';
+import type { Product } from '../domain/product.js';
 
 /**
  * A failure carries no product, so a caller cannot answer 201 with one by

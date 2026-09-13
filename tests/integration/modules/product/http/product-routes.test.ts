@@ -1,10 +1,10 @@
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp } from '../../../../src/app.js';
-import { products } from '../../../../src/shared/db/schema.js';
-import type { Enqueue } from '../../../../src/shared/enqueue.js';
-import { useTestDatabase } from '../../db.js';
+import { createApp } from '@src/app.js';
+import { products } from '@src/shared/db/schema.js';
+import type { Enqueue } from '@src/shared/enqueue.js';
+import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
 

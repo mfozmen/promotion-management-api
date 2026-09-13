@@ -1,7 +1,7 @@
-import type { Db } from '../../shared/db/client.js';
-import { products } from '../../shared/db/schema.js';
-import { isUniqueViolation } from '../../shared/db/unique-violation.js';
-import type { CreateProduct } from './create-product-schema.js';
+import type { Db } from '../../../shared/db/client.js';
+import { products } from '../../../shared/db/schema.js';
+import { isUniqueViolation } from '../../../shared/db/unique-violation.js';
+import type { CreateProduct } from '../http/create-product-schema.js';
 import type { InsertProductOutcome } from './insert-product-outcome.js';
 
 /**

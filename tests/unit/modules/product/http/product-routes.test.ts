@@ -1,9 +1,9 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp } from '../../../../src/app.js';
-import type { Db } from '../../../../src/shared/db/client.js';
-import type { Enqueue } from '../../../../src/shared/enqueue.js';
-import { captureLogger } from '../../../capture-logger.js';
+import { createApp } from '@src/app.js';
+import type { Db } from '@src/shared/db/client.js';
+import type { Enqueue } from '@src/shared/enqueue.js';
+import { captureLogger } from '../../../../capture-logger.js';
 
 /**
  * What the endpoint does when the write itself fails for a reason that is not a

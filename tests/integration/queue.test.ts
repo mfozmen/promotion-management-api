@@ -12,7 +12,7 @@ import {
   removePromotionBoundaries,
   schedulePromotionBoundary,
   type Queues,
-} from '../../src/shared/queue.js';
+} from '@src/shared/queue.js';
 
 // These tests need a real Redis: docker run -d --rm -p 6399:6379 redis:7-alpine
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
@@ -187,7 +187,14 @@ describe('queue contracts', () => {
 
     const job = await enqueue(queues, 'ingestion.chunk', { jobId: 1, chunkIndex: 0 });
 
-    await waitFor(async () => (await queues.ingestion.getFailedCount()) === 1, 30_000);
+    // Waiting on this job rather than on the queue's failed count: the count is
+    // one number for a Redis database that a sibling worktree's suite can also be
+    // writing to, so it can reach 1 on a job this test never enqueued and the
+    // assertion below then reads a job that has tried once.
+    await waitFor(
+      async () => (await queues.ingestion.getJob(job.id!))?.finishedOn !== undefined,
+      30_000,
+    );
     expect(attempts).toBe(3);
 
     const failed = await queues.ingestion.getJob(job.id!);

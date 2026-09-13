@@ -92,6 +92,7 @@ The compose file holds the two stores and a browser for each behind the `tools` 
 ## Project structure
 
 ```
+<<<<<<< HEAD
 src/             app.ts (the Express app and the /api router), server.ts (the process entry point)
 src/middleware/  error handler (the one JSON error envelope), request validator (zod at the boundary)
 src/shared/      cross-cutting modules: logger.ts, http-error.ts; db/ holds the Drizzle schema, client and SQL migrations
@@ -104,6 +105,14 @@ The module folders under `src/modules/` are named in the design spec and land wi
 ## Database schema
 
 The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the enums, the six tables and the two GiST exclusion constraints that enforce one active promotion per product and per category; `0001_seed_pricing_rules.sql` seeds the three ingestion pricing rules. [`src/shared/db/schema.ts`](./src/shared/db/schema.ts) is the Drizzle mirror used by queries — it cannot express the exclusion constraints, so those live in the migration only (ADR-0003).
+=======
+src/    application source code
+tests/  automated tests (unit, integration, e2e), each layer mirroring src/
+docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
+```
+
+Inside a layer the tree mirrors `src/`, one test file per source file. Tests import their subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.config.ts` `resolve.alias`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+>>>>>>> origin/main
 
 ## API
 

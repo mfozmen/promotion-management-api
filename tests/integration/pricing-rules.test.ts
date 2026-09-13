@@ -1,6 +1,6 @@
 import { asc, desc, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { pricingRules } from '../../src/shared/db/schema.js';
+import { pricingRules } from '@src/shared/db/schema.js';
 import { useTestDatabase } from './db.js';
 
 const db = useTestDatabase();

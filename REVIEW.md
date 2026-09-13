@@ -49,9 +49,10 @@ a decimal price, no `parseFloat`, no `toFixed` to "fix" a rounding artefact.
 a truncation turns the first into 434 cents. A parser that rounds its way out
 of that is a finding, because the next input will find the case it misses.
 
-1.3 Exactly one implementation of the discount formula exists
-(`src/modules/promotion/effective-price.ts`). A second copy inline in a query, a
-worker or a test fixture is a finding even when it agrees today.
+1.3 Exactly one implementation of each discount formula exists, in the
+calculator for that discount type (`src/modules/promotion/domain/`), reached
+only through `effectivePrice`. A second copy inline in a query, a worker or a
+test fixture is a finding even when it agrees today.
 
 1.4 Rounding direction is stated and tested: the discount is floored, so the
 customer pays at most one cent more than the ideal. Any new rounding site
@@ -108,6 +109,14 @@ skips the row in both cases. The standard form names every nullable column:
 columns are null together (as `ingest_job_id` and `ingest_source_offset` are:
 both written by the same upsert), say so next to the guard and test the
 all-null case; otherwise test each column null on its own.
+
+2.7 State that depends on time or on other rows — "is this promotion active",
+"which candidate applies" — is decided in SQL on the database clock, as a view
+or the query's `WHERE`, never re-derived in code. A predicate that exists in
+both a query and a function is a finding.
+
+Evidence: `isActive(promotion, now)` duplicated the resolution query's
+`tstzrange(...) @> now()` on a second clock (PR #29, issue #28).
 
 ---
 
@@ -519,6 +528,27 @@ root, no per-module top-level directories.
 Evidence: `tests/promotion/`, `tests/unit/` and a root-level test file on three
 open branches at once (PRs #29, #39).
 
+7.8 **A test imports its subject through the `@src/*` alias, production code
+never does.** `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'`
+in a test; a relative specifier in `src/`. The alias is `paths` in
+`tsconfig.json` plus `resolve.alias` in `vitest.config.ts`, and an ESLint
+`no-restricted-imports` rule scoped to `src/**` enforces the second half,
+because a convention nothing checks is not one.
+
+The asymmetry is not taste. `tsc` does not rewrite a path alias on emit, so
+`@src/...` inside `src/` compiles, builds, passes every unit test and then
+throws `ERR_MODULE_NOT_FOUND` at container start — the one place nothing is
+watching. Tests are excluded from `tsconfig.build.json` and never emitted, so
+the alias cannot reach a running process through them.
+
+A vitest workspace project does not inherit the root config's `resolve` block.
+Declare the alias once and spread it into every project, or the aliased imports
+resolve in `npm test` and fail in whichever project forgot it.
+
+Evidence: five levels of `../` in a test that had moved four times in one
+evening (PR #29); then eleven test files red at once when the alias met a
+workspace whose projects did not carry it (PR #50).
+
 ---
 
 ## 8. Boundaries, errors and API shape
@@ -651,15 +681,19 @@ it is.
 Evidence: `http-error.ts` exported a class called `AppError`. The fields were
 `status`, `code` and `details`, so the file was right and the class was renamed.
 
-8c.2 One declaration per file. Every `class`, `interface`, `abstract class` and
-`enum` lives in its own file named after it, together with the private helpers
-only it uses. A second exported declaration in the same file is a finding, and
-"they are all about one concept" is not a defence: a concept is what a directory
-is for.
+8c.2 One exported declaration per file — `class`, `interface`, `abstract class`,
+`enum`, `type` alias or function — in a file named after it, together with the
+private helpers only it uses. A second exported declaration in the same file is
+a finding, and "they are all about one concept" is not a defence: a concept is
+what a directory is for. A type alias counts: a union of string literals is a
+declaration a caller imports by name, not punctuation on the interface beside
+it.
 
 Evidence: a 199-line module held two interfaces, an abstract base, two classes,
 a registry and a factory, all of them sharing the concept "discount
-calculation".
+calculation". The alias clause is the owner's reading of 2026-09-13 on PR #29,
+written down here so #30, #37 and #39 are judged against the rulebook rather
+than against a comment thread (13b.1).
 
 8c.3 A file is named for its role as a kebab-case noun, `<subject>-<role>.ts`,
 never for the verb it exports. `request-validator.ts`, not `validate.ts`, beside
@@ -693,6 +727,11 @@ Evidence: ADR-0004 on #35 stated the promotion precedence rule three different
 ways in one section: "at most one active promotion per product", "at most one
 applied promotion", and "product level wins". No single name ran through the
 prose, so a rename had nothing to follow.
+
+8c.7 Directories are named for a role, never for a kind of syntax. Inside a
+module: `domain/` (types and pure rules, importing no store and no framework),
+`db/`, `http/`, `jobs/`; in `src/shared/db/schema/` one file per table. No
+`models/`, `types/`, `interfaces/`, `classes/`. The tree is in CONTRIBUTING.md.
 
 ---
 

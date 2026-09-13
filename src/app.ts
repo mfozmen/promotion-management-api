@@ -1,7 +1,7 @@
 import express, { type Express } from 'express';
 import type { AppDependencies } from './app-dependencies.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
-import { productRoutes } from './modules/product/product-routes.js';
+import { productRoutes } from './modules/product/http/product-routes.js';
 import { httpLogger, logger as rootLogger } from './shared/logger.js';
 
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0008).

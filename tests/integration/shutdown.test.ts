@@ -1,9 +1,9 @@
 import { connect } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { createApp } from '../../src/app.js';
-import { createQueues } from '../../src/shared/queue.js';
-import { SHUTDOWN_TIMEOUT_MS, parseShutdownTimeout, shutdown } from '../../src/shared/shutdown.js';
+import { createApp } from '@src/app.js';
+import { createQueues } from '@src/shared/queue.js';
+import { SHUTDOWN_TIMEOUT_MS, parseShutdownTimeout, shutdown } from '@src/shared/shutdown.js';
 
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
 

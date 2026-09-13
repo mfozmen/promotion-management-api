@@ -1,6 +1,6 @@
 import { Client, type Pool } from 'pg';
 import { afterAll, beforeAll } from 'vitest';
-import { createDb, createPool, type Db } from '../../src/shared/db/client.js';
+import { createDb, createPool, type Db } from '@src/shared/db/client.js';
 import { adminUrl, cloneName, templateDatabase, urlFor } from './env.js';
 
 async function onAdmin(statement: string): Promise<void> {
