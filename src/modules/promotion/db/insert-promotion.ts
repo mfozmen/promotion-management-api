@@ -1,11 +1,11 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
 import { isExclusionViolation } from '../../../shared/db/exclusion-violation.js';
-import { promotions } from '../../../shared/db/schema.js';
+import { promotions } from './schema/promotions.js';
 import { promotionColumns } from './promotion-columns.js';
-import type { CreatePromotion } from '../http/create-promotion-schema.js';
+import type { CreatePromotion } from '../domain/dto/create-promotion-schema.js';
 import { findConflictingPromotion } from './find-conflicting-promotion.js';
-import type { PromotionWriteOutcome } from './promotion-write-outcome.js';
+import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcome.js';
 
 /**
  * A promotion with a target is born `active`; one without is a `draft`, which

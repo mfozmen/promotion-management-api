@@ -1,11 +1,11 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
 import { isExclusionViolation } from '../../../shared/db/exclusion-violation.js';
-import { promotions } from '../../../shared/db/schema.js';
-import type { AssignPromotion } from '../http/assign-promotion-schema.js';
+import { promotions } from './schema/promotions.js';
+import type { AssignPromotion } from '../domain/dto/assign-promotion-schema.js';
 import { findConflictingPromotion } from './find-conflicting-promotion.js';
 import { promotionColumns } from './promotion-columns.js';
-import type { PromotionWriteOutcome } from './promotion-write-outcome.js';
+import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcome.js';
 
 /**
  * One guarded `UPDATE`: the target is set and the status becomes `active` only

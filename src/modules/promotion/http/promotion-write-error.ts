@@ -1,5 +1,5 @@
 import { HttpError } from '../../../shared/http-error.js';
-import type { PromotionWriteOutcome } from '../db/promotion-write-outcome.js';
+import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcome.js';
 
 /** The one place a failed promotion write becomes a status. */
 export function promotionWriteError(outcome: Extract<PromotionWriteOutcome, { ok: false }>): HttpError {

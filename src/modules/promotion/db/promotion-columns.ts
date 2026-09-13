@@ -1,4 +1,4 @@
-import { promotions } from '../../../shared/db/schema.js';
+import { promotions } from './schema/promotions.js';
 import { promotionStateSql } from './promotion-state-sql.js';
 
 /** The columns every promotion read and write returns. */

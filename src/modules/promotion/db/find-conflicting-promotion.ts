@@ -1,6 +1,6 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
-import { promotions } from '../../../shared/db/schema.js';
+import { promotions } from './schema/promotions.js';
 
 /**
  * The active promotion whose window overlaps the one just rejected.

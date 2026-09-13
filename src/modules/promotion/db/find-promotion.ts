@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
-import { promotions } from '../../../shared/db/schema.js';
-import type { PromotionView } from '../domain/promotion-view.js';
+import { promotions } from './schema/promotions.js';
+import type { PromotionView } from '../domain/dto/promotion-view.js';
 import { promotionColumns } from './promotion-columns.js';
 
 export async function findPromotion(db: Db, id: number): Promise<PromotionView | null> {

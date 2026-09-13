@@ -50,8 +50,8 @@ a truncation turns the first into 434 cents. A parser that rounds its way out
 of that is a finding, because the next input will find the case it misses.
 
 1.3 Exactly one implementation of each discount formula exists, in the
-calculator for that discount type (`src/modules/promotion/domain/`), reached
-only through `effectivePrice`. A second copy inline in a query, a worker or a
+`Discount` for that discount type (`src/modules/promotion/domain/`), reached
+only through `EffectivePriceCalculator`. A second copy inline in a query, a worker or a
 test fixture is a finding even when it agrees today.
 
 1.4 Rounding direction is stated and tested: the discount is floored, so the
@@ -529,7 +529,7 @@ tree-wide property with no source file (`migration-journal.test.ts`) is named
 for the property, at the path of what it guards. ADR-0008.
 
 7.8 **A test imports its subject through the `@src/*` alias, production code
-never does.** `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'`
+never does.** `import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js'`
 in a test; a relative specifier in `src/`. The alias is `paths` in
 `tsconfig.json` plus `resolve.alias` in `vitest.config.ts`, and an ESLint
 `no-restricted-imports` rule scoped to `src/**` enforces the second half,
@@ -681,6 +681,8 @@ and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not. An ADR states the decision and the current state; it carries no pull
 request, commit or issue number — that history is git's.
+
+A path is checkable and a reference is not. `tests/unit/docs/documented-paths.test.ts` reads every backticked repository path out of the deliverable documents and the agent definitions and fails on one the tree does not hold, with a named exemption for each path a document mentions without claiming it exists; the reference half stays a reader's, because `value "99999999999" is out of range for type integer` is a quoted error rather than a citation and no pattern tells those apart. Evidence: a day of renames left four documents naming a logger file, a schema directory and a calculator that no longer existed, and two careful readings passed over the same four.
 
 8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
 properties) carry no explanatory comments; the entry says what it does. At most

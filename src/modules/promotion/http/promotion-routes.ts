@@ -11,9 +11,9 @@ import { insertPromotion } from '../db/insert-promotion.js';
 import { listPromotions } from '../db/list-promotions.js';
 import { announceCancellation } from './announce-cancellation.js';
 import { announcePromotion } from './announce-promotion.js';
-import { assignPromotionSchema } from './assign-promotion-schema.js';
-import { createPromotionSchema } from './create-promotion-schema.js';
-import { listPromotionsQuerySchema } from './list-promotions-query-schema.js';
+import { assignPromotionSchema } from '../domain/dto/assign-promotion-schema.js';
+import { createPromotionSchema } from '../domain/dto/create-promotion-schema.js';
+import { listPromotionsQuerySchema } from '../domain/dto/list-promotions-query-schema.js';
 import { promotionWriteError } from './promotion-write-error.js';
 
 /** Express 5 forwards a rejected promise to the error middleware; this keeps that true. */

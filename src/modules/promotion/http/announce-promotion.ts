@@ -1,4 +1,4 @@
-import type { PromotionView } from '../domain/promotion-view.js';
+import type { PromotionView } from '../domain/dto/promotion-view.js';
 import type { Announcement } from './announcement.js';
 import { settleAnnouncement } from './settle-announcement.js';
 

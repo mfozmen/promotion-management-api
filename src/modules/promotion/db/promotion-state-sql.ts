@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { promotions } from '../../../shared/db/schema.js';
-import type { PromotionState } from '../domain/promotion-state.js';
+import { promotions } from './schema/promotions.js';
+import type { PromotionState } from '../domain/dto/promotion-state.js';
 
 /**
  * `state` as PostgreSQL decides it, for every read and every write's

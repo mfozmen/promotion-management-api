@@ -1,8 +1,8 @@
 import { and, eq, gt } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
-import { promotions } from '../../../shared/db/schema.js';
-import type { PromotionView } from '../domain/promotion-view.js';
-import type { ListPromotionsQuery } from '../http/list-promotions-query-schema.js';
+import { promotions } from './schema/promotions.js';
+import type { PromotionView } from '../domain/dto/promotion-view.js';
+import type { ListPromotionsQuery } from '../domain/dto/list-promotions-query-schema.js';
 import { promotionColumns } from './promotion-columns.js';
 
 /**

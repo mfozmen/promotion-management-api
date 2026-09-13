@@ -1,8 +1,8 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
-import { promotions } from '../../../shared/db/schema.js';
+import { promotions } from './schema/promotions.js';
 import { promotionColumns } from './promotion-columns.js';
-import type { CancelPromotionOutcome } from './cancel-promotion-outcome.js';
+import type { CancelPromotionOutcome } from '../domain/dto/cancel-promotion-outcome.js';
 
 /**
  * Cancelling is idempotent, so a second call answers with the cancelled row

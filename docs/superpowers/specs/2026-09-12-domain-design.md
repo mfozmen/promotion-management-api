@@ -175,7 +175,7 @@ create table ingestion_chunks (
   The arithmetic is not in the rule, not in a registry the rule can name and
   not in a parameter bag — it is a pure calculator per discount type behind one
   pure entry point.
-- **One function, one vocabulary.** `effectivePrice(basePriceCents, promotion)`
+- **One function, one vocabulary.** `EffectivePriceCalculator.calculate(basePriceCents, promotion)`
   in `src/modules/promotion/domain/` takes
   `Pick<Promotion, 'discountType' | 'value'>` — `discountType` of
   `percentage | fixed`, `value` in basis points or minor units — and returns a
@@ -189,27 +189,27 @@ create table ingestion_chunks (
   window nor the status. Whether a candidate is active was decided by that
   query on the database clock before it reached the function. Percentage is
   `base - floor(base * bps / 10000)` and fixed is `max(base - value, 0)`, each
-  in its own `DiscountCalculator` (`percentage-discount.ts`,
+  in its own `Discount` (`percentage-discount.ts`,
   `fixed-discount.ts`) together with its own value check — the 10 000
   basis-point ceiling belongs to percentage, not to the guard.
-  `effectivePrice` looks one up instead of branching on the type;
+  `EffectivePriceCalculator` looks one up instead of branching on the type;
   arithmetic in `bigint`, the result clamped to `[0, base]` by
-  `effectivePrice`. A third kind of
+  `EffectivePriceCalculator`. A third kind of
   discount is a migration that widens the enum plus a calculator file the
-  `Record<DiscountType, DiscountCalculator>` will not typecheck without, and
+  `Record<DiscountType, Discount>` will not typecheck without, and
   that is the right cost:
   the case names two, and a vocabulary the reader can enumerate is worth more
   than one that can hold anything.
 - **The union is exhaustive; the database is not.** The enum can widen a deploy
   before the union does, so the map is reached only through
-  `discountCalculatorFor(discountType: string)`, which checks own properties —
+  `EffectivePriceCalculator`'s private lookup, which checks own properties —
   a `discountType` of `toString` resolves nothing — and returns
-  `DiscountCalculator | undefined`. `effectivePrice` turns `undefined` into
+  `Discount | undefined`. `EffectivePriceCalculator` turns `undefined` into
   `{ ok: false, reason: 'unknown discount type' }`, so a row the code does not
   understand yet is a defective row and a log line, not a throwing event
   handler that retries and leaves the product unpriced.
 - **Selection compares candidates, so each is priced first.** The resolver
-  runs `effectivePrice` for every candidate, then runs the engine once over a
+  runs `EffectivePriceCalculator` for every candidate, then runs the engine once over a
   single fact set — the only one, so a rule author has one list to read, and it
   is the flat shape given below. The candidates' windows are not in it: the
   resolution query already filters to active promotions, so a window fact could
@@ -274,7 +274,7 @@ create table ingestion_chunks (
   and the highest-priority match wins, which is what keeps the case's "at most
   one active promotion" true at the applied level. Letting several stack would
   be a change to that one selection step, not to the pricing function.
-- **A failed computation is not a silent base price.** `effectivePrice` returns
+- **A failed computation is not a silent base price.** `EffectivePriceCalculator` returns
   `{ ok: false, reason }` for a row the boundary should have rejected — a value
   above 10 000 basis points, a base price outside the safe-integer range. The
   event handler logs it with the `promotionId` and writes the price the
@@ -304,7 +304,7 @@ create table ingestion_chunks (
 - **The slot is the effective price.** "Slot non-null" in the table below means
   `productEffectivePriceCents` / `categoryEffectivePriceCents`, never the
   discount type or the value. A candidate that exists but cannot be priced —
-  `effectivePrice` returned `{ ok: false }` — is `null` in **all three** of its
+  `EffectivePriceCalculator` returned `{ ok: false }` — is `null` in **all three** of its
   keys plus a defect log carrying the `promotionId`, so it is absent to the
   rules rather than half-present. Without this the two readings diverge on a
   real customer: null the keys and the category discount applies with the
@@ -549,7 +549,11 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    (`json-rules-engine`, rules loaded from `pricing_rules` where
    `type = 'ingestion'` and cached for 60 s), producing `base_price_cents` and `pricing_rules_version`. Invalid
    rows are counted as rejected and logged with their byte offset; they never
-   abort the batch.
+   abort the batch. A `fault: 'rules'` outcome is not one of them: it says the rule
+   set is at fault, so it fails the chunk rather than counting a rejected row. So
+   does a batch whose rows are all rejected with the same `rejectedBy`, which is how
+   one rule pricing every row into the ground is told apart from a bad file
+   (ADR-0005).
 4. **Commit** one transaction: multi-row
    `insert ... on conflict (sku) do update` plus the checkpoint as a
    compare-and-set:
@@ -687,17 +691,21 @@ src/
   modules/
     product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
     promotion/
-      domain/    promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), effective-price.ts (effectivePrice, pure), pricing-input-error.ts (pricingInputError, the guards), discount-calculator.ts (the DiscountCalculator interface: valueError + discountCents), percentage-discount.ts and fixed-discount.ts (one calculator each, formula and value check together), discount-calculators.ts (Record<DiscountType, DiscountCalculator>), discount-calculator-for.ts (the only lookup; undefined for a type the union does not have), candidate-selection.ts (runs the engine over already-loaded rules, pure)
+      domain/    effective-price-calculator.ts (EffectivePriceCalculator: discounts injected, the lookup inline in calculate, the input guard a private method), percentage-discount.ts and fixed-discount.ts (one Discount class each, formula and value check together), candidate-selection.ts (runs the engine over already-loaded rules, pure)
+        dto/     promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), discount.ts (the Discount interface: valueError + discountCents) — REVIEW.md 8c.8
       db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
       jobs/      scheduling.ts
-    pricing/     ingestion-rules.ts (json-rules-engine wrapper), resolve-products.ts (section 4 query)
+    pricing/
+      domain/    base-price-calculator.ts (compiles the rules, owns the engine, serialises its runs, prices a row), base-price-calculator-cache.ts (caches a compiled calculator; the query that feeds it is the caller's)
+        dto/     pricing-rule-row.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8
+      db/        resolve-products.ts (section 4 query)
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
   shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, events.ts (event schemas, queue routing), queue.ts (BullMQ queues), shutdown.ts, logger.ts (pino, request ids)
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
-  unit/          effective-price, csv-lines, ingestion-rules, schemas
+  unit/          effective-price-calculator, csv-lines, base-price-calculator, base-price-calculator-cache, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume
   e2e/           the docs/e2e-cases scenarios against the running compose stack
 docker-compose.yml   postgres, redis, api, event-handler, ingestion-worker (256M / 0.5 CPU), reconciler; profile "monitoring": prometheus, grafana (provisioned dashboard + alert rules); profile "tools": pgadmin, redis-commander
