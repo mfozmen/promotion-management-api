@@ -13,7 +13,7 @@ import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcom
  *
  * The overlap is decided by the two GiST exclusion constraints, never by
  * reading first and inserting after: two admins creating the same window at
- * once both pass that read (REVIEW.md 3.1). `now` comes back from the same
+ * once both pass that read. `now` comes back from the same
  * statement so the boundaries are scheduled against the clock that stored them.
  */
 export async function insertPromotion(

@@ -20,7 +20,7 @@ export function productRoutes(db: Db, publish: Publish): Router {
 
     // After the insert has committed, never inside it: an event carrying an
     // id a rollback would take away sends the worker to recompute a product
-    // that does not exist (REVIEW.md 3.4). A single insert commits on its
+    // that does not exist. A single insert commits on its
     // own, so the ordering here is the `await` above.
     //
     // The enqueue is awaited but its failure is not the caller's: the row is

@@ -5,7 +5,7 @@ import type { PromotionState } from '../domain/dto/promotion-state.js';
 /**
  * `state` as PostgreSQL decides it, for every read and every write's
  * `returning`. One expression, so no second copy can disagree with it and no
- * second clock can be consulted (REVIEW.md 2.7).
+ * second clock can be consulted.
  *
  * The arm order is the definition: cancelled outranks any window, and a draft
  * has no window worth reporting because it has no target to apply to.

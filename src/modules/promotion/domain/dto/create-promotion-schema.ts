@@ -7,7 +7,7 @@ import { z } from 'zod';
  *
  * `endsAt` is compared against the request's own clock only to reject a window
  * that is already over before it reaches the database; whether a stored
- * promotion is running is PostgreSQL's to decide (REVIEW.md 2.7).
+ * promotion is running is PostgreSQL's to decide.
  */
 export const createPromotionSchema = z
   .strictObject({

@@ -24,7 +24,7 @@ export const promotions = pgTable(
     // The two GiST exclusion indexes are partial on `status = 'active'`, so the
     // admin list's filters cannot use them: `?productId=` on a cancelled row, or
     // `?status=draft`, scans the heap without these. `product_id` is also a
-    // foreign key, which PostgreSQL does not index for you (REVIEW.md 6.13).
+    // foreign key, which PostgreSQL does not index for you.
     index('promotions_product_id_idx').on(table.productId, table.id),
     index('promotions_category_id_idx').on(table.category, table.id),
     check('promotions_window_check', sql`${table.endsAt} > ${table.startsAt}`),

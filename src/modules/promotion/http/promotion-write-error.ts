@@ -5,7 +5,7 @@ import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcom
  * The one place a failed promotion write becomes a status.
  *
  * The overlap 409 names no promotion. The envelope carries a message and nothing
- * else, and another row's identifier is not the caller's to read (REVIEW.md 8.3b).
+ * else, and another row's identifier is not the caller's to read.
  * The cost is real and worth stating: an admin refused a promotion compares
  * windows across the active rows for that target to find the one in the way.
  */

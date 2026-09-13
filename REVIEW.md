@@ -628,20 +628,14 @@ refinement message must not interpolate the value it rejected — though under t
 current envelope a schema's message reaches nobody, so the message a caller reads
 is the one the handler passed to `createError`.
 
-There is no carve-out. This rule used to grant one: the overlap `409` returned
-`details.conflictingPromotionId`, argued as a bounded exception because an admin
-refused a promotion "cannot act without knowing which one to cancel". They can —
-the two exclusion constraints are keyed on product and on category, so the filter
-that finds the blocker is one the admin already has. The exception cost a query
-on every conflict whose result was discarded, and it made this rule cite itself
-as its own exception. What it bought was skipping a window comparison across a
-few rows. The honest price of removing it is that comparison, not a blocked task.
+There is no carve-out. The one this rule used to grant — `details.conflictingPromotionId`
+on the overlap `409` — cost a query on every conflict whose result the response
+discarded, and the admin can find the blocker with a filter they already have.
 
 Evidence: `conflicts with promotion "Summer Sale" (id 7, 50 %)` hands the caller
-another row's fields, which they never had. The carve-out was removed when the
-envelope lost `details`: the code that cited this rule as forbidding the id sat
-beside a rule mandating it, and the next author would have added it back,
-correctly, per the rulebook.
+another row's fields, which they never had. Evidence: while the carve-out stood,
+code citing this rule as forbidding the id sat beside a rule mandating it, and
+the next author would have added it back and been right to.
 
 8.4 No internal detail escapes to the client: no stack trace, no SQL text, no
 connection string, no secret, in a response. A log line is read by the operator,

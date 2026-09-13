@@ -32,7 +32,7 @@ Test cases
 - Precondition: `POST /api/promotions`
 - Given: three bad bodies — 150 %, a fixed amount of −5, an end date before the start
 - When: each is posted
-- Then: 400 for each, and the reason names the field that was wrong
+- Then: 400 for each, and the message names the part of the request that was rejected — the body, the query or the params — without echoing the value back
 - Measure: none
 
 ### promotion-11
@@ -102,7 +102,7 @@ Test cases
 - Precondition: `POST /api/promotions/:id/assign`
 - Given: a product already carrying an active product-level promotion
 - When: staff assign a second product-level promotion whose dates overlap
-- Then: 409, and the response names the promotion already in place
+- Then: 409, and the message says an active promotion already covers that target for that window; it names no promotion, and the conflicting row's id appears nowhere in the response (owner decision, 2026-09-13)
 - Measure: none
 
 ### promotion-12
@@ -110,7 +110,7 @@ Test cases
 - Precondition: `POST /api/promotions/:id/assign`
 - Given: the Accessories category already carrying an active 20 % promotion for this week
 - When: staff assign a second promotion to Accessories over days that overlap it
-- Then: 409, and the response names the promotion already on the category
+- Then: 409, and the message says an active promotion already covers that target for that window; the admin finds the blocker with `GET /api/promotions?category=Accessories` (owner decision, 2026-09-13)
 - Measure: none
 
 ### promotion-6

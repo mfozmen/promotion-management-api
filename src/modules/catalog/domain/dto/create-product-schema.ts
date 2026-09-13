@@ -6,7 +6,7 @@ import { z } from 'zod';
  *
  * Every bound here also exists in the database — `sku` is unique, price and
  * stock are `CHECK (>= 0)` — because a boundary that agrees with the schema is
- * a better error message, not a substitute for the constraint (REVIEW.md 2b).
+ * a better error message, not a substitute for the constraint.
  */
 export const createProductSchema = z.strictObject({
   sku: z.string().trim().min(1).max(64),

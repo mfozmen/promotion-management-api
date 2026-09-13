@@ -13,7 +13,7 @@ import type { PromotionWriteOutcome } from '../domain/dto/promotion-write-outcom
  * where the row is still a draft whose window has not passed. A concurrent
  * assign loses because the second one matches no row, and an expired draft
  * cannot be woken — both decided on the database clock, in the statement that
- * does the work rather than in a read before it (REVIEW.md 2.7, 3.1).
+ * does the work rather than in a read before it.
  */
 export async function assignPromotion(
   db: Db,
