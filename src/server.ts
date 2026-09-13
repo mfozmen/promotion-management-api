@@ -1,7 +1,9 @@
 import { createApp } from './app.js';
 import { loadConfig } from './shared/config.js';
 import { runMigrations } from './shared/db/migrate.js';
-import { EventBus } from './shared/event-bus.js';
+import { registry } from './events/registry.js';
+import { routing } from './events/routing.js';
+import { EventQueue } from './shared/queue/event-queue.js';
 import { GracefulShutdown } from './shared/graceful-shutdown.js';
 
 const config = loadConfig();
@@ -11,7 +13,7 @@ const config = loadConfig();
 await runMigrations(config.DATABASE_URL);
 
 const app = createApp();
-const bus = EventBus.connect(config.REDIS_URL, config.REDIS_QUEUE_DB);
+const queue = EventQueue.connect(config.REDIS_URL, config.REDIS_QUEUE_DB, registry, routing);
 
 const server = app.listen(config.PORT, () => {
   console.log(`Server listening on port ${config.PORT}`);
@@ -19,7 +21,7 @@ const server = app.listen(config.PORT, () => {
 
 process.on('SIGTERM', () => {
   const startedAt = Date.now();
-  void new GracefulShutdown(bus, config.SHUTDOWN_DRAIN_TIMEOUT_MS)
+  void new GracefulShutdown(queue, config.SHUTDOWN_DRAIN_TIMEOUT_MS)
     .run(server)
     .then((path) => {
       console.log(`Shutdown ${path} after ${Date.now() - startedAt} ms`);

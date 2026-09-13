@@ -107,7 +107,7 @@ inside one queue (ADR-0003).
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
 each other (ADR-0007). `src/server.ts` reads both from `src/shared/config.ts` and
-passes the queue one to `EventBus.connect`, which is what makes the configuration
+passes the queue one to `EventQueue.connect`, which is what makes the configuration
 check that they differ mean something.
 
 `npm run dev` opens the queue connections at startup against `REDIS_URL`

@@ -1,4 +1,4 @@
-import type { EventBus } from './event-bus.js';
+import type { EventQueue } from './queue/event-queue.js';
 
 /**
  * Stops the HTTP server, then the queues, in that order: closing the queues does
@@ -6,7 +6,7 @@ import type { EventBus } from './event-bus.js';
  */
 export class GracefulShutdown {
   constructor(
-    private readonly bus: EventBus,
+    private readonly queue: Pick<EventQueue<never>, 'close'>,
     private readonly timeoutMs: number,
   ) {}
 
@@ -19,7 +19,7 @@ export class GracefulShutdown {
       }),
     ]);
     clearTimeout(timer);
-    await this.bus.close();
+    await this.queue.close();
     return drained ? 'drained' : 'forced';
   }
 }

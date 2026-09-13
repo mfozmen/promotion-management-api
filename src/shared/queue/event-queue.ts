@@ -1,13 +1,24 @@
 import { Queue, type Job, type JobsOptions } from 'bullmq';
-import type { PromotionBoundary } from '../modules/promotion/domain/dto/promotion-boundary.js';
-import type { EventName } from './event-name.js';
-import type { EventPayload } from './event-payload.js';
-import { eventSchemas } from './event-schemas.js';
+import type { z, ZodType } from 'zod';
+import type { PromotionBoundary } from '../../modules/promotion/domain/dto/promotion-boundary.js';
 import type { QueueName } from './queue-name.js';
-import { queueOfEvent } from './queue-of-event.js';
 
-/** The producer side of the queues: policy, routing and the boundary job ids. ADR-0003. */
-export class EventBus {
+/** A catalogue of event names to the schema each payload is parsed against. */
+type Registry = Record<string, ZodType>;
+
+/**
+ * The boundary methods name one event, so a catalogue without it is a compile error.
+ * A name is not an import: `shared/` still depends on no module.
+ */
+type PromotionRegistry = { 'promotion.changed': ZodType<{ promotionId: number }> };
+
+/**
+ * The producer side of the queues: policy, routing and the boundary job ids. ADR-0003.
+ *
+ * Generic over the catalogue, which is passed in rather than imported, because
+ * `shared/` imports no module; the concrete one lives in `src/events/`.
+ */
+export class EventQueue<R extends Registry & PromotionRegistry> {
   /** `removeOnFail: false` is what makes the failed set the dead-letter queue. */
   static readonly defaultJobOptions = {
     attempts: 3,
@@ -22,16 +33,26 @@ export class EventBus {
   /** Connecting pays DNS and a TLS handshake that operating on an open socket does not. */
   static readonly CONNECT_TIMEOUT_MS = 10_000;
 
-  private constructor(private readonly queues: Record<QueueName, Queue>) {}
+  private constructor(
+    private readonly queues: Record<QueueName, Queue>,
+    private readonly registry: R,
+    private readonly routing: Record<keyof R, QueueName>,
+  ) {}
 
   /**
    * `db` is passed, not fixed, so `config.ts`'s refusal to share a database with the
    * read model is reachable. `prefix` scopes every key, so a test's counts are its own.
    */
-  static connect(redisUrl: string, db: number, prefix = 'bull'): EventBus {
+  static connect<R extends Registry & PromotionRegistry>(
+    redisUrl: string,
+    db: number,
+    registry: R,
+    routing: Record<keyof R, QueueName>,
+    prefix = 'bull',
+  ): EventQueue<R> {
     const options = {
-      connection: { url: redisUrl, db, connectTimeout: EventBus.CONNECT_TIMEOUT_MS },
-      defaultJobOptions: EventBus.defaultJobOptions,
+      connection: { url: redisUrl, db, connectTimeout: EventQueue.CONNECT_TIMEOUT_MS },
+      defaultJobOptions: EventQueue.defaultJobOptions,
       prefix,
     };
     const queues = {
@@ -44,18 +65,15 @@ export class EventBus {
       // An `error` event with no listener is an uncaught exception.
       queue.on('error', (error: Error) => console.error(`queue ${queue.name}:`, error.message));
     }
-    return new EventBus(queues);
+    return new EventQueue(queues, registry, routing);
   }
 
-  async publish<N extends EventName>(
+  async publish<N extends keyof R & string>(
     name: N,
-    payload: EventPayload<N>,
+    payload: z.infer<R[N]>,
     options?: JobsOptions,
   ): Promise<Job> {
-    return this.bounded(
-      `publish("${name}")`,
-      this.queues[queueOfEvent[name]].add(name, EventBus.parse(name, payload), options),
-    );
+    return this.add(name, payload, options);
   }
 
   /**
@@ -69,11 +87,11 @@ export class EventBus {
     at: Date,
     now: Date,
   ): Promise<Job> {
-    return this.publish(
+    return this.add(
       'promotion.changed',
       { promotionId },
       {
-        jobId: EventBus.boundaryJobId(promotionId, boundary),
+        jobId: EventQueue.boundaryJobId(promotionId, boundary),
         delay: Math.max(0, at.getTime() - now.getTime()),
       },
     );
@@ -88,8 +106,8 @@ export class EventBus {
     const [activate, expire] = await this.bounded(
       `removePromotionBoundaries(${promotionId})`,
       Promise.all([
-        this.queues.promotions.remove(EventBus.boundaryJobId(promotionId, 'activate')),
-        this.queues.promotions.remove(EventBus.boundaryJobId(promotionId, 'expire')),
+        this.queues.promotions.remove(EventQueue.boundaryJobId(promotionId, 'activate')),
+        this.queues.promotions.remove(EventQueue.boundaryJobId(promotionId, 'expire')),
       ]),
     );
     return { activate, expire };
@@ -105,13 +123,19 @@ export class EventBus {
     await Promise.all(Object.values(this.queues).map((queue) => queue.close()));
   }
 
-  /** At the producer, so a malformed payload fails in the request that made it. */
-  private static parse<N extends EventName>(name: N, payload: EventPayload<N>): EventPayload<N> {
-    return eventSchemas[name].parse(payload) as EventPayload<N>;
-  }
-
   private static boundaryJobId(promotionId: number, boundary: PromotionBoundary): string {
     return `promo:${promotionId}:${boundary}`;
+  }
+
+  /**
+   * The parse is at the producer, so a malformed payload fails in the request that made
+   * it. `publish` and the boundary methods share this rather than each other, because a
+   * boundary names one event and the generic signature cannot narrow to it.
+   */
+  private async add(name: string, payload: unknown, options?: JobsOptions): Promise<Job> {
+    const schema = this.registry[name] as ZodType;
+    const queue = this.queues[this.routing[name as keyof R]];
+    return this.bounded(`publish("${name}")`, queue.add(name, schema.parse(payload), options));
   }
 
   private async bounded<T>(operation: string, work: Promise<T>): Promise<T> {
@@ -124,10 +148,10 @@ export class EventBus {
             () =>
               reject(
                 new Error(
-                  `${operation} did not confirm within ${EventBus.OPERATION_TIMEOUT_MS} ms; it may still land`,
+                  `${operation} did not confirm within ${EventQueue.OPERATION_TIMEOUT_MS} ms; it may still land`,
                 ),
               ),
-            EventBus.OPERATION_TIMEOUT_MS,
+            EventQueue.OPERATION_TIMEOUT_MS,
           );
         }),
       ]);

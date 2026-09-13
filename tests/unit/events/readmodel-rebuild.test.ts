@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readmodelRebuild } from '@src/shared/readmodel-rebuild.js';
+import { readmodelRebuild } from '@src/events/readmodel-rebuild.js';
 
 describe('readmodelRebuild', () => {
   it('accepts a scoped and an unscoped rebuild', () => {

@@ -1,8 +1,8 @@
+import type { QueueName } from '../shared/queue/queue-name.js';
 import type { EventName } from './event-name.js';
-import type { QueueName } from './queue-name.js';
 
 /** Which queue carries each event. The partition and its reason: ADR-0003. */
-export const queueOfEvent = {
+export const routing = {
   'promotion.changed': 'promotions',
   'product.upserted': 'catalog',
   'ingestion.chunk': 'ingestion',

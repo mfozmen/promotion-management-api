@@ -703,7 +703,8 @@ src/
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       events.ts, ingest.ts, reconcile.ts   (thin entry points: create worker, register handler, start)
-  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, event-schemas.ts (the registry) and queue-of-event.ts (its routing), event-bus.ts (the BullMQ queues), graceful-shutdown.ts, logger.ts (pino, request ids)
+  shared/        config.ts, db.ts (Drizzle + migrations), redis.ts, queue/ (the BullMQ queues), graceful-shutdown.ts, logger.ts (pino, request ids)
+  events/        registry.ts and routing.ts: the event catalogue and its four-queue partition
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
   unit/          effective-price-calculator, csv-lines, base-price-calculator, base-price-calculator-cache, schemas
   integration/   routes + handlers against real PostgreSQL and Redis (docker compose), concurrency, ingestion kill/resume

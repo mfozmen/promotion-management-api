@@ -5,10 +5,11 @@ import { readmodelRebuild } from './readmodel-rebuild.js';
 import { reconcileRun } from './reconcile-run.js';
 
 /**
- * The registry: an event name to the schema its producing module owns (ADR-0008).
- * `readmodel.rebuild` and `reconcile.run` have no module yet.
+ * The application's event catalogue: a name to the schema its producing module owns
+ * (ADR-0008). It lives here rather than in `shared/queue/` so the queue stays generic
+ * and `shared/` imports no module.
  */
-export const eventSchemas = {
+export const registry = {
   'product.upserted': productUpserted,
   'promotion.changed': promotionChanged,
   'readmodel.rebuild': readmodelRebuild,

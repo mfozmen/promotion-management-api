@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { reconcileRun } from '@src/shared/reconcile-run.js';
+import { reconcileRun } from '@src/events/reconcile-run.js';
 
 describe('reconcileRun', () => {
   it('accepts the empty payload', () => {

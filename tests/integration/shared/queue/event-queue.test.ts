@@ -1,7 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Queue, Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
-import { EventBus } from '@src/shared/event-bus.js';
+import { registry } from '@src/events/registry.js';
+import { routing } from '@src/events/routing.js';
+import { EventQueue } from '@src/shared/queue/event-queue.js';
 import { randomUUID } from 'node:crypto';
 
 // These tests need a real Redis: docker run -d --rm -p 6399:6379 redis:7-alpine
@@ -15,7 +17,7 @@ const PREFIX = `bulltest-${randomUUID().slice(0, 8)}`;
 const QUEUE_NAMES = ['promotions', 'catalog', 'ingestion', 'maintenance'] as const;
 
 /**
- * Cleanup owns its own handles rather than a method on `EventBus`: obliterating a
+ * Cleanup owns its own handles rather than a method on `EventQueue`: obliterating a
  * queue is not something a running process should be able to do, and scoping it to
  * this run's prefix is what makes it safe to do here at all.
  */
@@ -38,12 +40,12 @@ async function waitFor(condition: () => Promise<boolean>, timeoutMs = 20_000): P
   }
 }
 
-describe('EventBus', () => {
-  let bus: EventBus;
+describe('EventQueue', () => {
+  let bus: ReturnType<typeof EventQueue.connect<typeof registry>>;
   const workers: Pick<Worker, 'close'>[] = [];
 
   beforeAll(async () => {
-    bus = EventBus.connect(redisUrl, QUEUE_DB, PREFIX);
+    bus = EventQueue.connect(redisUrl, QUEUE_DB, registry, routing, PREFIX);
     // A run killed mid-test leaves keys behind that fail the next one's counts.
     await clearOwnQueues();
   });
@@ -100,7 +102,7 @@ describe('EventBus', () => {
   it('applies the retry, backoff and dead-letter defaults to every job', async () => {
     const job = await bus.publish('reconcile.run', {});
 
-    expect(job.opts.attempts).toBe(EventBus.defaultJobOptions.attempts);
+    expect(job.opts.attempts).toBe(EventQueue.defaultJobOptions.attempts);
     expect(job.opts.backoff).toEqual({ type: 'exponential', delay: 1000 });
     expect(job.opts.removeOnComplete).toBe(1000);
     expect(job.opts.removeOnFail).toBe(false);
@@ -244,7 +246,7 @@ describe('EventBus', () => {
     }
   });
   it('stops accepting jobs once the queues are closed, so SIGTERM can exit', async () => {
-    const closing = EventBus.connect(redisUrl, QUEUE_DB, PREFIX);
+    const closing = EventQueue.connect(redisUrl, QUEUE_DB, registry, routing, PREFIX);
     const queued = await closing.publish('promotion.changed', { promotionId: 77 });
 
     await closing.close();
@@ -262,13 +264,19 @@ describe('EventBus', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     // Port 1 is never listening, and ioredis reconnects for ever, so this is the
     // "queue unavailable" case rather than a connection refused once.
-    const unreachable = EventBus.connect('redis://127.0.0.1:1', QUEUE_DB, PREFIX);
+    const unreachable = EventQueue.connect(
+      'redis://127.0.0.1:1',
+      QUEUE_DB,
+      registry,
+      routing,
+      PREFIX,
+    );
     const startedAt = Date.now();
     try {
       await expect(unreachable.publish('promotion.changed', { promotionId: 1 })).rejects.toThrow(
         /publish\("promotion.changed"\) did not confirm within 2000 ms/,
       );
-      expect(Date.now() - startedAt).toBeLessThan(EventBus.OPERATION_TIMEOUT_MS * 3);
+      expect(Date.now() - startedAt).toBeLessThan(EventQueue.OPERATION_TIMEOUT_MS * 3);
       expect(errors).toHaveBeenCalled();
     } finally {
       errors.mockRestore();
@@ -278,7 +286,13 @@ describe('EventBus', () => {
 
   it('bounds boundary removal against an unavailable queue too', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const unreachable = EventBus.connect('redis://127.0.0.1:1', QUEUE_DB, PREFIX);
+    const unreachable = EventQueue.connect(
+      'redis://127.0.0.1:1',
+      QUEUE_DB,
+      registry,
+      routing,
+      PREFIX,
+    );
     try {
       await expect(unreachable.removePromotionBoundaries(5)).rejects.toThrow(
         /removePromotionBoundaries\(5\) did not confirm within 2000 ms/,
