@@ -41,7 +41,7 @@ export default async function setup(): Promise<void> {
     await admin.connect();
   } catch {
     throw new Error(
-      `PostgreSQL not reachable at ${adminUrl}; start it with: docker compose up db (or the docker run one-liner in README.md)`,
+      `PostgreSQL not reachable at ${adminUrl}; start it with the docker run one-liner in README.md, or point TEST_DATABASE_URL at the compose server`,
     );
   }
   await sweepStaleClones(admin);

@@ -7,7 +7,7 @@ import {
   promotions,
   reconcilerState,
 } from '@src/shared/db/schema.js';
-import { sqlStateOf, useTestDatabase } from './db.js';
+import { sqlStateOf, useTestDatabase } from '../../db.js';
 
 const EXCLUSION_VIOLATION = '23P01';
 const CHECK_VIOLATION = '23514';

@@ -416,21 +416,19 @@ Resolution query (used by the event handler and reconciler, batched by id):
 select p.*, pp.id as pp_id, pp.name as pp_name, pp.discount_type as pp_discount_type, pp.value as pp_value,
              cp.id as cp_id, cp.name as cp_name, cp.discount_type as cp_discount_type, cp.value as cp_value
 from products p
-left join promotions pp on pp.product_id = p.id and pp.status = 'active'
-                       and tstzrange(pp.starts_at, pp.ends_at) @> now()
-left join promotions cp on cp.category = p.category and cp.status = 'active'
-                       and tstzrange(cp.starts_at, cp.ends_at) @> now()
+left join active_promotions pp on pp.product_id = p.id
+left join active_promotions cp on cp.category = p.category
 where p.id = any($1);
 ```
 
 ## 5. Read model (Redis DB 0)
 
-| Key                   | Type | Content                                                                                                                                     |
-| --------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, ingestionRulesVersion, updatedAt` |
-| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                          |
-| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                             |
-| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                        |
+| Key                   | Type | Content                                                                                                                                   |
+| --------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, pricingRulesVersion, updatedAt` |
+| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                        |
+| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                           |
+| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                      |
 
 - `GET /api/products/:id` = `HGETALL product:{id}` (zero PostgreSQL reads).
 - `GET /api/products` = `ZRANGE <zset> -inf +inf BYSCORE LIMIT offset size`
@@ -645,7 +643,8 @@ worker expose `GET /metrics` with `prom-client` (default Node metrics plus
 `readmodel_drift_products`, `http_request_duration_seconds`,
 `ingestion_rows_processed_total`, `ingestion_chunks_stuck`,
 `promotion_rules_no_event_total` — the silence counter of section 4, which the
-seeded rules cannot increment). Prometheus
+seeded rules cannot increment once #36 lands; until it does, migration 0001
+seeds no promotion rule and the counter is expected to move). Prometheus
 scrapes them; Grafana ships with a provisioned dashboard and alert rules:
 queue depth > 10 000, any failed (DLQ) job, drift > 1 %, API p95 > 500 ms,
 5xx rate > 1 %, worker RSS > 90 % of its limit, stuck ingestion chunk,

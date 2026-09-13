@@ -45,7 +45,7 @@ use `gh pr diff <n>`.
 4. **Data and contracts.** Compare schema or migration changes against every
    query that touches the same tables. Check API response shapes against
    README/API docs and tests. Flag breaking changes to any existing endpoint.
-   The write store's trace points, all defined in `src/shared/db/schema.ts` and
+   The write store's trace points, all defined in `src/shared/db/schema/` and
    `src/shared/db/migrations/`:
    - `products` — `sku` unique, `base_price_cents >= 0`, `stock_quantity >= 0`,
      `products_category_id_idx (category, id)` for keyset scans, and the

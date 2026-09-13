@@ -15,6 +15,13 @@
       "when": 1789234960908,
       "tag": "0001_seed_pricing_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789253839700,
+      "tag": "0002_active_promotions",
+      "breakpoints": true
     }
   ]
 }

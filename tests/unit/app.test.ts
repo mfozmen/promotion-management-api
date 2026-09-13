@@ -5,6 +5,22 @@ import { captureLogger } from '../capture-logger.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+describe('the health probe', () => {
+  it('answers 200 with an ok status under the /api prefix', async () => {
+    const res = await request(createApp()).get('/api/health');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'ok' });
+  });
+
+  it('is no longer served at the root path', async () => {
+    const res = await request(createApp()).get('/health');
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
+  });
+});
+
 describe('unknown routes', () => {
   it('does not advertise the framework it runs on', async () => {
     const res = await request(createApp()).get('/api/health');
