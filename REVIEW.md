@@ -733,6 +733,14 @@ that reads them at the same level, which is harder to scan than the split
 costs. This does not apply outside `domain/` — `http/`, `db/` and `jobs/` are
 not further split by syntax.
 
+8c.9 A value that implements an interface is named for what it does, not only
+for what makes it that particular one: `percentageDiscountCalculator`, not
+`percentageDiscount` — the bare noun reads as data, not as the `DiscountCalculator`
+it is. The file follows (`percentage-discount-calculator.ts`, 8c.3, 8c.6).
+This is about implementations of a named interface; a plain function already
+named for the value it returns (`effectivePrice`, `pricingInputError`) is not
+required to grow a suffix it does not need.
+
 ---
 
 ## 9. Failure handling and operations
