@@ -90,7 +90,7 @@ a server you launched by hand.
    port, ask that session to finish rather than starting a second stack.
 5. Wait until `curl -sf localhost:3100/health` returns 200, at most 30
    seconds. That is the path the application serves today and the one the
-   container's own healthcheck calls; it becomes `/api/health` when PR #30
+   container's own healthcheck calls; it becomes `/api/health` when the HTTP skeleton
    lands, and this line moves with it. If it never does, print `docker compose -p pma-e2e logs --tail 40 api` and
    FAIL.
 6. **If something else holds port 3100, stop and say so; never kill it.** The
