@@ -137,7 +137,14 @@ describe('EventQueue', () => {
     const expire = await scheduler.schedule(11, 'expire', at, now);
 
     expect([activate.id, expire.id]).toEqual(['promo:11:activate', 'promo:11:expire']);
-    expect(await scheduler.cancel(11)).toEqual({ activate: 1, expire: 1 });
+
+    await scheduler.cancel(11);
+
+    // Not the removal count: BullMQ's script returns `1` for a key that was not
+    // there, so a count cannot tell a removal from a miss — which is what a
+    // `cancel` building a different id from `schedule` would look like.
+    expect(await bus.inspect('promotions').getJob('promo:11:activate')).toBeUndefined();
+    expect(await bus.inspect('promotions').getJob('promo:11:expire')).toBeUndefined();
   });
 
   it('accepts the id the boundary sweep builds, which BullMQ parses rather than stores', async () => {

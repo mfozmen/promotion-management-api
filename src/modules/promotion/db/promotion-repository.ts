@@ -21,7 +21,8 @@ const state = sql<PromotionState>`
     else 'live'
   end`;
 
-// A raw fragment has no column mapper, so this is the driver's text, not a Date.
+// Text, not a Date: drizzle replaces node-postgres' timestamptz parser with the
+// identity and maps per column instead, and a raw fragment has no column to map.
 const committedAt = sql<string>`now()`;
 
 const columns = {
