@@ -1,9 +1,9 @@
-import type { DiscountCalculator } from './dto/discount-calculator.js';
+import type { Discount } from './dto/discount.js';
 
 const BASIS_POINTS_PER_UNIT = 10_000n;
 const FULL_DISCOUNT_BASIS_POINTS = 10_000;
 
-export const percentageDiscount: DiscountCalculator = {
+export const percentageDiscount: Discount = {
   valueError(value) {
     return value > FULL_DISCOUNT_BASIS_POINTS
       ? `discount is above ${FULL_DISCOUNT_BASIS_POINTS} basis points`
