@@ -15,6 +15,7 @@ Acceptance criteria
 - The list is paginated, and two pages never share a product or skip one.
 - The list can be sorted by effective price, ascending or descending.
 - Every item shows its effective price, which is the price after the active promotion, not the base price.
+- Before the storefront has prices to show, the shopper is told the catalogue is not ready rather than shown an empty or stale one (owner decision, issue #13).
 
 Test cases
 
@@ -40,6 +41,14 @@ Test cases
 - Given: a category with more products than one page holds
 - When: the shopper reads page 2 while a product on page 1 is discounted and moves
 - Then: the shopper still sees every product exactly once across the pages they read
+- Measure: none
+
+### shopper-7
+
+- Precondition: `GET /api/products`
+- Given: a freshly started storefront whose catalogue has not been built yet
+- When: the shopper opens a category list
+- Then: the request is refused with 503 and the code `READ_MODEL_NOT_READY`; no empty list and no prices are shown; when the catalogue is ready the same request returns the category's products
 - Measure: none
 
 ## S10 Open a product
