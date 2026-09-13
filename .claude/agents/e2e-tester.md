@@ -37,11 +37,15 @@ a server you launched by hand.
    ```
 
    The migration is a second verb rather than part of `up`, because `--wait`
-   counts an exited one-shot as a wait failure and a `migrate` service inside
-   `up` makes a healthy stack exit 1. `run --rm` returns the migration's own
-   status and is safe to repeat: `drizzle-kit migrate` applies only what
-   `__drizzle_migrations` does not already record. An unmigrated database fails
-   every endpoint that reads one, so do not skip it on a fresh volume.
+   waits for a container to be running and gets a one-shot wrong both ways: an
+   exited one counts as a wait failure, so a `migrate` service inside `up` makes
+   a healthy stack exit 1, and one still running satisfies it, so `up -d --wait`
+   returns 0 over a migration that has not finished — or has not succeeded. That
+   second half is why you cannot infer a migrated database from a green `up`.
+   `run --rm` returns the migration's own status and is safe to repeat:
+   `drizzle-kit migrate` applies only what `__drizzle_migrations` does not
+   already record. An unmigrated database fails every endpoint that reads one,
+   so do not skip it on a fresh volume.
 
 3. **The host port is 3000**, published by the compose file. Every health check
    and every measurement uses it. Only one run can hold it at a time, which is
