@@ -1,0 +1,2 @@
+ALTER TABLE "reconciler_state" ALTER COLUMN "last_boundary_sweep_at" SET DATA TYPE timestamp (3) with time zone;--> statement-breakpoint
+ALTER TABLE "reconciler_state" ALTER COLUMN "last_boundary_sweep_at" SET DEFAULT now();

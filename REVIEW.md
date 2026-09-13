@@ -597,6 +597,17 @@ it for the first silently spends the second.
 Evidence: reading `''` as "no promotion" retired the check that a discounted
 price names its promotion, and nothing failed.
 
+7.11 **An id or key a third-party library parses is built once, behind a name,
+and proved against the real library.** A double written from the API's
+documentation accepts every shape the library's own validator would refuse, so
+the format is checked in production and nowhere else.
+
+Evidence: bullmq rejects a custom job id containing a colon unless it splits in
+exactly three parts. The sweep's `sweep:{id}:{ISO timestamp}` would have thrown
+on every publish — a reconciler that repaired nothing and never advanced its
+watermark — and the only test of that path used a hand-written queue that
+validated nothing.
+
 ---
 
 ## 8. Boundaries, errors and API shape
