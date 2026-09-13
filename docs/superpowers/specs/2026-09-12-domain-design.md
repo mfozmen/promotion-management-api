@@ -426,12 +426,12 @@ where p.id = any($1);
 
 ## 5. Read model (Redis DB 0)
 
-| Key                   | Type | Content                                                                                                                                   |
-| --------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, pricingRulesVersion, updatedAt` |
-| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                        |
-| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                           |
-| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                      |
+| Key                   | Type | Content                                                                                                                                                                                                                                                                                                |
+| --------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `product:{id}`        | HASH | `id, sku, name, category, basePriceCents, effectivePriceCents, stockQuantity, promotionId, promotionName, pricingRulesVersion, updatedAt` — the promotion pair is written together or omitted together, never as `''` or `null`, because Redis has no null and ioredis stores both as the empty string |
+| `category:{category}` | ZSET | score = `effectivePriceCents`, member = product id                                                                                                                                                                                                                                                     |
+| `products:all`        | ZSET | same, across all categories (listing without a category filter)                                                                                                                                                                                                                                        |
+| `readmodel:ready`     | STR  | present once a full rebuild has completed; storefront routes answer `503` until then                                                                                                                                                                                                                   |
 
 - `GET /api/products/:id` = `HGETALL product:{id}` (zero PostgreSQL reads).
 - `GET /api/products` = `ZRANGE <zset> -inf +inf BYSCORE LIMIT offset size`
@@ -469,7 +469,7 @@ dead-letter queue, visible in Bull Board and the admin endpoints).
 | `promotions`  | `promotion.changed` | `{ promotionId }`                    | create (with a target), assign, cancel, delayed activate/expire, reconciler | product target: recompute 1; category target: keyset-scan the category by id in batches of 1 000, recompute, pipeline                                                                               |
 | `maintenance` | `readmodel.rebuild` | `{ category?: string }`              | cold start, admin, reconciler                                               | stream the scope's products from PostgreSQL and recompute each (the delete is part of that write, ADR-0003); `SCAN`+`UNLINK` only ids PostgreSQL no longer has; full rebuild sets `readmodel:ready` |
 | `maintenance` | `reconciler.run`    | `{}` (repeatable, every 5 min)       | reconciler worker schedule                                                  | see section 9                                                                                                                                                                                       |
-| `ingestion`   | `ingestion.chunk`   | `{ jobId, chunkIndex }`              | import registration, resume, time-budget hand-off                           | process the chunk from its checkpoint (section 7)                                                                                                                                                   |
+| `ingestion`   | `chunk.process`     | `{ jobId, chunkIndex }`              | import registration, resume, time-budget hand-off                           | process the chunk from its checkpoint (section 7)                                                                                                                                                   |
 
 Scheduling of promotion boundaries happens when a promotion first becomes
 `active`, which is either create-with-target or `assign`; a draft schedules
@@ -505,7 +505,7 @@ one batch and never duplicates rows.
    (default 4 MiB, ≈ 40 000 rows), each boundary moved forward to the next
    `0x0A`. Chunk 0 starts after the header line (and a UTF-8 BOM, if any).
    Insert the job and its chunk rows in one transaction.
-4. Enqueue one `ingestion.chunk` job per chunk and answer
+4. Enqueue one `chunk.process` job per chunk and answer
    `202 { jobId, chunksTotal }`. Duplicate jobs for a chunk are harmless: the
    lease makes every extra invocation return immediately.
 
@@ -571,7 +571,7 @@ this function is the serverless unit — locally hosted by a BullMQ worker with
    ids.
 5. **Budget**: after each batch, if `elapsed > budgetMs` (default 60 s),
    **release** the chunk (`set status = 'pending', lease_until = null where
-... and next_offset = $seen`), enqueue a fresh `ingestion.chunk` job for it
+... and next_offset = $seen`), enqueue a fresh `chunk.process` job for it
    and return. The checkpoint is already durable, so the next invocation
    resumes at `next_offset`. A crash between release and enqueue leaves a
    `pending` chunk without a job; the reconciler's orphan sweep (section 9)
@@ -630,8 +630,9 @@ Automatic:
 - **Stalled recovery**: BullMQ stalled detection with `lockDuration` sized to the time budget; a crashed worker's job is re-run and the lease lets the next worker claim it.
 - **Checkpoint resume**: the compare-and-set `next_offset` means a retry continues, never restarts, and two workers cannot both advance one chunk.
 - **Backpressure**: `429` on new imports above `INGESTION_MAX_WAITING`.
-- **Category-scoped reconciler** (`reconciler.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`, `ends_at` or `cancelled_at` fell between the previous successful sweep and now (`cancelled_at` because a cancel whose `promotion.changed` was lost need have no boundary of its own in the window, ADR-0003; the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `ingestion.chunk` job (idempotent thanks to the claim).
-- **Cold start**: the API enqueues `readmodel.rebuild {}` when `readmodel:ready` is missing and answers `503` on storefront routes until it exists.
+- **Product entry write**: the recompute writes `HSET product:{id}` and `HDEL product:{id} promotionId promotionName` when it finds no promotion, in the same `MULTI` as the `ZADD`s and in that order. `HSET` does not remove a field, so a cancelled promotion otherwise keeps a well-formed pair beside a restored base price and the storefront names a finished sale; and a reader that sees the price restored before the pair is cleared gets a discounted price with no promotion, which the storefront refuses for the whole page (ADR-0006).
+- **Cold start**: the storefront routes answer `503` while `readmodel:ready` is missing. Enqueuing `readmodel.rebuild {}` on that condition is **not built yet** — the read-model worker story owns it, along with unlinking the key before its sweep and setting it last, which is what stops a Redis restart reloading the flag and the stale hashes it certified together. Until then a cold start waits for something to start the rebuild, and nothing does.
+- **Category-scoped reconciler** (`reconciler.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`, `ends_at` or `cancelled_at` fell between the previous successful sweep and now (`cancelled_at` because a cancel whose `promotion.changed` was lost need have no boundary of its own in the window, ADR-0003; the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `chunk.process` job (idempotent thanks to the claim).
 - **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: always` brings it back.
 - **Handler isolation**: every handler catches, logs with the job id and rethrows so BullMQ records the failure; nothing crashes the process.
 
@@ -692,13 +693,12 @@ Target layout: a file appears here before it exists on disk, and lands with the 
 src/
   app.ts, server.ts                      Express wiring / API entry point
   modules/
-    product/     product.routes.ts, product.service.ts, product.repository.ts, product.schemas.ts, read-model.ts
+    storefront/  http/product-read-routes.ts, queries/ (one class per use case), db/product-read-repository.ts, domain/, events/
     promotion/
       domain/    effective-price-calculator.ts (EffectivePriceCalculator: discounts injected, the lookup inline in calculate, the input guard a private method), percentage-discount.ts and fixed-discount.ts (one Discount class each, formula and value check together), candidate-selection.ts (runs the engine over already-loaded rules, pure)
         dto/     promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), discount.ts (the Discount interface: valueError + discountCents) — REVIEW.md 8c.8
       db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
       http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
-      jobs/      scheduling.ts
     pricing/
       domain/    base-price-calculator.ts (compiles the rules, owns the engine, serialises its runs, prices a row), base-price-calculator-cache.ts (caches a compiled calculator; the query that feeds it is the caller's)
         dto/     pricing-rule-row.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8

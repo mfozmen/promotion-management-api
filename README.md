@@ -14,6 +14,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - http-errors (the error envelope: status, `expose`, response headers)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
 - BullMQ on Redis 7 (event queue; see [ADR-0003](./ADR.md))
+- ioredis (the storefront read model, on its own Redis database; see [ADR-0006](./ADR.md))
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
@@ -46,13 +47,13 @@ Demo data. Once the schema is up, one more command fills it:
 DATABASE_URL=postgres://promo:promo@localhost:5432/promotion npm run seed
 ```
 
-It applies [`scripts/demo-seed.sql`](./scripts/demo-seed.sql) as a single transaction: 1 000 products over `Electronics`, `Apparel`, `Home` and `Sports`, and one seven-day 20 % flash sale on `Electronics`. It is a script rather than a migration because a production database must be able to skip it; the `ingestion` pricing rules a vendor import applies are reference data, not demo data, and are seeded by migration `0001_seed_pricing_rules.sql`.
+It applies [`scripts/demo-seed.sql`](./scripts/demo-seed.sql) as a single transaction: 1 000 products over `Electronics`, `Apparel`, `Home` and `Sports`, and one seven-day 20 % flash sale on `Electronics`. It fills PostgreSQL and nothing else: no worker builds the Redis read model, so a seeded stack still answers `503` on both product routes (ADR-0006). It is a script rather than a migration because a production database must be able to skip it; the `ingestion` pricing rules a vendor import applies are reference data, not demo data, and are seeded by migration `0001_seed_pricing_rules.sql`.
 
 Run it as often as you like: what you get depends on the migrations and this run alone, never on what a previous run left. Products upsert on `sku` and rewrite only a row whose values or provenance differ from what this run would leave, so a row an import had claimed goes back to being a demo row, provenance columns and all. The flash sale is deleted by name and re-inserted rather than updated, because the `promotions_no_overlapping_active_category` exclusion constraint would reject a second active row over the same category and window; its window opens at the moment of the run, so re-running is also how a demo database left for more than a week gets a live sale back.
 
 Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own: an active `Electronics` promotion under another name is not deleted by name, so the insert aborts on `23P01` and the whole file rolls back, leaving no half-written catalogue behind.
 
-[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet — the upload endpoint and chunk worker arrive with issue #16 — and no worker service runs, so the read model the storefront reads is not built by `npm run seed`; that half of issue #19 is still open.
+[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the upload endpoint and chunk worker arrive with issue #16, and that half of issue #19 is still open.
 
 Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
 
@@ -67,13 +68,13 @@ npm run lint
 
 The suite is split into layers, so the one that needs nothing can run anywhere:
 
-| Layer                              | Command                    | Needs                                 | Runs                        |
-| ---------------------------------- | -------------------------- | ------------------------------------- | --------------------------- |
-| unit (`tests/unit/`)               | `npm test`                 | nothing                               | pre-commit hook, everywhere |
-| integration (`tests/integration/`) | `npm run test:integration` | real PostgreSQL and the Redis on 6399 | CI, before every push       |
-| both, with coverage                | `npm run test:cov`         | the same two                          | CI (the 100 % gate)         |
+| Layer                              | Command                    | Needs                                                                                                            | Runs                        |
+| ---------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| unit (`tests/unit/`)               | `npm test`                 | nothing                                                                                                          | pre-commit hook, everywhere |
+| integration (`tests/integration/`) | `npm run test:integration` | PostgreSQL, the compose Redis (database 9) and, for the queue and shutdown tests only, a throwaway Redis on 6399 | CI, before every push       |
+| both, with coverage                | `npm run test:cov`         | the same two                                                                                                     | CI (the 100 % gate)         |
 
-The integration tests run against a real PostgreSQL, never a mock. Point them at one with
+The integration tests run against a real PostgreSQL and a real Redis, never a mock. Point them at one with
 `TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
 default is not the compose server: `docker-compose.yml` publishes 5432 with the `.env`
 credentials, so either reuse it with
@@ -115,7 +116,7 @@ The compose file holds the two stores, the `api` service built from this reposit
 Four queues, one per urgency class, and `eventRouting` maps an event to one of
 them — the caller never picks. `promotions` carries `promotion.changed` and the
 delayed boundary jobs, `catalog` carries `product.upserted`, `ingestion` carries
-`ingestion.chunk`, and `maintenance` carries `readmodel.rebuild` and
+`chunk.process`, and `maintenance` carries `readmodel.rebuild` and
 `reconciler.run`. The partition is what keeps a 500 000-row import's ~500
 announcements, or a full read-model rebuild, from sitting in front of a flash
 sale's `promotion.changed`: each queue gets its own worker, so two events that
@@ -140,9 +141,9 @@ queues anyway (ADR-0003).
 
 ## Project structure
 
-Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7). The tree and the naming rules are in [CONTRIBUTING.md](./CONTRIBUTING.md) under "Source layout"; this file does not repeat them.
+Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7, ADR-0008). The tree and the naming rules are in [CONTRIBUTING.md](./CONTRIBUTING.md) under "Source layout"; this file does not repeat them. Nothing sits at the `tests/` root: a helper belongs to the layer that uses it, named `<subject>-<role>.ts`, as `tests/unit/capture-logger.ts` is (REVIEW.md 7.7).
 
-Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias, (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
 
 ## Database schema
 
@@ -150,7 +151,7 @@ The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/mi
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver and the admin reads select from it instead of restating the predicate (ADR-0004). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
 
-`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
+`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them. The Redis read model has no DDL of its own, so nothing under `migrations/` describes it. Nothing writes it yet either: no worker consumes the `promotions` queue, so on a fresh stack `readmodel:ready` is absent and both product routes answer `503` until the recompute story lands (ADR-0006).
 
 ## Dynamic pricing rules
 
@@ -178,9 +179,11 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 All endpoints are mounted under the `/api` prefix (ADR-0009).
 
-| Method | Path          | Description                               | Query parameters |
-| ------ | ------------- | ----------------------------------------- | ---------------- |
-| GET    | `/api/health` | Liveness probe, returns `{"status":"ok"}` | none             |
+| Method | Path                | Description                                            | Query parameters                                                                                                                                                                 |
+| ------ | ------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/health`       | Liveness probe, returns `{"status":"ok"}`              | none                                                                                                                                                                             |
+| GET    | `/api/products`     | Storefront listing, `{ items, page, pageSize, total }` | `category` (exact match, optional, 256 characters), `sort=effectivePrice` (the only sort), `order=asc\|desc` (default `asc`), `page` (default 1), `pageSize` (1-100, default 20) |
+| GET    | `/api/products/:id` | One product with its applied promotion                 | none; `id` is digits only                                                                                                                                                        |
 
 Further endpoints are documented as they land. The design spec puts every route under `/api` (`docs/superpowers/specs/2026-09-12-domain-design.md`), and the health route moved from `GET /health` to `GET /api/health` with the boundary (ADR-0009), so the prefix holds for everything that ships today.
 
@@ -190,6 +193,7 @@ Further endpoints are documented as they land. The design spec puts every route 
 - **An unexpected error** — anything the `http-errors` library does not recognise — answers `500` with `Internal server error` and nothing else; the stack goes to the log under `err` and never to the response (ADR-0010).
 - **Validation.** Request bodies, query strings and path parameters are validated at the boundary with strict zod schemas: an unknown field is a `400`, not a silently ignored typo. The rejection names the failing part and nothing more (`Invalid request body`): no field path, no issue list, no echo of what you sent. Strictness is top-level; a nested object declares its own with `z.strictObject(...)` (ADR-0009).
 - **Request bodies** are capped at 100kb. Everything body-parser refuses keeps the status that says which failure it was — 400 for a body that cannot be read, 413 for one over the cap, 415 for a charset it will not decode — and its own message, which describes the caller's own request rather than anything of ours (ADR-0009).
+- **Storefront reads.** Both product routes are served from the Redis read model and never from PostgreSQL, so they answer `503` with a `Retry-After` in two cases: until a rebuild has published `readmodel:ready`, and whenever Redis is unreachable. A product the detail route cannot find is a `404`; a rebuild is required never to leave a listed product without its entry, so the route does not spend a command per miss asking. `page` and `pageSize` are bounded together: the resulting offset may not exceed 10 000.
 - **Correlation id.** Send `x-request-id` (matching `^[A-Za-z0-9._-]{1,128}$`) to trace a request; anything else is replaced by a generated uuid. The id used is returned in the `x-request-id` response header and appears as `reqId` on every JSON log line (ADR-0010).
 
 ## Development workflow

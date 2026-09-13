@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-export const ingestionChunk = z.strictObject({
+export const chunkProcess = z.strictObject({
   jobId: z.number().int().positive(),
   chunkIndex: z.number().int().nonnegative(),
 });
 
-export type IngestionChunk = z.infer<typeof ingestionChunk>;
+export type ChunkProcess = z.infer<typeof chunkProcess>;

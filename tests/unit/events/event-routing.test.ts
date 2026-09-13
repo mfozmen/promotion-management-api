@@ -6,7 +6,7 @@ describe('eventRouting', () => {
     expect(eventRouting).toEqual({
       'promotion.changed': 'promotions',
       'product.upserted': 'catalog',
-      'ingestion.chunk': 'ingestion',
+      'chunk.process': 'ingestion',
       'readmodel.rebuild': 'maintenance',
       'reconciler.run': 'maintenance',
     });
@@ -15,7 +15,7 @@ describe('eventRouting', () => {
   it('keeps a flash sale off every queue a bulk import or a rebuild writes to', () => {
     const bulk = [
       eventRouting['product.upserted'],
-      eventRouting['ingestion.chunk'],
+      eventRouting['chunk.process'],
       eventRouting['readmodel.rebuild'],
     ];
 

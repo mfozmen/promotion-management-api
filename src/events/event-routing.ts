@@ -5,7 +5,7 @@ import type { EventName } from './event-name.js';
 export const eventRouting = {
   'promotion.changed': 'promotions',
   'product.upserted': 'catalog',
-  'ingestion.chunk': 'ingestion',
+  'chunk.process': 'ingestion',
   'readmodel.rebuild': 'maintenance',
   'reconciler.run': 'maintenance',
 } as const satisfies Record<EventName, QueueName>;
