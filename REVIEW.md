@@ -414,7 +414,11 @@ would lean on.
 6.22 **Measure what you claim.** Any change to a storefront route, the event
 handler or the chunk processor reports the `e2e-tester` numbers in the PR:
 requests per second, p50, p99, peak RSS. "Should be faster" without a number is
-a finding.
+a finding. `e2e-tester` runs when the owner asks for one, not on every push, so
+a PR that has had no run says which numbers it is waiting on and names the run
+it will quote; what this rule forbids is a performance claim with no number
+behind it, not a PR that has not been measured yet. Stated because the rule read
+as requiring a run nobody may start, which is a trigger that cannot fire.
 
 ---
 

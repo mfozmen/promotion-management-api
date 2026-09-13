@@ -7,6 +7,9 @@ export function toProductView(hash: Record<string, string>) {
 
   return {
     ...product,
-    promotion: promotionId === undefined ? null : { id: promotionId, name: promotionName },
+    promotion:
+      promotionId === undefined || promotionName === undefined
+        ? null
+        : { id: promotionId, name: promotionName },
   };
 }

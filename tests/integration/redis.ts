@@ -35,7 +35,13 @@ export function useTestRedis(): () => Redis {
   return () => redis;
 }
 
-export type SeedProduct = {
+/** The promotion is a pair or it is absent, the way the read model stores it,
+ *  so a seed cannot write half of one and certify a shape the reader refuses. */
+export type SeedPromotion =
+  | { promotionId?: undefined; promotionName?: undefined }
+  | { promotionId: number; promotionName: string };
+
+export type SeedFields = {
   id: number;
   sku: string;
   name: string;
@@ -43,9 +49,9 @@ export type SeedProduct = {
   basePriceCents: number;
   effectivePriceCents: number;
   stockQuantity: number;
-  promotionId?: number;
-  promotionName?: string;
 };
+
+export type SeedProduct = SeedFields & SeedPromotion;
 
 /** Writes the keys the read-model worker will write, as the design documents them. */
 export async function seedProducts(redis: Redis, products: readonly SeedProduct[]): Promise<void> {
@@ -61,7 +67,7 @@ export async function seedProducts(redis: Redis, products: readonly SeedProduct[
       stockQuantity: String(product.stockQuantity),
       ...(product.promotionId === undefined
         ? {}
-        : { promotionId: String(product.promotionId), promotionName: product.promotionName ?? '' }),
+        : { promotionId: String(product.promotionId), promotionName: product.promotionName }),
       ingestionRulesVersion: '1789238046',
       updatedAt: '2026-09-12T00:00:00.000Z',
     });

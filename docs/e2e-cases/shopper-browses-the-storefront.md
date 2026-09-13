@@ -78,6 +78,8 @@ Acceptance criteria
 
 - The product page shows the effective price, the base price it came from, and which promotion applied.
 - The product page and the list agree on the price.
+- Opening a product the catalogue does not hold tells the shopper it is not there, rather than showing a page with no price (owner decision, issue #13).
+- Before the storefront has prices to show, opening a product is refused the same way a list is, rather than answering from stale or absent data (owner decision, issue #13).
 - This is the most requested page in the system and it stays fast when many shoppers open it at once.
 
 Test cases
@@ -95,7 +97,7 @@ Test cases
 - Precondition: `GET /api/products/:id`
 - Given: an identifier that no product has
 - When: the shopper opens it
-- Then: 404 with a message that does not echo the identifier back
+- Then: 404, and no product, price or promotion is shown
 - Measure: none
 
 ### shopper-6
@@ -105,3 +107,11 @@ Test cases
 - When: 100 concurrent shoppers read it for 15 seconds
 - Then: every response is a 200 with the same price, none fails, none times out
 - Measure: p99 latency, median of three runs, under 100 ms; zero non-2xx; zero errors
+
+### shopper-10
+
+- Precondition: `GET /api/products/:id`
+- Given: a freshly started storefront whose catalogue has not been built yet
+- When: the shopper opens a product straight from a link
+- Then: the request is refused with 503 and the code `READ_MODEL_NOT_READY`; no price is shown; when the catalogue is ready the same link shows the product and its effective price
+- Measure: none

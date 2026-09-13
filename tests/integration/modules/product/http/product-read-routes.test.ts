@@ -2,12 +2,20 @@ import { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
-import { seedProducts, useTestRedis, type SeedProduct } from '../../../redis.js';
+import {
+  seedProducts,
+  useTestRedis,
+  type SeedFields,
+  type SeedProduct,
+  type SeedPromotion,
+} from '../../../redis.js';
 
 const redis = useTestRedis();
 const app = () => createApp({ redis: redis() });
 
-const product = (over: Partial<SeedProduct> & Pick<SeedProduct, 'id'>): SeedProduct => ({
+const product = (
+  over: Partial<SeedFields> & Pick<SeedFields, 'id'> & SeedPromotion,
+): SeedProduct => ({
   sku: `SKU-${over.id}`,
   name: `Product ${over.id}`,
   category: 'Accessories',
@@ -229,6 +237,19 @@ describe('a rebuild that has removed a product the index still lists', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.items.map((item: { id: number }) => item.id)).toEqual([2]);
+  });
+
+  it('calls that product a rebuild on the detail route, not a missing product', async () => {
+    await seedProducts(redis(), [product({ id: 1 })]);
+    await redis().unlink('product:1');
+
+    const res = await request(app()).get('/api/products/1');
+
+    // The listing calls this state a rebuild in progress. A 404 for the same
+    // state is cacheable, and says a product that exists does not.
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('READ_MODEL_NOT_READY');
+    expect(res.headers['retry-after']).toBeDefined();
   });
 });
 
