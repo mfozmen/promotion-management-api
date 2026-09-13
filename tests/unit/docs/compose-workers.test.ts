@@ -93,12 +93,16 @@ describe('the worker services', () => {
   it('creates the upload directory for the user the image runs as', async () => {
     // A named volume takes its ownership from the image's directory. Without one, Docker makes
     // the mountpoint root-owned and `USER node` gets EACCES on the first upload — a shared
-    // volume that reads as correctly configured and cannot be written to.
+    // volume that reads as correctly configured and cannot be written to. The path comes from
+    // compose, so moving `UPLOAD_DIR` cannot leave the chown behind with this still green.
+    const dir = String(
+      ((await services())['api']?.['environment'] as Record<string, string>)['UPLOAD_DIR'],
+    );
     const dockerfile = await readFile(new URL('../../../Dockerfile', import.meta.url), 'utf8');
-    const [, owner] = /chown (\S+) \/app\/uploads/.exec(dockerfile) ?? [];
+    const user = /USER (\S+)/.exec(dockerfile)?.[1] ?? '';
 
-    expect(dockerfile.indexOf('mkdir -p /app/uploads')).toBeLessThan(dockerfile.indexOf('USER '));
-    expect(owner).toBe(`${/USER (\S+)/.exec(dockerfile)?.[1] ?? ''}:node`);
+    expect(dockerfile).toContain(`chown ${user}:${user} ${dir}`);
+    expect(dockerfile.indexOf(`mkdir -p ${dir}`)).toBeLessThan(dockerfile.indexOf('USER '));
   });
 
   it.each([...WORKERS, 'api'])(
@@ -106,12 +110,19 @@ describe('the worker services', () => {
     async (name) => {
       // Docker's default grace period is 10 s and the drain budget defaults to 10 s: the timeout
       // that exists to log why a stop is taking so long would race the SIGKILL that ends it.
+      // `.env.example` is read too, because that is the file that invites raising the budget.
+      // `api` carries the grace period but does not yet spend it as a bound on its queue and
+      // pool close (ADR-0003); that belongs to the api's own shutdown.
       const service = (await services())[name] ?? {};
       const grace = Number(String(service['stop_grace_period']).replace('s', ''));
       const environment = service['environment'] as Record<string, string>;
-      const drainMs = Number(/:-(\d+)}/.exec(environment['SHUTDOWN_DRAIN_TIMEOUT_MS'] ?? '')?.[1]);
+      const example = await readFile(new URL('../../../.env.example', import.meta.url), 'utf8');
+      const budgets = [
+        /:-(\d+)}/.exec(environment['SHUTDOWN_DRAIN_TIMEOUT_MS'] ?? '')?.[1],
+        /^SHUTDOWN_DRAIN_TIMEOUT_MS=(\d+)$/m.exec(example)?.[1],
+      ];
 
-      expect(grace * 1000).toBeGreaterThan(drainMs);
+      for (const budget of budgets) expect(grace * 1000).toBeGreaterThan(Number(budget));
     },
   );
 

@@ -16,9 +16,7 @@ export default defineConfig({
       include: ['src/**'],
       // Process entry points, per the design spec's section 12: they wire collaborators and
       // install signal handlers, and exercising them means starting a process.
-      // The three process entry points: a `main` that only wires and starts. Everything they
-      // call lives in `start-worker.ts`, which is covered. `sonar-project.properties` repeats
-      // this list because SonarCloud reads its own.
+      // `sonar-project.properties` repeats the list because SonarCloud reads its own.
       exclude: [
         'src/server.ts',
         'src/workers/event-handler.ts',

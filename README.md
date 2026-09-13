@@ -49,7 +49,10 @@ let a worker connect before the schema exists.
 producer handle on every queue and that no consumer is registered, so an idle queue is not
 mistaken for a drained one; no worker holds a subset of the queues. On `docker compose stop` each
 closes the queue within `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s, the same bound `api` uses) and exits
-anyway if it has not closed by then. The projection arrives with issue #12, the chunk processor
+anyway if it has not closed by then. Every service is given `stop_grace_period: 15s` so that
+bound can be reached and logged: Docker's default grace is also 10 s, which would kill the
+process at the same moment as the warning explaining why the stop is slow (ADR-0003). The
+projection arrives with issue #12, the chunk processor
 with #105, and the reconciler's boundary sweep with #18, in its own pull request under
 `src/workers/reconciler/`. They carry no healthcheck for the same reason: until a worker has
 work, a check could only confirm the process is alive, which `up --wait` already does. All three
@@ -66,9 +69,14 @@ the other.
 
 `api` and `ingestion-worker` share a named `uploads` volume mounted at `/app/uploads`: `api`
 writes the uploaded file there and the worker reads it back by `file_ref`, so the two have to be
-on the same host. Nothing writes to it yet — the upload endpoint and chunk worker arrive with
-issue #16. `tests/unit/docs/compose-workers.test.ts` parses the compose file and fails if the
-cap, the heap ceiling under it or the shared mount goes missing.
+on the same host. Both services set `UPLOAD_DIR=/app/uploads` explicitly, and the image creates
+that directory and gives it to the `node` user before dropping privileges: a named volume takes
+its ownership from the image, so without that the mountpoint is root-owned and the first upload
+fails with `EACCES` on a volume that looks correctly mounted (ADR-0003). Nothing writes to it yet
+— the upload endpoint and chunk worker arrive with issue #16.
+`tests/unit/docs/compose-workers.test.ts` parses the compose file and the `Dockerfile`, and fails
+if the cap, the heap ceiling under it, the grace period, the shared mount or its ownership goes
+missing.
 
 ## Develop
 
