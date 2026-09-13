@@ -3,7 +3,6 @@ import type { ZodError } from 'zod';
 import { HttpError } from './http-error.js';
 import { MAX_DETAILS } from './max-details.js';
 import type { RequestSchemas } from './request-schemas.js';
-import { logger } from '../logger.js';
 
 const PARTS = ['body', 'query', 'params'] as const;
 
@@ -51,9 +50,6 @@ const shownKeys = (keys: readonly string[]): string =>
     .map((key) => JSON.stringify(key.slice(0, MAX_KEY_LENGTH)))
     .join(', ');
 
-const rejectedKeys = (error: ZodError): string[] =>
-  error.issues.flatMap((issue) => (issue.code === 'unrecognized_keys' ? issue.keys : []));
-
 /**
  * Declared parts only: a part with no schema reaches the handler raw.
  *
@@ -77,22 +73,6 @@ export function validate(schemas: RequestSchemas): RequestHandler {
     for (const [part, schema] of strict) {
       const result = schema.safeParse(req[part]);
       if (!result.success) {
-        const keys = rejectedKeys(result.error);
-        if (keys.length > 0) {
-          // The client is told which keys it got wrong; this line is so a fleet
-          // of them misconfigured the same way is visible in one place. `warn`
-          // because the default level is `info` and a `debug` line would never
-          // be written. Two lines per rejected request on an unauthenticated
-          // path, bounded to roughly 1.4 kB by the same caps as the response.
-          (req.log ?? logger).warn(
-            {
-              part,
-              keys: keys.slice(0, MAX_SHOWN_KEYS).map((key) => key.slice(0, MAX_KEY_LENGTH)),
-              count: keys.length,
-            },
-            'unrecognized fields rejected',
-          );
-        }
         next(
           new HttpError(
             'VALIDATION_ERROR',

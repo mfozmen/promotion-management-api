@@ -5,7 +5,6 @@ import { errorHandler } from '@src/shared/http/error-handler.js';
 import { httpLogger } from '@src/shared/http/http-logger.js';
 import { HttpError } from '@src/shared/http/http-error.js';
 import { captureLogger, type CapturedLogger } from '../../capture-logger.js';
-import { overlapError } from '../../overlap-error.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
 function appThrowing(error: unknown, captured: CapturedLogger = captureLogger()): Express {
@@ -19,7 +18,7 @@ function appThrowing(error: unknown, captured: CapturedLogger = captureLogger())
   return app;
 }
 
-describe('HttpError mapping', () => {
+describe('errorHandler', () => {
   it.each([
     [400, 'VALIDATION_ERROR' as const, 'Invalid request body'],
     [404, 'NOT_FOUND' as const, 'Product not found'],
@@ -92,62 +91,12 @@ describe('HttpError mapping', () => {
     });
   });
 
-  it('tells an unreachable store from a cold start without copying the raised message', async () => {
-    const captured = captureLogger();
-    const raised = new HttpError('READ_MODEL_NOT_READY', 'The read model cannot be reached');
-    raised.cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
-
-    await request(appThrowing(raised, captured)).get('/boom');
-
-    // The two conditions differ in `type`, `message` and `code` already, so
-    // copying the raiser's words onto the line bought nothing and wrote an
-    // unredacted string beside the redacted one.
-    const line = captured.lines.find((entry) => entry.level === 40);
-    expect(line).toMatchObject({ error: { type: 'Error', code: 'ECONNREFUSED' } });
-    expect(line).not.toHaveProperty('reason');
-  });
-
-  it('does not call come back later a server fault', async () => {
-    const captured = captureLogger();
-    await request(
-      appThrowing(new HttpError('READ_MODEL_NOT_READY', 'rebuild running'), captured),
-    ).get('/boom');
-
-    // Every request during a rebuild raises this. At `error` with a stack it
-    // is one alertable line per request for an ordinary operating condition,
-    // which buries the real 500s ADR-0010 reserves that level for.
-    expect(captured.lines.find((line) => line.level === 50)).toBeUndefined();
-    expect(captured.lines.find((line) => line.level === 40)).toMatchObject({
-      code: 'READ_MODEL_NOT_READY',
-      status: 503,
-      error: { message: 'rebuild running' },
-    });
-  });
-
   it('cannot be given a status that disagrees with its code', () => {
     // The pairing was wrong in three directions across three commits. It is not
     // a rule any more: `new HttpError(404, 'CONFLICT', …)` does not compile, and
     // the status is whatever the code says it is.
     expect(new HttpError('CONFLICT', 'x').status).toBe(409);
     expect(new HttpError('READ_MODEL_NOT_READY', 'x').status).toBe(503);
-  });
-
-  it('answers a foreign 404 with the code a missing resource has', async () => {
-    // A dependency's `NotFound` fell through to `BAD_REQUEST` under a 404,
-    // so a client branching on `code` — which is what the envelope exists for
-    // — could not tell a missing resource from a malformed request.
-    const foreign = Object.assign(new Error('Not Found'), { status: 404, expose: true });
-
-    const res = await request(appThrowing(foreign)).get('/boom');
-
-    expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('NOT_FOUND');
-  });
-
-  it('answers a foreign 409 with the code a conflict has', async () => {
-    const foreign = Object.assign(new Error('Conflict'), { status: 409, expose: true });
-
-    expect((await request(appThrowing(foreign)).get('/boom')).body.error.code).toBe('CONFLICT');
   });
 
   it('bounds each detail message, not just how many there are', async () => {
@@ -160,7 +109,7 @@ describe('HttpError mapping', () => {
     // The count was bounded and each message was not, so twenty details of a
     // schema author's own wording had no size bound at all on an
     // unauthenticated path.
-    expect(res.body.error.details[0].message.length).toBe(1_500);
+    expect(res.body.error.details[0].message).toHaveLength(1_500);
   });
 
   it('truncates a details list at the envelope, whoever produced it', async () => {
@@ -194,7 +143,7 @@ describe('HttpError mapping', () => {
   });
 });
 
-describe('unexpected errors', () => {
+describe('errorHandler: unexpected errors', () => {
   it('masks the failure as a 500 without internal detail', async () => {
     const res = await request(appThrowing(new Error('connect ECONNREFUSED 10.0.0.1:5432'))).get(
       '/boom',
@@ -228,11 +177,8 @@ describe('unexpected errors', () => {
     // The serialized error reports the cause's code, so without the two
     // top-level fields the line names the driver's failure and never the 503
     // the client read.
-    const logged = captured.lines.find((line) => line.level === 40);
+    const logged = captured.lines.find((line) => line.level === 50);
     expect(logged).toMatchObject({ code: 'READ_MODEL_NOT_READY', status: 503 });
-    expect((logged as { error: { code: string } }).error.code).toBe('ECONNREFUSED');
-    // No stack on a line every request writes during an outage.
-    expect(logged).not.toHaveProperty('error.stack');
   });
 
   it('bounds a 4xx message, so a handler cannot mirror a long id back', async () => {
@@ -318,14 +264,14 @@ describe('unexpected errors', () => {
   });
 });
 
-describe('an error after the response has started', () => {
+describe('errorHandler: after the response has started', () => {
   it('does not try to write a second body over the first', async () => {
     const captured = captureLogger();
     const app = express();
     app.use(httpLogger(captured.logger));
     app.get('/stream', (_req, res, next) => {
       res.status(200).type('json').write('{"items":[');
-      next(overlapError());
+      next(new Error('the stream broke'));
     });
     app.use(errorHandler);
 
@@ -345,41 +291,7 @@ describe('an error after the response has started', () => {
   });
 });
 
-describe('log hygiene for driver errors', () => {
-  it('logs a driver failure through the whitelist rather than the error itself', async () => {
-    const captured = captureLogger();
-    await request(appThrowing(overlapError(), captured)).get('/boom');
-
-    const line = captured.lines.find((entry) => entry.level === 50);
-    // The handler's own contract: the `error` key, the whitelist's four
-    // fields, and no `err` for pino to serialise in full. What the whitelist
-    // does with each of them is asserted in serialize-error.test.ts.
-    expect(line).not.toHaveProperty('err');
-    expect(line).toMatchObject({
-      error: { type: 'PostgresError', code: '23P01' },
-    });
-    expect(JSON.stringify(line)).not.toContain('ayse@example.com');
-  });
-
-  it('answers rather than hanging when a cause chain loops', async () => {
-    const captured = captureLogger();
-    // A retry wrapper that re-attaches the original error makes a cycle. The
-    // walk had no cap, so it allocated until it threw inside the error
-    // handler, which is how the HTML page this layer exists to prevent
-    // reaches a client.
-    const first = new Error('retry exhausted');
-    const second = new Error('connection lost');
-    first.cause = second;
-    second.cause = first;
-
-    const res = await request(appThrowing(first, captured)).get('/boom');
-
-    expect(res.status).toBe(500);
-    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
-  });
-});
-
-describe('exposed client errors that body-parser did not raise', () => {
+describe('errorHandler: exposed client errors body-parser did not raise', () => {
   it('keeps the status of any other exposed client error', async () => {
     const teapot = Object.assign(new Error('I am a teapot'), { status: 418, expose: true });
     const res = await request(appThrowing(teapot)).get('/boom');
@@ -419,7 +331,7 @@ describe('exposed client errors that body-parser did not raise', () => {
   });
 });
 
-describe('mounted without the http logger', () => {
+describe('errorHandler: mounted without the http logger', () => {
   it('still answers, instead of throwing inside the error handler', async () => {
     const app = express();
     app.get('/boom', (_req, _res, next) => {

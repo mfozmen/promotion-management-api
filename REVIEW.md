@@ -603,15 +603,10 @@ would have come straight back in the error body.
 8.4 No internal detail escapes to the client: no stack trace, no SQL text, no
 connection string, no secret, in a response. A log line is read by the operator,
 not the caller, so the stack of an unexpected error belongs there — it is the
-only way to diagnose a 500 — but SQL text, bound parameters and secrets do not.
-A driver or ORM error carries the failing statement and the bound row on its own
-fields — and composes its message out of them — so an error is reduced to a
-whitelist before it is logged: its type, a message it did not build from the
-statement, the SQLSTATE, and the frames of its stack. One shared implementation
-does this (`serializeError` in `src/shared/serialize-error.ts`), every logging site calls
-it, and the result is logged under an `error` key. Handing a logger the error
-itself, under `err` or any other key, is a finding, and so is a second copy of
-the whitelist.
+only way to diagnose a 500 — and never in the body. Errors are logged through
+one shared whitelist (`serializeError`), under an `error` key; handing a logger
+the error itself, under `err` or any other key, is a finding, and so is a second
+copy of the whitelist.
 
 8.5 Handlers log and rethrow; `catch {}` is a finding. A caught error that is
 neither logged nor rethrown is a silent failure.
@@ -964,41 +959,20 @@ opposite of what its commit message claims; that one shipped twice before it
 was noticed.
 
 13.8 **A merged configuration file is checked by parsing it, not by reading
-it.** A merge can leave two blocks under the same key: git is content, because
-each side's lines are kept and neither deleted the other's; the parser is
-content, because a duplicate key is legal in YAML and the last occurrence wins;
-and a reader is content, because each block is individually correct. Load the
-merged file and compare the parsed result against what you meant it to say —
-for a workflow, the service list, the step list, the environment.
+it.** A merge can leave two blocks under one key, and git, the parser and a
+reader are each content: every line is kept, a duplicate key is legal, and each
+block is individually correct.
 
-Evidence: merging the storefront branch onto the HTTP skeleton put two
-`services:` blocks in `ci.yml`, one bringing up Redis and one PostgreSQL. YAML
-kept the second, so every integration test would have run in CI against no
-Redis at all, and the diff read as two correct additions. This is the fourth of
-a family this week — a gate that cannot fire is indistinguishable from a gate
-that passed. The others were a label-strip step that removed no labels,
-`drizzle-kit` exiting 0 on a failure, and a migration-count assertion that
-could not fail (11.5). The question that separates them is not "did it pass"
-but "what would make it fail, and has anyone seen it do that".
+Evidence: two `services:` blocks in `ci.yml` after a merge, of which YAML kept
+the second, so every integration test would have run against no Redis.
 
 13.9 **After a merge, re-read the prose against the merged tree — a conflict
-marker is not the list of what the merge broke.** A merge keeps both sides'
-text, and the sentences most likely to be wrong afterwards are the ones that
-never conflicted: one side's code makes the other side's claim false while
-touching none of its lines, so git has nothing to ask about and the diff shows
-one clean addition. The check is claim by claim against the tree, not marker by
-marker against the patch, and it is owed by whoever performs the merge rather
-than by whoever wrote either sentence.
+marker is not the list of what the merge broke.** The sentences most likely to
+be wrong afterwards are the ones that never conflicted, because one side's code
+made the other side's claim false while touching none of its lines.
 
-Evidence: the queue story added a `SIGTERM` handler that drains in flight
-requests; the HTTP branch's ADR said, thirty lines from anything either side
-edited, that the process had no `SIGTERM` handling and that draining would land
-with the first real endpoint. Both were true when written, neither conflicted,
-and the merged record told a reader the opposite of what the merged code did.
-The union resolution has the same shape from the other direction: keeping both
-sides of a documentation hunk reads as the safe default and is the mirror image
-of taking a side, and on one README it duplicated three sections and let a
-stale copy overwrite a live one.
+Evidence: the queue story added a `SIGTERM` handler while this branch's ADR
+said, thirty lines from anything either side edited, that the process had none.
 
 ## 13b. The rulebook learns
 

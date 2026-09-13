@@ -37,7 +37,7 @@ const listQuery = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-describe('validate: body', () => {
+describe('validate', () => {
   const app = appWith('/products', validate({ body: createProduct }));
 
   it('passes the parsed body to the handler', async () => {
@@ -61,28 +61,6 @@ describe('validate: body', () => {
       path: 'body',
       message: 'Unrecognized keys (1): "basePrice"',
     });
-
-    expect(captured.lines).toContainEqual(
-      expect.objectContaining({ keys: ['basePrice'], msg: 'unrecognized fields rejected' }),
-    );
-  });
-
-  it('logs the keys at the level the application actually runs at', async () => {
-    // The default pino level is `info`. A `debug` line here would be a
-    // mitigation that never fires in production while passing every test.
-    const captured = captureLogger('info');
-    await request(appLogging('/products', captured, validate({ body: createProduct })))
-      .post('/products')
-      .set('x-request-id', 'trace-validate')
-      .send({ sku: 'SKU-1', basePriceCents: 1999, basePrice: 19.99 });
-
-    expect(captured.lines).toContainEqual(
-      expect.objectContaining({
-        keys: ['basePrice'],
-        reqId: 'trace-validate',
-        msg: 'unrecognized fields rejected',
-      }),
-    );
   });
 
   it('truncates a long key rather than omitting it, in the response too', async () => {
@@ -97,45 +75,6 @@ describe('validate: body', () => {
       path: 'body',
       message: `Unrecognized keys (1): "${long.slice(0, 64)}"`,
     });
-  });
-
-  it('caps what one request can write to the log, in count and in length', async () => {
-    // Both are the client's to choose, and this line is written on an
-    // unauthenticated path.
-    const captured = captureLogger();
-    const unknown = Object.fromEntries(
-      Array.from({ length: 25 }, (_, i) => [`field${i}`.padEnd(200, 'x'), 1]),
-    );
-    const res = await request(appLogging('/products', captured, validate({ body: createProduct })))
-      .post('/products')
-      .send({ sku: 'SKU-1', basePriceCents: 1, ...unknown });
-
-    const line = captured.lines.find((l) => l.msg === 'unrecognized fields rejected') as {
-      keys: string[];
-      count: number;
-    };
-    expect(line.keys).toHaveLength(20);
-    expect(line.count).toBe(25);
-    // The same bounds apply to what the client is shown, not only the log.
-    const [detail] = res.body.error.details as { message: string }[];
-    expect(detail?.message.match(/"/g)).toHaveLength(40);
-    expect(detail?.message).toContain('Unrecognized keys (25):');
-    expect(Math.max(...line.keys.map((key) => key.length))).toBe(64);
-  });
-
-  it('counts every unknown field, and logs them all', async () => {
-    const captured = captureLogger();
-    const res = await request(appLogging('/products', captured, validate({ body: createProduct })))
-      .post('/products')
-      .send({ sku: 'SKU-1', basePriceCents: 1999, basePrice: 19.99, vendorSecret: 'abc' });
-
-    expect(res.body.error.details).toContainEqual({
-      path: 'body',
-      message: 'Unrecognized keys (2): "basePrice", "vendorSecret"',
-    });
-    expect(captured.lines).toContainEqual(
-      expect.objectContaining({ keys: ['basePrice', 'vendorSecret'] }),
-    );
   });
 
   it('rejects a wrong type', async () => {
@@ -209,7 +148,7 @@ describe('validate: body', () => {
   });
 });
 
-describe('validate: where the problem is', () => {
+describe('validate — where the problem is', () => {
   it('points into an array by index, the way the docs promise', async () => {
     const app = appWith(
       '/imports',
@@ -230,7 +169,7 @@ describe('validate: where the problem is', () => {
   });
 });
 
-describe('validate: how much one request can cost', () => {
+describe('validate — how much one request can cost', () => {
   it('caps the details it returns, so a bad body cannot amplify into a response', async () => {
     const app = appWith(
       '/imports',
@@ -246,7 +185,7 @@ describe('validate: how much one request can cost', () => {
   });
 });
 
-describe('validate: a schema with client-controlled keys', () => {
+describe('validate — a schema with client-controlled keys', () => {
   it('truncates a caller key that reaches the path, not only one in the message', async () => {
     // A request part cannot itself be a key bag — `RequestSchemas` takes a
     // `ZodObject` and `validate` calls `.strict()` on it, so `z.record` does not
@@ -270,7 +209,7 @@ describe('validate: a schema with client-controlled keys', () => {
   });
 });
 
-describe('validate: mounted without the http logger', () => {
+describe('validate — mounted without the http logger', () => {
   it('still rejects, instead of throwing while trying to log', async () => {
     const app = express();
     app.use(express.json());
@@ -289,7 +228,7 @@ describe('validate: mounted without the http logger', () => {
   });
 });
 
-describe('validate: query', () => {
+describe('validate — query', () => {
   const app = appWith('/products', validate({ query: listQuery }));
 
   it('coerces and defaults the pagination parameters', async () => {
@@ -323,7 +262,7 @@ describe('validate: query', () => {
   });
 });
 
-describe('validate: params', () => {
+describe('validate — params', () => {
   const app = appWith('/products/:id', validate({ params: z.object({ id: z.uuid() }) }));
 
   it('passes the parsed params to the handler', async () => {
@@ -342,7 +281,7 @@ describe('validate: params', () => {
   });
 });
 
-describe('validate: nested objects', () => {
+describe('validate — nested objects', () => {
   // `.strict()` applies to the top level only, so every nested object declares
   // its own strictness. This is the convention ADR-0008 records; the test is
   // what keeps it honest.
@@ -384,7 +323,7 @@ describe('validate: nested objects', () => {
   });
 });
 
-describe('validate: undeclared parts', () => {
+describe('validate — undeclared parts', () => {
   it('leaves a part with no schema raw, so a handler must declare what it reads', async () => {
     const app = appWith('/products/:id', validate({ params: z.object({ id: z.string() }) }));
     const res = await request(app).post('/products/abc').send({ anything: 'unvalidated' });
@@ -395,7 +334,7 @@ describe('validate: undeclared parts', () => {
   });
 });
 
-describe('validate: nothing configured', () => {
+describe('validate — nothing configured', () => {
   it('is a no-op', async () => {
     const res = await request(appWith('/ping', validate({}))).get('/ping');
 

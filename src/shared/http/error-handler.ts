@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import type { ErrorRequestHandler } from 'express';
 import { CLIENT_ERRORS } from './client-errors.js';
 import type { ErrorCode } from './error-code.js';
+import { StatusCodes } from 'http-status-codes';
 import { MAX_DETAIL_MESSAGE } from './max-detail-message.js';
 import { MAX_DETAILS } from './max-details.js';
 import { MAX_MESSAGE } from '../max-message.js';
@@ -21,30 +22,28 @@ const RETRY_AFTER_SPREAD = 6;
 const retryAfter = (): string =>
   String(randomInt(RETRY_AFTER_MIN, RETRY_AFTER_MIN + RETRY_AFTER_SPREAD));
 
-/** The two codes whose whole meaning is "come back later". An array rather
- *  than a `ReadonlySet`: freezing a Set does not stop `.add`, so the readonly
- *  type would be the only guard, and it is erased at build time. */
-const RETRIABLE: readonly ErrorCode[] = Object.freeze(['BACKPRESSURE', 'READ_MODEL_NOT_READY']);
+/** The two codes that mean come back later, which carry a `Retry-After`. */
+const RETRIABLE: readonly ErrorCode[] = ['BACKPRESSURE', 'READ_MODEL_NOT_READY'];
 
-// Frozen: its message is the body of every 500.
-const SERVER_FAULT = Object.freeze({
-  status: 500,
+const SERVER_FAULT = {
+  status: StatusCodes.INTERNAL_SERVER_ERROR,
   code: 'INTERNAL',
   message: 'Internal server error',
-} as const);
+} as const;
 
 /** Public wording for a 5xx. A code without an entry says nothing to a client. */
-const SERVER_MESSAGES: Readonly<Partial<Record<ErrorCode, string>>> = Object.freeze({
+const SERVER_MESSAGES: Partial<Record<ErrorCode, string>> = {
   READ_MODEL_NOT_READY: 'The read model is not ready yet; retry shortly',
-});
-/* Strings are immutable, so freezing the object is the whole control here. */
-
+};
 /**
  * Express 5 throws a `RangeError` for a status outside [100, 999], so an
  * unbounded one turns the error handler itself into the failure.
  */
 const isClientStatus = (status: unknown): status is number =>
-  typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 499;
+  typeof status === 'number' &&
+  Number.isInteger(status) &&
+  status >= StatusCodes.BAD_REQUEST &&
+  status < StatusCodes.INTERNAL_SERVER_ERROR;
 
 /** Every error marked the http-errors way keeps its status, not an enumerated few (ADR-0009). */
 function clientError(err: unknown): ErrorMapping | undefined {
@@ -91,17 +90,8 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (known) {
     if (isClientStatus(known.status)) {
       log.warn({ code: known.code, status: known.status }, 'request rejected');
-    } else if (RETRIABLE.includes(known.code)) {
-      // ADR-0010.
-      const { type, message, code } = serializeError(err);
-      log.warn(
-        { code: known.code, status: known.status, error: { type, message, code } },
-        'request deferred',
-      );
     } else {
-      // The code and status the client read: `serializeError` reports the
-      // cause's code, so without these the line names the driver's failure and
-      // nothing joins it to the response.
+      // The code and status the client read, so the line joins to the response.
       log.error(
         { code: known.code, status: known.status, error: serializeError(err) },
         'server fault raised by a handler',
