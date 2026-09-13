@@ -36,8 +36,8 @@ describe('the api healthcheck', () => {
 describe('every PostgreSQL healthcheck', () => {
   // `pg_isready` exits 0 for a server that is up and holds no such database, and
   // `POSTGRES_DB` is honoured only when the volume is initialised — so a store whose
-  // database name changed reports healthy and fails the first query (REVIEW.md 13.13,
-  // ADR-0003). The check has to name the database it is certifying.
+  // database name changed reports healthy and fails the first query (ADR-0003). The check
+  // has to name the database it is certifying.
   const services = (
     parse(compose) as {
       services: Record<string, { image?: string; healthcheck?: { test: string[] } }>;
