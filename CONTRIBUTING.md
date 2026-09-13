@@ -119,6 +119,8 @@ Two pull requests that touch the same file are not independent, even when their 
 
 Never merge `main` into a branch that is part of a stack; the merge commit breaks the cascading rebase. Use `gh stack sync`. To merge only the bottom pull request of a stack, use the [asynchronous merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request-asynchronously) (`gh api -X PUT repos/OWNER/REPO/pulls/N/merge-async -f merge_method=squash`), which merges every pull request up to and including that one; `gh stack merge` is atomic over the whole stack and the ordinary merge endpoints refuse a stacked pull request. This was used to merge #22 while #23 was still open.
 
+**When `git push --force-with-lease` is rejected, fetch and read what is on the remote before doing anything else.** The rejection is the tool reporting a fact — someone else has written to the branch since you last fetched — and re-forcing first and inspecting afterwards turns a working guard into a coin flip. A stack is where this happens most, because two sessions hold the same branch. Evidence: a rejected lease was cleared by refetching and re-forcing, and only afterwards did the overwritten commit turn out to be the same work rebased under another author — nothing was lost, and nothing in the sequence would have said so if something had been.
+
 ## Review rules
 
 Severity policy for review findings, from any reviewer:
