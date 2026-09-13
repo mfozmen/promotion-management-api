@@ -91,9 +91,7 @@ describe('the worker services', () => {
   });
 
   it('creates the upload directory for the user the image runs as', async () => {
-    // A named volume takes its ownership from the image's directory. Without one, Docker makes
-    // the mountpoint root-owned and `USER node` gets EACCES on the first upload — a shared
-    // volume that reads as correctly configured and cannot be written to. The path comes from
+    // Why the image has to create and own this directory: ADR-0003. The path comes from
     // compose, so moving `UPLOAD_DIR` cannot leave the chown behind with this still green.
     const dir = String(
       ((await services())['api']?.['environment'] as Record<string, string>)['UPLOAD_DIR'],
@@ -101,6 +99,7 @@ describe('the worker services', () => {
     const dockerfile = await readFile(new URL('../../../Dockerfile', import.meta.url), 'utf8');
     const user = /USER (\S+)/.exec(dockerfile)?.[1] ?? '';
 
+    expect(dockerfile).toContain(`mkdir -p ${dir}`);
     expect(dockerfile).toContain(`chown ${user}:${user} ${dir}`);
     expect(dockerfile.indexOf(`mkdir -p ${dir}`)).toBeLessThan(dockerfile.indexOf('USER '));
   });
@@ -108,11 +107,10 @@ describe('the worker services', () => {
   it.each([...WORKERS, 'api'])(
     '%s is given longer to stop than it is given to drain',
     async (name) => {
-      // Docker's default grace period is 10 s and the drain budget defaults to 10 s: the timeout
-      // that exists to log why a stop is taking so long would race the SIGKILL that ends it.
-      // `.env.example` is read too, because that is the file that invites raising the budget.
-      // `api` carries the grace period but does not yet spend it as a bound on its queue and
-      // pool close (ADR-0003); that belongs to the api's own shutdown.
+      // Why the grace period has to exceed the drain budget: ADR-0003. `.env.example` is read
+      // too, because that is the file that invites raising the budget. `api` carries the grace
+      // period but does not yet spend it as a bound on its queue and pool close (ADR-0003);
+      // that belongs to the api's own shutdown.
       const service = (await services())[name] ?? {};
       const grace = Number(String(service['stop_grace_period']).replace('s', ''));
       const environment = service['environment'] as Record<string, string>;

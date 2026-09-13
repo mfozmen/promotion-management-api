@@ -48,11 +48,13 @@ let a worker connect before the schema exists.
 **They start, connect and wait — none of them consumes anything yet.** Each logs that it holds a
 producer handle on every queue and that no consumer is registered, so an idle queue is not
 mistaken for a drained one; no worker holds a subset of the queues. On `docker compose stop` each
-closes the queue within `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s, the same bound `api` uses) and exits
-anyway if it has not closed by then. Every service is given `stop_grace_period: 15s` so that
-bound can be reached and logged: Docker's default grace is also 10 s, which would kill the
-process at the same moment as the warning explaining why the stop is slow (ADR-0003). The
-projection arrives with issue #12, the chunk processor
+closes the queue within `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s) and exits anyway if it has not closed
+by then. `api` is given the same budget but spends it on its HTTP drain and then closes the queue
+and the pool with no bound of their own, so on `api` the grace period is a ceiling rather than a
+bound: exit 137 with no `shutdown complete` line means it hung there. Every service is given
+`stop_grace_period: 15s` so a worker's bound can be reached and logged: Docker's default grace is
+also 10 s, which would kill the process at the same moment as the warning explaining why the stop
+is slow (ADR-0003). The projection arrives with issue #12, the chunk processor
 with #105, and the reconciler's boundary sweep with #18, in its own pull request under
 `src/workers/reconciler/`. They carry no healthcheck for the same reason: until a worker has
 work, a check could only confirm the process is alive, which `up --wait` already does. All three
