@@ -73,7 +73,11 @@ export class EventBus {
     );
   }
 
-  /** `now` is a parameter so one clock decides: PostgreSQL's, never the process's. */
+  /**
+   * `now` is a parameter so one clock decides: PostgreSQL's, never the process's. Write-once
+   * per id: BullMQ ignores an `add` for an id it still holds, and the returned `Job` then
+   * describes the request rather than what is stored. ADR-0007.
+   */
   async schedulePromotionBoundary(
     promotionId: number,
     boundary: PromotionBoundary,
@@ -95,9 +99,7 @@ export class EventBus {
    * job, `0` when a worker already holds it. A cancel racing a running activate
    * gets `0` but still ends correct: cancel publishes `promotion.changed` anyway.
    */
-  async removePromotionBoundaries(
-    promotionId: number,
-  ): Promise<Record<PromotionBoundary, number>> {
+  async removePromotionBoundaries(promotionId: number): Promise<Record<PromotionBoundary, number>> {
     const [activate, expire] = await this.bounded(
       `removePromotionBoundaries(${promotionId})`,
       Promise.all([
@@ -124,12 +126,6 @@ export class EventBus {
     await Promise.all(Object.values(this.queues).map((queue) => queue.close()));
   }
 
-  /**
-   * Write-once per id: BullMQ ignores an `add` for an id it still holds, and the
-   * returned `Job` then describes the request, not what is stored. Nothing may
-   * depend on a fired job still being resident; ADR-0007 says what the reconciler
-   * owes here.
-   */
   /**
    * The producer parses before the job is added, so a malformed payload fails in
    * the request that created it rather than in a worker three retries later.
