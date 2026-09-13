@@ -38,10 +38,6 @@ jobs:
       - name: Test with coverage
         run: npm run test:cov
 
-      # SonarCloud analyses `sonar.sources` and `sonar.tests`. A pull request that
-      # touches neither has nothing for it to read, and its result would be a copy
-      # of the previous one, so the scan is skipped. A push to `main` always scans,
-      # so the branch's own analysis never goes stale.
       - name: Is there anything for SonarCloud to analyse
         id: analysable
         env:
@@ -60,9 +56,6 @@ jobs:
             echo "No analysable file changed; skipping the SonarCloud scan."
           fi
 
-      # The token is here because uploading an analysis is a write. Reading the
-      # results back needs none on a public project, and nothing here reads them:
-      # SonarCloud posts its findings as a pull request comment (REVIEW.md 13.6).
       - name: SonarCloud Scan
         if: steps.analysable.outputs.needed == 'true'
         uses: SonarSource/sonarqube-scan-action@v6
