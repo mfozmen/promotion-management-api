@@ -563,6 +563,35 @@ Evidence: five levels of `../` in a test that had moved four times in one
 evening (PR #29); then eleven test files red at once when the alias met a
 workspace whose projects did not carry it (PR #50).
 
+7.9 **A test that fakes a dependency's failure asserts the shape that
+dependency actually produces, checked against the real one once.** Run the
+failure against the real library or server, look at what comes back, and build
+the double from that. The passing shape is the one development shows you; the
+failing shape is the one nobody looks at, so it is the one a double gets wrong.
+
+Evidence: `pipeline.exec()` resolves with `[[Error, null]]` rather than
+rejecting — for a dead connection too — so a double that rejected proved a
+branch ioredis never reaches, and the route answered `500` in production while
+the test stayed green (PR #76).
+
+7.10 **When you relax a validator, name what it was detecting and say where
+that detection now lives.** A strict rule is often doing two jobs, input
+validation and impossible-state detection, and usually only the first is
+written down. Relaxing it for the first spends the second, and nothing fails,
+because what was removed was the failure.
+
+Evidence: reading `''` as "no promotion" — which a writer must be allowed to
+write, since Redis has no null — retired the check that a discounted price
+names its promotion, and the one silently wrong price this layer could serve
+became a `200` (PR #76).
+
+Both of these are one family with 7.4b. A test's picture of the world is built
+from the same assumption as the code it tests, so it agrees with the code and
+neither has asked the thing outside both — the library, the writer, the
+server. Fixtures on that same PR modelled a product the writer cannot produce,
+a base of 10 000 beside an effective 9 000 with no promotion, and reader and
+fixture confirmed each other for as long as nobody asked what writes the hash.
+
 ---
 
 ## 8. Boundaries, errors and API shape
