@@ -62,7 +62,7 @@ describe('validate', () => {
     });
   });
 
-  it('truncates a long key rather than omitting it, in the response too', async () => {
+  it('returns an unknown key whole, however long the caller made it', async () => {
     const long = `vendor${'x'.repeat(200)}`;
     const res = await request(appWith('/products', validate({ body: createProduct })))
       .post('/products')

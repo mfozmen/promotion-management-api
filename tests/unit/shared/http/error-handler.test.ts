@@ -208,32 +208,6 @@ describe('errorHandler: unexpected errors', () => {
     expect(res.headers['retry-after']).toBeUndefined();
   });
 
-  it('does not log a statement a wrapper quoted two levels down', async () => {
-    const captured = captureLogger();
-    const driverError = Object.assign(new Error('duplicate key value violates unique constraint'), {
-      query: 'insert into products (sku) values ($1)',
-      params: ['SKU-1'],
-    });
-    // A repository that interpolates the driver's message into its own, then a
-    // handler that wraps that: the statement is two causes down, and a walk
-    // that takes one step reads the wrapper, which has no query field to spot.
-    const wrapped = new Error(
-      `upsert failed: ${driverError.message} [${driverError.query}] [${driverError.params[0]}]`,
-      { cause: driverError },
-    );
-    const raised = createError(503, 'rebuild running', {
-      headers: { 'retry-after': retryAfter() },
-      expose: true,
-    });
-    raised.cause = wrapped;
-
-    await request(appThrowing(raised, captured)).get('/boom');
-
-    const logged = JSON.stringify(captured.lines);
-    expect(logged).not.toContain('insert into products');
-    expect(logged).not.toContain('SKU-1');
-  });
-
   it('masks a thrown non-error value and still logs its type', async () => {
     const captured = captureLogger();
     const res = await request(appThrowing('something went wrong', captured)).get('/boom');

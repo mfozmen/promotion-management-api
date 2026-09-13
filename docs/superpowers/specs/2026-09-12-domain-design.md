@@ -706,7 +706,7 @@ src/
     vendor/      vendor.routes.ts, import.service.ts (register/chunk), chunk-processor.ts (processChunk), csv-lines.ts (byte splitter), schemas
     admin/       admin.routes.ts, queues.service.ts, read-model-rebuild.ts, health.ts
   workers/       one entry point per queue: promotions.ts, catalog.ts, ingestion.ts, maintenance.ts   (thin: create worker, register handler, start; `event-handler` runs the first two, `ingestion-worker` the third, `reconciler` the fourth plus its schedule)
-  shared/        config.ts, db/ (client, migrator, SQL migrations; each module owns its tables under db/schema/), redis.ts, queue/ (the BullMQ queues), graceful-shutdown.ts, logger.ts (the pino root logger), serialize-error.ts (the error whitelist every log site uses), max-message.ts
+  shared/        config.ts, db/ (client, migrator, SQL migrations; each module owns its tables under db/schema/), redis.ts, queue/ (the BullMQ queues), graceful-shutdown.ts, logger.ts (the pino root logger)
     http/        the HTTP boundary: error-handler.ts, request-validator.ts, http-logger.ts (correlation id)
   events/        event-registry.ts and event-routing.ts: the event catalogue and its four-queue partition
 tests/                 three layers, each mirroring src/, one test file per source file (REVIEW.md 7.7)
