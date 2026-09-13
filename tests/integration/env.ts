@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 
+// `127.0.0.1`, not `localhost`: Node tries `::1` first and compose publishes IPv4 only.
 const baseUrl =
-  process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@localhost:55432/promotion';
+  process.env.TEST_DATABASE_URL ?? 'postgres://postgres:postgres@127.0.0.1:55432/promotion';
 
 export const adminUrl = baseUrl;
 

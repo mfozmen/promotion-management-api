@@ -1112,6 +1112,13 @@ fetching `/health`, so the container would never have reported healthy and
 `tests/unit/docs/compose-healthcheck.test.ts` now parses the URL out of compose
 and calls it, and was verified to fail when the path is put back.
 
+13.13 **A readiness check computed inside a thing cannot see whether anything
+outside can reach it.** "Healthy" and "reachable" are different facts, and a
+signal that reports the first is read as the second.
+
+Evidence: `docker compose up -d --wait` called two containers healthy while
+neither published its port, because the healthcheck runs inside the container.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**

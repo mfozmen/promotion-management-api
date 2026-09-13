@@ -37,8 +37,10 @@ npm run up             # PostgreSQL, Redis, the api, three workers and the test 
 ```
 
 The API is on http://127.0.0.1:3100 and BullMQ's dashboard on
-http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data;
-add `-v` to that compose command to drop the volumes too.
+http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data; add `-v` to that compose command to
+drop the volumes too. PostgreSQL creates its database on first start only, so a test store
+that predates a change to `POSTGRES_DB` needs `docker compose --profile test rm -sfv
+postgres-test` rather than a restart.
 
 `event-handler`, `ingestion-worker` and `reconciler` run from the same image as `api`, one
 command each. Each waits on all three of `postgres`, `redis` and `api` being healthy; the gate
@@ -128,7 +130,7 @@ The suite is split into layers, so the one that needs nothing can run anywhere:
 | both, with coverage                | `npm run test:cov`         | the same two                                                                                                     | CI (the 100 % gate)         |
 
 The integration tests run against a real PostgreSQL and a real Redis, never a mock. Point them at one with
-`TEST_DATABASE_URL` (default `postgres://postgres:postgres@localhost:55432/promotion`). That
+`TEST_DATABASE_URL` (default `postgres://postgres:postgres@127.0.0.1:55432/promotion`). That
 default is not the compose server: `docker-compose.yml` publishes 5432 with the `.env`
 credentials, so either reuse it with
 `TEST_DATABASE_URL=postgres://promo:promo@localhost:5432/promotion`, or keep the harness's
