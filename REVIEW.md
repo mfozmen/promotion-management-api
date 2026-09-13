@@ -1145,6 +1145,19 @@ the check written that morning to catch it stayed green — a citation off by on
 rule still resolves to a rule that exists. The defect is the scheme, not the
 checker.
 
+13b.6 **A readiness check computed inside a thing cannot see whether anything
+outside can reach it.** "Healthy" and "reachable" are different facts, and a
+signal that reports the first is routinely read as the second.
+
+Evidence, three in one afternoon: `docker compose up -d --wait` reported two
+containers healthy while neither published its port, because the healthcheck runs
+inside the container; a default of `localhost` resolved to `::1` while the port
+was published on IPv4 only, so a refused connection named an address nothing was
+listening on; and an integration harness wrapped every connect failure in
+"PostgreSQL not reachable", reporting the author's expectation when the server was
+up and the database was missing. Each check answered a narrower question than the
+sentence it printed.
+
 ---
 
 ## 14. Reviewer's quick pass
