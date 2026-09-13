@@ -4,16 +4,15 @@ import type { Logger } from 'pino';
 import type { Redis } from 'ioredis';
 import { productReadRoutes } from './modules/product/http/product-read-routes.js';
 import { errorHandler } from './shared/http/error-handler.js';
-import { logger as rootLogger } from './shared/logger.js';
 import { httpLogger } from './shared/http/http-logger.js';
 
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
 
-/** The storefront routes mount only when a read-model client is given: a
- *  process without one answers no product route at all rather than mounting
- *  routes that cannot answer (ADR-0006). */
-export function createApp(logger: Logger = rootLogger, readModel?: Redis): Express {
+/** The read model is required rather than optional: the storefront routes are
+ *  the application, and an optional client is how the wiring vanished in a
+ *  merge with every test still green (ADR-0006). */
+export function createApp(logger: Logger, readModel: Redis): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');
@@ -24,9 +23,7 @@ export function createApp(logger: Logger = rootLogger, readModel?: Redis): Expre
   api.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
   });
-  if (readModel !== undefined) {
-    api.use('/products', productReadRoutes(readModel));
-  }
+  api.use('/products', productReadRoutes(readModel));
   app.use('/api', api);
 
   app.use((_req, _res, next) => {

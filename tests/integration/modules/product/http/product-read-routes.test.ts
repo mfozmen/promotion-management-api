@@ -2,6 +2,7 @@ import { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '@src/app.js';
+import { logger as rootLogger } from '@src/shared/logger.js';
 import {
   seedProducts,
   useTestRedis,
@@ -11,7 +12,7 @@ import {
 } from '../../../redis.js';
 
 const redis = useTestRedis();
-const app = () => createApp(undefined, redis());
+const app = () => createApp(rootLogger, redis());
 
 /** A product the reader would accept. The base price follows the effective one
  *  unless a case sets it, because a price below its base with no promotion is a
@@ -338,7 +339,7 @@ describe('when Redis cannot be reached', () => {
     });
     unreachable.connect().catch(() => undefined);
 
-    const res = await request(createApp(undefined, unreachable)).get('/api/products');
+    const res = await request(createApp(rootLogger, unreachable)).get('/api/products');
     unreachable.disconnect();
 
     expect(res.status).toBe(503);

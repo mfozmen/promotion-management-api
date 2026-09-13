@@ -14,6 +14,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - http-errors (the error envelope: status, `expose`, response headers)
 - PostgreSQL 16 write store, Drizzle ORM + drizzle-kit SQL migrations
 - BullMQ on Redis 7 (event queue; see [ADR-0003](./ADR.md))
+- ioredis (the storefront read model, on its own Redis database; see [ADR-0006](./ADR.md))
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
@@ -42,14 +43,14 @@ For a database that is not the compose one, `npm run db:migrate` applies the sam
 
 Tests and checks. The queue and shutdown integration tests obliterate the queues they use, so they run against their own Redis rather than the compose one; override the port with `QUEUE_TEST_REDIS_URL`:
 
-The product read tests use the compose Redis on database 9 and PostgreSQL through the same stack, so `docker compose up -d --wait` has to be running; `TEST_REDIS_URL` and `TEST_DATABASE_URL` override the defaults. A run reporting `no tests` with 0 % coverage is the integration project failing to reach PostgreSQL rather than an empty suite.
-
 ```bash
 docker run -d --rm -p 6399:6379 redis:7-alpine # only the integration layer needs it
 npm test
 npm run test:cov # needs a PostgreSQL and that Redis, see below
 npm run lint
 ```
+
+The product read tests use the compose Redis on database 9 and PostgreSQL through the same stack, so `docker compose up -d --wait` has to be running; `TEST_REDIS_URL` and `TEST_DATABASE_URL` override the defaults. A run reporting `no tests` with 0 % coverage is the integration project failing to reach PostgreSQL rather than an empty suite.
 
 `npm run dev` starts the API on `PORT` (default `3100`); `GET http://localhost:3100/api/health` should answer `{"status":"ok"}`. Read its logs on the terminal: under `tsx watch` a redirect such as `npm run dev > out.log` swallows them, so use `npx tsx src/server.ts > out.log` when you need them in a file.
 
@@ -128,9 +129,7 @@ queues anyway (ADR-0003).
 
 ## Project structure
 
-Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7). The tree and the naming rules are in [CONTRIBUTING.md](./CONTRIBUTING.md) under "Source layout"; this file does not repeat them.
-
-Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7, ADR-0008). Nothing sits at the `tests/` root: a helper belongs to the layer that uses it, named `<subject>-<role>.ts` — `tests/unit/capture-logger.ts`, `tests/integration/db.ts` and `tests/integration/redis.ts` (7.7).
+Directories are named for a role and a file holds one exported declaration named after it (REVIEW.md 8c.2, 8c.7, ADR-0008). The tree and the naming rules are in [CONTRIBUTING.md](./CONTRIBUTING.md) under "Source layout"; this file does not repeat them. Nothing sits at the `tests/` root: a helper belongs to the layer that uses it, named `<subject>-<role>.ts` — `tests/unit/capture-logger.ts`, `tests/integration/db.ts` and `tests/integration/redis.ts` (REVIEW.md 7.7).
 
 Inside a layer the tree mirrors `src/`, one test file per source file. Every test file now imports its subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
 
@@ -140,9 +139,7 @@ The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/mi
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver and the admin reads select from it instead of restating the predicate (ADR-0004). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
 
-`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them.
-
-The module folders under `src/modules/` are named in the design spec and land with the endpoints that need them; the read model has no DDL of its own, since its keys are built by the event handler and rebuilt from the write store on demand (ADR-0006).
+`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them. The Redis read model has no DDL of its own, so nothing under `migrations/` describes it. Nothing writes it yet either: no worker consumes the `promotions` queue, so on a fresh stack `readmodel:ready` is absent and both product routes answer `503` until the recompute story lands (ADR-0006).
 
 ## Dynamic pricing rules
 
@@ -184,7 +181,7 @@ Further endpoints are documented as they land. The design spec puts every route 
 - **An unexpected error** — anything the `http-errors` library does not recognise — answers `500` with `Internal server error` and nothing else; the stack goes to the log under `err` and never to the response (ADR-0010).
 - **Validation.** Request bodies, query strings and path parameters are validated at the boundary with strict zod schemas: an unknown field is a `400`, not a silently ignored typo. The rejection names the failing part and nothing more (`Invalid request body`): no field path, no issue list, no echo of what you sent. Strictness is top-level; a nested object declares its own with `z.strictObject(...)` (ADR-0009).
 - **Request bodies** are capped at 100kb. Everything body-parser refuses keeps the status that says which failure it was — 400 for a body that cannot be read, 413 for one over the cap, 415 for a charset it will not decode — and its own message, which describes the caller's own request rather than anything of ours (ADR-0009).
-  Both product routes are served from the Redis read model and never from PostgreSQL, so they answer `503` with a `Retry-After` in three cases: until a rebuild has published `readmodel:ready`, whenever Redis is unreachable, and — on the detail route — for a product the index still lists whose entry a rebuild has already removed. That last one is a `503` rather than a `404` because the listing calls the same state a rebuild in progress, and a `404` for it is cached by every crawler that sees it; a product no index lists is the `404`. `page` and `pageSize` are bounded together: the resulting offset may not exceed 10 000.
+- **Storefront reads.** Both product routes are served from the Redis read model and never from PostgreSQL, so they answer `503` with a `Retry-After` in three cases: until a rebuild has published `readmodel:ready`, whenever Redis is unreachable, and — on the detail route — for a product the index still lists whose entry a rebuild has already removed. That last one is a `503` rather than a `404` because the listing calls the same state a rebuild in progress, and a `404` for it is cached by every crawler that sees it; a product no index lists is the `404`. `page` and `pageSize` are bounded together: the resulting offset may not exceed 10 000.
 - **Correlation id.** Send `x-request-id` (matching `^[A-Za-z0-9._-]{1,128}$`) to trace a request; anything else is replaced by a generated uuid. The id used is returned in the `x-request-id` response header and appears as `reqId` on every JSON log line (ADR-0010).
 
 ## Development workflow
