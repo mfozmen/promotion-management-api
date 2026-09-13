@@ -51,6 +51,27 @@ describe('listProducts', () => {
     expect((raised as HttpError).code).toBe('READ_MODEL_NOT_READY');
   });
 
+  it('never names a key the caller composed, even on the branch that names keys', async () => {
+    const wrongType = Object.assign(new Error('WRONGTYPE Operation against a key'), {
+      name: 'ReplyError',
+    });
+    const redis = {
+      zrange: () => Promise.reject(wrongType),
+      zcard: () => Promise.reject(wrongType),
+      pipeline: () => ({ hgetall: () => undefined, exec: () => Promise.resolve([]) }),
+    } as unknown as Redis;
+
+    const raised = await listProducts(redis, {
+      ...page,
+      category: 'boots at product:7',
+    }).catch((error: unknown) => error);
+
+    // A key existing with the wrong type is the writer's doing; the string
+    // still came from the query parameter, so an operator would read a
+    // product id the caller invented.
+    expect((raised as Error).message).not.toContain('product:7');
+  });
+
   it('leaves a reply error a server fault, because the server answered', async () => {
     // WRONGTYPE on a product key is the writer having written something else
     // there, not Redis being unreachable, and 503 would tell a client to retry

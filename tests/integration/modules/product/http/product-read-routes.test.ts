@@ -179,12 +179,17 @@ describe('GET /api/products', () => {
     });
   });
 
-  it('rejects a category longer than a label, which becomes a key', async () => {
+  it('rejects a category longer than any label, because it becomes a key', async () => {
     await seedProducts(redis(), [product({ id: 1 })]);
 
-    const res = await request(app()).get(`/api/products?category=${'k'.repeat(65)}`);
+    // Generous on purpose: the column it filters is unbounded text, so a bound
+    // a real category could reach would refuse the one category a sale runs on.
+    const res = await request(app()).get(`/api/products?category=${'k'.repeat(257)}`);
 
     expect(res.status).toBe(400);
+    expect((await request(app()).get(`/api/products?category=${'k'.repeat(256)}`)).status).toBe(
+      200,
+    );
   });
 
   it('rejects a page size above the cap', async () => {
