@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import express, { type Express } from 'express';
 import request from 'supertest';
-import { errorHandler } from '../../src/middleware/error-handler.js';
-import { httpLogger } from '../../src/shared/logger.js';
-import { HttpError } from '../../src/shared/http-error.js';
+import { errorHandler } from '@src/shared/http/error-handler.js';
+import { httpLogger } from '@src/shared/http/http-logger.js';
+import { HttpError } from '@src/shared/http/http-error.js';
 import { DrizzleQueryError } from 'drizzle-orm';
-import { captureLogger, type CapturedLogger } from '../capture-logger.js';
+import { captureLogger, type CapturedLogger } from '../../../capture-logger.js';
 
 /** An app whose only route throws, so the error middleware can be exercised alone. */
 function appThrowing(error: unknown, captured: CapturedLogger = captureLogger()): Express {
@@ -68,9 +68,9 @@ describe('HttpError mapping', () => {
   it('answers a designed 5xx with our own message, not the operator prose', async () => {
     const res = await request(
       appThrowing(
-        new HttpError('READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', {
-          host: '10.0.0.5',
-        }),
+        new HttpError('READ_MODEL_NOT_READY', 'rebuild started by operator at 10.0.0.5', [
+          { path: 'host', message: '10.0.0.5' },
+        ]),
       ),
     ).get('/boom');
 
@@ -89,7 +89,11 @@ describe('HttpError mapping', () => {
 
   it('gives a 5xx code with no public wording nothing to say', async () => {
     const res = await request(
-      appThrowing(new HttpError('INTERNAL', 'upstream 10.0.0.5 refused', { sql: 'select 1' })),
+      appThrowing(
+        new HttpError('INTERNAL', 'upstream 10.0.0.5 refused', [
+          { path: 'sql', message: 'select 1' },
+        ]),
+      ),
     ).get('/boom');
 
     expect(res.status).toBe(500);
@@ -107,15 +111,6 @@ describe('HttpError mapping', () => {
     expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
       error: { message: 'rebuild running' },
     });
-  });
-
-  it('passes details through untouched when they are not a list', async () => {
-    const details = { conflictsWith: 'promotion-1' };
-    const res = await request(appThrowing(new HttpError('CONFLICT', 'Overlap', details))).get(
-      '/boom',
-    );
-
-    expect(res.body.error.details).toEqual(details);
   });
 
   it('cannot be given a status that disagrees with its code', () => {
@@ -181,21 +176,19 @@ describe('unexpected errors', () => {
 
   it('logs which code answered a 5xx, so a log line joins to the response', async () => {
     const captured = captureLogger();
-    await request(
-      appThrowing(
-        new HttpError('READ_MODEL_NOT_READY', 'rebuild running', {
-          cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
-        }),
-        captured,
-      ),
-    ).get('/boom');
+    const raised = new HttpError('READ_MODEL_NOT_READY', 'rebuild running');
+    // The real `Error.cause`, not the third constructor argument, which is
+    // `details`: `serializeError` reads `err.cause` and would never see it there.
+    raised.cause = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
 
-    // serializeError reports the cause's code, so without these fields the
-    // line names the driver's failure and never the 503 the client read.
-    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
-      code: 'READ_MODEL_NOT_READY',
-      status: 503,
-    });
+    await request(appThrowing(raised, captured)).get('/boom');
+
+    // The serialized error reports the cause's code, so without the two
+    // top-level fields the line names the driver's failure and never the 503
+    // the client read.
+    const logged = captured.lines.find((line) => line.level === 50);
+    expect(logged).toMatchObject({ code: 'READ_MODEL_NOT_READY', status: 503 });
+    expect((logged as { error: { code: string } }).error.code).toBe('ECONNREFUSED');
   });
 
   it('bounds a 4xx message, so a handler cannot mirror a long id back', async () => {
@@ -213,13 +206,52 @@ describe('unexpected errors', () => {
     );
 
     expect(res.status).toBe(429);
-    expect(res.headers['retry-after']).toBe('5');
+    // A band, not a constant: every client that met the outage retrying in the
+    // same second hands the recovering read model its whole backlog at once.
+    const after = Number(res.headers['retry-after']);
+    expect(after).toBeGreaterThanOrEqual(5);
+    expect(after).toBeLessThanOrEqual(10);
+  });
+
+  it('spreads the retry hint across clients rather than synchronising them', async () => {
+    const hints = new Set<string>();
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const res = await request(appThrowing(new HttpError('BACKPRESSURE', 'queue is full'))).get(
+        '/boom',
+      );
+      hints.add(String(res.headers['retry-after']));
+    }
+
+    expect(hints.size).toBeGreaterThan(1);
   });
 
   it('sends no retry hint on an error retrying cannot fix', async () => {
     const res = await request(appThrowing(new HttpError('NOT_FOUND', 'nope'))).get('/boom');
 
     expect(res.headers['retry-after']).toBeUndefined();
+  });
+
+  it('does not log a statement a wrapper quoted two levels down', async () => {
+    const captured = captureLogger();
+    const driverError = Object.assign(new Error('duplicate key value violates unique constraint'), {
+      query: 'insert into products (sku) values ($1)',
+      params: ['SKU-1'],
+    });
+    // A repository that interpolates the driver's message into its own, then a
+    // handler that wraps that: the statement is two causes down, and a walk
+    // that takes one step reads the wrapper, which has no query field to spot.
+    const wrapped = new Error(
+      `upsert failed: ${driverError.message} [${driverError.query}] [${driverError.params[0]}]`,
+      { cause: driverError },
+    );
+    const raised = new HttpError('READ_MODEL_NOT_READY', 'rebuild running');
+    raised.cause = wrapped;
+
+    await request(appThrowing(raised, captured)).get('/boom');
+
+    const logged = JSON.stringify(captured.lines);
+    expect(logged).not.toContain('insert into products');
+    expect(logged).not.toContain('SKU-1');
   });
 
   it('masks a thrown non-error value and still logs its type', async () => {
@@ -295,6 +327,56 @@ describe('log hygiene for driver errors', () => {
         stack: expect.stringContaining('at '),
       },
     });
+  });
+
+  it('keeps a statement out even when the message is longer than the bound', async () => {
+    const captured = captureLogger();
+    const statement =
+      'insert into products (sku, name, base_price_cents, vendor_token) values ($1)';
+    // The check used to run on the already-truncated message, so a statement
+    // quoted past the 200-character bound was compared against a string that
+    // no longer held it, and the prefix went to the log.
+    const err = Object.assign(new Error(`${'x'.repeat(150)} failed query: ${statement}`), {
+      query: statement,
+      params: ['A1'],
+    });
+
+    await request(appThrowing(err, captured)).get('/boom');
+
+    expect(JSON.stringify(captured.lines)).not.toContain('insert into products');
+  });
+
+  it('keeps the constraint name when a bound value is one character', async () => {
+    const captured = captureLogger();
+    // 'a' appears in almost any sentence, so treating every bound value as a
+    // secret to search for blinds the log for the caller who sent a short one.
+    const err = Object.assign(
+      new Error('duplicate key value violates unique constraint "products_sku_key"'),
+      { query: 'insert into products (sku) values ($1)', params: ['a'] },
+    );
+
+    await request(appThrowing(err, captured)).get('/boom');
+
+    expect(captured.lines.find((line) => line.level === 50)).toMatchObject({
+      error: { message: expect.stringContaining('products_sku_key') },
+    });
+  });
+
+  it('answers rather than hanging when a cause chain loops', async () => {
+    const captured = captureLogger();
+    // A retry wrapper that re-attaches the original error makes a cycle. The
+    // walk had no cap, so it allocated until it threw inside the error
+    // handler, which is how the HTML page this layer exists to prevent
+    // reaches a client.
+    const first = new Error('retry exhausted');
+    const second = new Error('connection lost');
+    first.cause = second;
+    second.cause = first;
+
+    const res = await request(appThrowing(first, captured)).get('/boom');
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
   });
 
   it('does not let a bound value pose as a stack frame', async () => {

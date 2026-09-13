@@ -1,7 +1,7 @@
 import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp } from '../../src/app.js';
+import { createApp } from '@src/app.js';
 
 /**
  * One shape the real server cannot produce on demand: `pipeline.exec()` is

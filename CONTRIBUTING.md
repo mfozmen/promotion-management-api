@@ -1,5 +1,30 @@
 # Contributing
 
+## Source layout
+
+Modular monolith: one directory per module under `src/modules/`, and inside a module directories are named for a role, never for a kind of syntax (REVIEW.md 8c.7). One exported declaration per file, the file named after it (8c.2).
+
+```
+src/
+  modules/<module>/
+    domain/     types, interfaces, enum-like aliases and the pure rules over them; imports no store and no framework
+    db/         queries and repositories (Drizzle)
+    http/       routes, handlers, request schemas (zod)
+    jobs/       BullMQ processors
+  shared/
+    db/schema/  one file per table, schema.ts re-exports
+    http/       error type, error handler, request validator, logger
+    config.ts
+tests/
+  unit/         mirrors src/, one test file per source file
+  integration/  real PostgreSQL and Redis
+  e2e/
+```
+
+Test files import their subject through the `@src/*` alias — `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'` — wired in `tsconfig.json` `paths` and `vitest.config.ts` `resolve.alias`. Production code under `src/` does not use it and keeps relative specifiers: `tsc` does not rewrite path aliases on emit, so an alias in `src/` compiles to an import Node cannot resolve and fails at container start rather than at build. An ESLint `no-restricted-imports` rule scoped to `src/**/*.ts` rejects it, and `tsconfig.build.json` excludes `tests`, so nothing reaches the runtime through the alias.
+
+A module opens a directory when it has a file for it, not before. No `models/`, `types/`, `interfaces/`, `classes/`, `utils/` or `helpers/` anywhere.
+
 ## Branch naming
 
 `type/short-description`, e.g. `feat/product-listing`, `fix/promotion-overlap`.
@@ -37,21 +62,18 @@ No implementation code is written before its failing test exists.
 
 ## Required checks
 
-All of these are required on `main`:
+Required on `main`:
 
-- `ci` — lint, typecheck, tests with 100 % coverage thresholds, and the SonarCloud scan, which waits for the quality gate (`sonar.qualitygate.wait`), so a gate failure fails `ci`
+- `ci` — lint, typecheck, tests with 100 % coverage thresholds, SonarCloud scan
 - `claude-review` — advisory AI review
-- `local-gates` — passes only when the PR carries the labels of every applicable local agent: `docs-verified` always and `impact-verified` for the behaviour or judgement group below (`e2e-verified` is never required; the run happens on request), plus `architecture-verified` when the PR touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules (`src/modules/vendor/`, `src/modules/promotion/`, `src/modules/pricing/`) or `src/workers/`, or carries the `scenario` label. The job prints the set it computed. Every new push strips all four, so the applicable agents must be re-run and their labels re-applied
 
-The scan runs only when the pull request touches something SonarCloud reads: the sources, the tests, a build or tool configuration, or `sonar-project.properties`. A pull request that changes only documentation or a workflow skips it, because the analysis would be a copy of the previous one. A push to `main` always scans. For that reason the required check is `ci`, which carries the scan, rather than SonarCloud's own check, which cannot report on a pull request it never analysed. The scan step carries `SONAR_TOKEN` because uploading an analysis is a write; nothing reads results back, so no other step needs it.
+`local-gates` also runs on every pull request but does not block a merge. It computes the agent labels this diff needs from its changed paths and prints the set: `docs-verified` always, `cases-verified` when the pull request touches `src/`, `impact-verified` for the behaviour or judgement group below, and `architecture-verified` when it touches `ADR.md`, `docs/superpowers/specs/`, the Scenario A and B modules or `src/workers/`, or carries the `scenario` label. `e2e-verified` is never required; that run happens when the owner asks for it. Every new push strips all five, so the applicable agents are re-run and their labels re-applied before the pull request goes to the owner.
 
-A SonarCloud finding is fixed before the PR is handed to the owner — a rule (REVIEW.md 13.6), not a check. Read the findings in SonarCloud's own pull request comment, or through the _Details_ link on the SonarCloud check, whatever their severity, and count an unreviewed security hotspot as one — Sonar way already fails the gate on those (`new_security_hotspots_reviewed < 100`), so they turn `ci` red as well. `impact-analyzer` reads that comment on every pre-push round and fails on an open finding, so this is checked before the hand-off rather than at merge time.
-
-It is a rule and not a check on purpose. The free plan's quality gate judges ratings, coverage, duplication and hotspot review, so a CRITICAL code smell passes it, and a gate condition on issue count needs a custom gate, which SonarCloud asks to be paid for on this project's plan. The owner reported that from the SonarCloud interface on PR #56, which is the only place it can be seen; no API answers it. PR #56 built a CI step that queried SonarCloud's issue API instead, reviewed it twice, then deleted it: it restated what the pull request comment already says. Read that entry in `docs/ai-appendix-notes.md` before rebuilding it.
-
-Silencing a finding needs the repository owner's explicit approval and an entry in `sonar.issue.ignore.multicriteria` in `sonar-project.properties` whose comment names the rule, the scope and why the rule does not apply there. Never widen an existing scope to cover a new finding; add an approved entry instead. Accepting, won't-fixing or false-positiving a finding in the SonarCloud web interface is not that exception — nothing mechanical stops it, which is exactly why the silencing has to come back into the repository as an approved entry, and why a finding that vanishes without a matching repository change gets asked about.
-
-The scan is not a finding when SonarCloud is slow: a `ci` failure whose Sonar step reports a timeout (`sonar.qualitygate.timeout`, 300 s) is a re-run, not something to fix.
+`local-gates` still runs and computes the agent set from the changed paths, and
+its labels are read at hand-off, but it does not block a merge. The SonarCloud
+check is not required either: the scan is skipped when a pull request touches
+nothing it reads, and a required check that never reports would block such a
+merge forever. The pull request title job has been removed.
 
 `local-gates` lists the pull request files and edits labels with the workflow's `GITHUB_TOKEN`; both are served by the `pull-requests` and `issues` scopes, and the job performs no checkout, so it grants no `contents` scope. A `403` on that step means the pull request comes from a fork, where the token is read-only regardless of the `permissions` block. Fork pull requests cannot pass this gate (nor the Claude review); open the branch in this repository instead.
 
@@ -71,6 +93,7 @@ Four Claude Code agents live in `.claude/agents/`. They are part of the process,
 | `architecture-critic` | Before pushing a PR that touches `ADR.md`, `docs/superpowers/specs/`, the vendor, promotion or pricing modules, the workers, or carries the `scenario` label | SOUND / REVISE / REJECT, label `architecture-verified`                                           |
 | `e2e-tester`          | When the owner asks for a run; never a required label                                                                                                        | PASS / FAIL, label `e2e-verified`                                                                |
 | `impact-analyzer`     | Before pushing a PR that touches the **behaviour** or the **judgement** group                                                                                | PASS / FAIL, label `impact-verified`                                                             |
+| `test-case-generator` | Before pushing a PR that touches `src/`; reads the story's acceptance criteria, never the implementation                                                     | PASS / FAIL, writes `docs/e2e-cases/<issue>.md`, label `cases-verified`                          |
 | `docs-scribe`         | Before every push, on the PR branch, and whenever an AI mistake is caught and fixed (this one always applies)                                                | Updates `ADR.md`, `README.md`, `docs/ai-appendix-notes.md` in the same PR, label `docs-verified` |
 
 Agent definitions are living documents: when an endpoint, job, cache or store lands, update the relevant agent in the same PR so it knows what to test, trace or attack.

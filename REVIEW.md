@@ -49,9 +49,10 @@ a decimal price, no `parseFloat`, no `toFixed` to "fix" a rounding artefact.
 a truncation turns the first into 434 cents. A parser that rounds its way out
 of that is a finding, because the next input will find the case it misses.
 
-1.3 Exactly one implementation of the discount formula exists
-(`src/modules/pricing/effective-price.ts`). A second copy inline in a query, a
-worker or a test fixture is a finding even when it agrees today.
+1.3 Exactly one implementation of each discount formula exists, in the
+calculator for that discount type (`src/modules/promotion/domain/`), reached
+only through `effectivePrice`. A second copy inline in a query, a worker or a
+test fixture is a finding even when it agrees today.
 
 1.4 Rounding direction is stated and tested: the discount is floored, so the
 customer pays at most one cent more than the ideal. Any new rounding site
@@ -108,6 +109,14 @@ skips the row in both cases. The standard form names every nullable column:
 columns are null together (as `ingest_job_id` and `ingest_source_offset` are:
 both written by the same upsert), say so next to the guard and test the
 all-null case; otherwise test each column null on its own.
+
+2.7 State that depends on time or on other rows — "is this promotion active",
+"which candidate applies" — is decided in SQL on the database clock, as a view
+or the query's `WHERE`, never re-derived in code. A predicate that exists in
+both a query and a function is a finding.
+
+Evidence: `isActive(promotion, now)` duplicated the resolution query's
+`tstzrange(...) @> now()` on a second clock (PR #29, issue #28).
 
 ---
 
@@ -263,8 +272,14 @@ read-model database only. `KEYS` in any code path is a finding.
 databases; no maintenance operation can reach the queue.
 
 5.5 Pagination is bounded: page size has a hard cap, the cap is enforced server
-side, and the sort is total (a tiebreaker column) so pages cannot repeat or skip
-rows within one version.
+side, and the sort is total — a tiebreaker column — so a single snapshot cannot
+repeat or skip a row. Where the sort key can change under a reader, say so: the
+storefront's ZSET scores are rewritten progressively while a category is
+rescanned, so an offset page taken during a sale can repeat a row or miss one,
+and the route states that window rather than claiming it cannot happen. The
+cursor form (`ZRANGEBYSCORE` with an exclusive `(score, id)` cursor) is the
+upgrade, and "within one version" is not a guarantee this design offers,
+because it has no version.
 
 5.6 A cache entry whose freshness depends on another key states how the two are
 kept consistent. A key that can be written without its index (`HSET` without the
@@ -452,10 +467,23 @@ _Promotions and inheritance_
 
 - A product created in a category with an active promotion is discounted on
   its first read, with no extra event.
-- A product carrying both a product-level and a category-level promotion gets
-  the product-level price, even when the category discount is larger.
-- Cancelling the category promotion restores base price for every product
-  that had no promotion of its own, and leaves the others untouched.
+- A product carrying both a product-level and a category-level active promotion
+  gets the lower of the two effective prices, in the customer's favour, and a
+  higher-priority rule overrides that default. The test inserts the rule row it
+  asserts against: a test that pinned the seeded production default would be
+  asserting a configuration value, and a policy that lives in a row is not a
+  policy a test may freeze.
+- Cancelling the category promotion restores base price for every product that
+  had no promotion of its own, and its own effective price for the rest — under
+  lowest-price precedence the category promotion may have been the one applied,
+  so "leaves the others untouched" would pin the retired policy.
+- The **seeded** rules, read from the migrated database, select the lower price
+  for a two-candidate product and the only candidate for a one-candidate one.
+  That is a test of code: the seed is a migration row, changed by commit, and
+  the test changes with it. What must not exist is a test pinning the row a
+  _running_ database holds — an operator editing it changes neither code nor
+  test, and that is what keeps the policy data rather than configuration
+  frozen by CI.
 
 _Concurrency_
 
@@ -492,6 +520,37 @@ a timeout. A flaky test is a finding, not a retry.
 
 7.6 **Isolation.** Each test file owns its data; tests pass in any order and in
 parallel. Shared mutable fixtures across files are a finding.
+
+7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
+the tree mirrors `src/` and one test file per source file. No test file at
+`tests/` root, no per-module top-level directories. A helper that more than one
+layer imports — a fake, a capture, a builder — is not a test file and lives at
+`tests/<subject>-<role>.ts`, because both layers import it and it belongs to
+neither; `helpers/` and `utils/` are still banned (8c.4).
+
+Evidence: `tests/promotion/`, `tests/unit/` and a root-level test file on three
+open branches at once (PRs #29, #39).
+
+7.8 **A test imports its subject through the `@src/*` alias, production code
+never does.** `import { effectivePrice } from '@src/modules/promotion/domain/effective-price.js'`
+in a test; a relative specifier in `src/`. The alias is `paths` in
+`tsconfig.json` plus `resolve.alias` in `vitest.config.ts`, and an ESLint
+`no-restricted-imports` rule scoped to `src/**` enforces the second half,
+because a convention nothing checks is not one.
+
+The asymmetry is not taste. `tsc` does not rewrite a path alias on emit, so
+`@src/...` inside `src/` compiles, builds, passes every unit test and then
+throws `ERR_MODULE_NOT_FOUND` at container start — the one place nothing is
+watching. Tests are excluded from `tsconfig.build.json` and never emitted, so
+the alias cannot reach a running process through them.
+
+A vitest workspace project does not inherit the root config's `resolve` block.
+Declare the alias once and spread it into every project, or the aliased imports
+resolve in `npm test` and fail in whichever project forgot it.
+
+Evidence: five levels of `../` in a test that had moved four times in one
+evening (PR #29); then eleven test files red at once when the alias met a
+workspace whose projects did not carry it (PR #50).
 
 ---
 
@@ -559,7 +618,12 @@ memory on the smallest configured container.
 
 ## 8b. Comments
 
-**Severity: warning.**
+**Severity: critical. Blocking.**
+
+Raised from warning on 2026-09-13: as a warning it was skipped twice in one
+day — a 293-line module reached hand-off at 33 per cent narrative comment lines
+with every check green. The owner's rule is that a clear function carries no
+comment, so a violation blocks like any other.
 
 8b.1 A comment earns its line by saying something the code cannot: a
 non-obvious invariant, a unit that is not in the name, a reason the obvious
@@ -596,11 +660,21 @@ and the prose wrong is the same defect one indirection further away. A comment
 or an ADR may cite only what its own branch carries: a forward reference to a
 rule or a section that lands in another pull request reads as fact and is not.
 
+8b.6 Configuration files (`docker-compose.yml`, workflows, `.env.example`,
+properties) carry no explanatory comments; the entry says what it does. At most
+one short line per variable in `.env.example`.
+
+Evidence: a 121-line compose file with 45 comment lines (PR #34).
+
 ---
 
 ## 8c. Names match
 
-**Severity: warning.**
+**Severity: critical. Blocking.**
+
+Raised from warning on 2026-09-13: one declaration per file is the owner's
+explicit rule, and as a warning it was passed on a module holding five types,
+two schemas and three functions the day after the rule was written.
 
 8c.1 A name says what the thing is. A file and its main export carry the same
 word, and when the two disagree, fix whichever is wrong rather than whichever is
@@ -610,15 +684,19 @@ it is.
 Evidence: `http-error.ts` exported a class called `AppError`. The fields were
 `status`, `code` and `details`, so the file was right and the class was renamed.
 
-8c.2 One declaration per file. Every `class`, `interface`, `abstract class` and
-`enum` lives in its own file named after it, together with the private helpers
-only it uses. A second exported declaration in the same file is a finding, and
-"they are all about one concept" is not a defence: a concept is what a directory
-is for.
+8c.2 One exported declaration per file — `class`, `interface`, `abstract class`,
+`enum`, `type` alias or function — in a file named after it, together with the
+private helpers only it uses. A second exported declaration in the same file is
+a finding, and "they are all about one concept" is not a defence: a concept is
+what a directory is for. A type alias counts: a union of string literals is a
+declaration a caller imports by name, not punctuation on the interface beside
+it.
 
 Evidence: a 199-line module held two interfaces, an abstract base, two classes,
 a registry and a factory, all of them sharing the concept "discount
-calculation".
+calculation". The alias clause is the owner's reading of 2026-09-13 on PR #29,
+written down here so #30, #37 and #39 are judged against the rulebook rather
+than against a comment thread (13b.1).
 
 8c.3 A file is named for its role as a kebab-case noun, `<subject>-<role>.ts`,
 never for the verb it exports. `request-validator.ts`, not `validate.ts`, beside
@@ -652,6 +730,11 @@ Evidence: ADR-0004 on #35 stated the promotion precedence rule three different
 ways in one section: "at most one active promotion per product", "at most one
 applied promotion", and "product level wins". No single name ran through the
 prose, so a rename had nothing to follow.
+
+8c.7 Directories are named for a role, never for a kind of syntax. Inside a
+module: `domain/` (types and pure rules, importing no store and no framework),
+`db/`, `http/`, `jobs/`; in `src/shared/db/schema/` one file per table. No
+`models/`, `types/`, `interfaces/`, `classes/`. The tree is in CONTRIBUTING.md.
 
 ---
 
@@ -727,6 +810,18 @@ its own pull request, not in an issue to be dealt with later.
 12.4 Dependencies: prefer the standard library, then something already
 installed. A new dependency for a few lines of code is a finding.
 
+12.5 Startup validation checks only what would otherwise fail late and
+quietly (a URL that connects to the wrong database, two components sharing one
+Redis database, a lease shorter than its budget). One zod `parse` with a refine
+per such invariant; everything else fails on first use by itself.
+
+Evidence: a 149-line validator plus 296 test lines replaced by 37 lines (PR #34).
+
+12.6 Complexity per function stays at 10 or below: ESLint `complexity`
+(cyclomatic, gates `npm run lint`) and Sonar S3776 (cognitive, on the PR). Above
+it, Extract Function or Replace Nested Conditional with Guard Clauses — never a
+disable comment.
+
 ---
 
 ## 13. Repository hygiene
@@ -779,6 +874,21 @@ qualifier and an enum value in DDL: SQL has no constant to declare for either
 (PR #56, `6a0a9c1`).
 
 ---
+
+13.7 A scripted edit asserts its anchor matches exactly once before replacing
+it. Presence is not enough: assert the count, not that the text is in the file.
+Both failure modes are silent at the moment they happen and only surface when
+something downstream reads the document.
+
+Evidence, both from one day on this repository: a slice whose end index came
+from a heading that appears in several ADRs matched the wrong one, produced an
+empty string, and `str.replace("", new)` inserted the replacement between every
+character — all seven ADRs became 249 copies of one bullet, and it was pushed,
+because the check afterwards looked for the absence of the old text, which a
+file of 249 identical bullets passes. The quiet version of the same bug is a
+replace that matches nothing, reports success, and ships a document saying the
+opposite of what its commit message claims; that one shipped twice before it
+was noticed.
 
 ## 13b. The rulebook learns
 

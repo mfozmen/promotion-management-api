@@ -1,6 +1,6 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
-import { createApp } from '../../src/app.js';
+import { createApp } from '@src/app.js';
 import { seedProducts, useTestRedis, type SeedProduct } from './redis.js';
 
 const redis = useTestRedis();
@@ -209,7 +209,11 @@ describe('before the read model is built', () => {
 
     expect(res.status).toBe(503);
     expect(res.body.error.code).toBe('READ_MODEL_NOT_READY');
-    expect(res.headers['retry-after']).toBe('5');
+    // A band, not a fixed number: a flat hint returns every client that met
+    // the cold start in the same second.
+    const after = Number(res.headers['retry-after']);
+    expect(after).toBeGreaterThanOrEqual(5);
+    expect(after).toBeLessThanOrEqual(10);
   });
 
   it('answers 503 on the detail route too', async () => {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CLIENT_ERRORS, HttpError, STATUS } from '../../src/shared/http-error.js';
+import { CLIENT_ERRORS } from '@src/shared/http/client-errors.js';
+import { HttpError } from '@src/shared/http/http-error.js';
+import { STATUS } from '@src/shared/http/status-by-code.js';
 
 describe('HttpError', () => {
   it('keeps its status, code and message', () => {
