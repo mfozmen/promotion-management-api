@@ -98,6 +98,13 @@ export class EventQueue<R extends Registry> {
     return this.queues[name];
   }
 
+  /** The queues themselves, for a dashboard that takes BullMQ's own objects. Handing
+   *  them out is what lets Bull Board serve the control surface; nothing in `src/` uses
+   *  them for anything else. */
+  all(): Queue[] {
+    return Object.values(this.queues);
+  }
+
   /** Closing does not drain, so `SIGTERM` stops the producers first; it frees the socket. */
   async close(): Promise<void> {
     await Promise.all(Object.values(this.queues).map((queue) => queue.close()));

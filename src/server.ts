@@ -1,6 +1,5 @@
 import { createApp } from './app.js';
 import { eventRegistry } from './events/event-registry.js';
-import { QueueStatsReporter } from './modules/admin/domain/queue-stats-reporter.js';
 import { eventRouting } from './events/event-routing.js';
 import { PromotionScheduler } from './modules/promotion/domain/promotion-scheduler.js';
 import { loadConfig } from './shared/config.js';
@@ -32,7 +31,7 @@ const app = createApp({
   products: new ProductReadRepository(
     createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB),
   ),
-  queueStats: new QueueStatsReporter(queue, () => new Date(), EventQueue.OPERATION_TIMEOUT_MS),
+  queues: queue,
 });
 
 const server = app.listen(config.PORT, () => {

@@ -1,7 +1,9 @@
 import express, { type Express } from 'express';
 import createError from 'http-errors';
 import type { AppDependencies } from './app-dependencies.js';
-import { adminRouter } from './modules/admin/http/admin-router.js';
+import { createBullBoard } from '@bull-board/api';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { ExpressAdapter } from '@bull-board/express';
 import { FindProductQuery } from './modules/storefront/queries/find-product-query.js';
 import { ListProductsQuery } from './modules/storefront/queries/list-products-query.js';
 import { ReadModelReadinessQuery } from './modules/storefront/queries/read-model-readiness-query.js';
@@ -29,7 +31,7 @@ export function createApp({
   queue,
   scheduler,
   products,
-  queueStats,
+  queues,
 }: AppDependencies): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
@@ -67,8 +69,19 @@ export function createApp({
       list: new ListPromotionsQuery(promotions),
     }),
   );
-  api.use('/admin', adminRouter(queueStats));
   app.use('/api', api);
+
+  // Outside `/api` and outside the error envelope: the board is an operator surface
+  // with its own HTML and its own error pages, not part of this API's contract
+  // (ADR-0009). It is BullMQ's own dashboard, so the counts, the dead-letter set and
+  // the retry/promote controls come from the library rather than from us.
+  const board = new ExpressAdapter();
+  board.setBasePath('/admin/queues');
+  createBullBoard({
+    queues: queues.all().map((queue) => new BullMQAdapter(queue)),
+    serverAdapter: board,
+  });
+  app.use('/admin/queues', board.getRouter());
 
   app.use((_req, _res, next) => {
     next(createError(404, 'Route not found'));

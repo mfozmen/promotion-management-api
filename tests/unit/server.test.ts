@@ -1,25 +1,35 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
-// `src/server.ts` is the one file coverage excludes, so nothing else here can notice a route
-// that is mounted only by tests. This branch shipped exactly that: `createApp()` with no
-// reporter, a documented admin endpoint, and 288 green tests over an endpoint no deployment
-// served. The guard is textual because the alternative is running the boot.
-describe('server.ts', () => {
-  it('builds the app with the queue reporter, so the admin route is served and not just tested', async () => {
-    const source = await readFile('src/server.ts', 'utf8');
+/**
+ * `src/server.ts` is the one file coverage excludes, so nothing else in the suite can
+ * notice a collaborator that is wired only in tests. The type requires each dependency;
+ * it cannot require that the one passed is the live object rather than a stub, and both
+ * of these have already happened here — a merge took main's `server.ts` whole and dropped
+ * the read-model client, and this branch shipped a documented admin endpoint that no
+ * deployment served. The guards are textual because the alternative is running the boot.
+ */
+const live = async (): Promise<string> =>
+  (await readFile('src/server.ts', 'utf8'))
     // Comments go first, block and line: a plain match cannot tell a live call from one
     // commented out above a stub, which is the shape a "disable this for now" commit takes.
-    // Matching the wrapped call rather than a whole line, because prettier decides the breaks.
-    const live = source
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('//'))
-      .join('\n');
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n');
 
-    expect(live).toMatch(/const app = createApp\([\s\S]*?new QueueStatsReporter\(/);
-    // The value too, not just the call: a `0` or an `Infinity` threaded here makes the
-    // endpoint a permanent 500 with every other test still green (REVIEW.md 7.4b).
-    expect(live).toContain('EventQueue.OPERATION_TIMEOUT_MS');
+describe('server.ts', () => {
+  it('hands createApp a real read-model client', async () => {
+    const source = await live();
+
+    // Sliced from `createApp(` to the end rather than matched with a bounded pattern:
+    // the call spans six arguments, and `[^)]*` stopped at the first of them.
+    expect(source.slice(source.indexOf('createApp('))).toContain('createReadModelClient(');
+  });
+
+  it('hands createApp the real queues, so the dashboard has something to show', async () => {
+    const source = await live();
+
+    expect(source.slice(source.indexOf('createApp('))).toMatch(/queues:\s*queue\b/);
   });
 });

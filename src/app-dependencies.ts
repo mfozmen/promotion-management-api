@@ -2,7 +2,7 @@ import type { Logger } from 'pino';
 import type { PromotionScheduler } from './modules/promotion/domain/promotion-scheduler.js';
 import type { ProductReadRepository } from './modules/storefront/db/product-read-repository.js';
 import type { Db } from './shared/db/client.js';
-import type { QueueStats } from './modules/admin/domain/dto/queue-stats.js';
+import type { Queue } from 'bullmq';
 
 /** Every dependency is required and every route is mounted: building a `Db` or
  *  a repository opens no connection, so the health probe answers either way. */
@@ -18,7 +18,7 @@ export interface AppDependencies {
   };
   scheduler: PromotionScheduler;
   products: ProductReadRepository;
-  /** The operator's read-only view of the queues. Structural for the same reason
-   *  as `queue`: `admin/` describes what it needs, not what `EventQueue` is. */
-  queueStats: { report(): Promise<QueueStats[]> };
+  /** The queues themselves, for the dashboard mounted outside `/api`. Separate from
+   *  `queue` above, which is the one publish call a use case makes. */
+  queues: { all(): Queue[] };
 }

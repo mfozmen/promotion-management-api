@@ -8,7 +8,7 @@ export function appDeps(over: Partial<AppDependencies> = {}): AppDependencies {
     logger,
     db: {},
     queue: { publish: () => Promise.resolve() },
-    queueStats: { report: () => Promise.resolve([]) },
+    queues: { all: () => [] },
     scheduler: {},
     products: {},
     ...over,
