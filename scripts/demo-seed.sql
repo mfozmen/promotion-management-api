@@ -11,6 +11,9 @@ SELECT
   1000 + (i % 200) * 50,
   i % 300
 FROM generate_series(1, 1000) AS i
+-- DO UPDATE rather than DO NOTHING plus the guard below: it takes the row lock before it
+-- evaluates the guard, and that lock is what makes two concurrent seeds serialise here instead
+-- of both reaching the promotion statements and one of them failing on 23P01.
 ON CONFLICT ("sku") DO UPDATE SET
   "name" = excluded."name",
   "category" = excluded."category",

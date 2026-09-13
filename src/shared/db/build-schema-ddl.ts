@@ -20,7 +20,12 @@ export async function buildSchemaDdl(migrationsFolder: string): Promise<string> 
   const migrations = await Promise.all(
     journal.entries.map(async ({ tag }) => {
       const sql = await readFile(join(migrationsFolder, `${tag}.sql`), 'utf8');
-      const body = sql.replaceAll('\r\n', '\n').replaceAll(/\s*--> statement-breakpoint/g, '');
+      // Plain strings rather than one `\s*`-prefixed pattern: the marker sits either after a
+      // semicolon or alone on its line, and a regex for both backtracks (SonarQube S8786).
+      const body = sql
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\n--> statement-breakpoint', '')
+        .replaceAll('--> statement-breakpoint', '');
       return `-- ${tag}.sql\n${body.trim()}\n`;
     }),
   );

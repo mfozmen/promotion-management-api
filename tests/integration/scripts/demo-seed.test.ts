@@ -104,11 +104,14 @@ describe('demo seed', () => {
   });
 
   it('leaves one whole catalogue when two seeds race', async () => {
-    // They serialise on the product rows rather than colliding: whichever commits second finds
-    // the first's promotion committed and deletes it by name before inserting its own, so
-    // neither run fails and the end state is one catalogue and one sale.
-    const states = await Promise.all([seed(), seed()].map(sqlStateOf));
-    expect(states).toEqual([undefined, undefined]);
+    // Raced twice because the upsert takes two different paths and only one of them is reached
+    // on a database that already holds the rows: an empty catalogue races speculative insertion,
+    // a full one races the no-op update. Both serialise, so whichever commits second finds the
+    // first's promotion committed and deletes it by name before inserting its own, and neither
+    // run fails. On READ COMMITTED, which is the pool's default and the only level it sets.
+    await db().$client.query(`delete from products where sku like 'DEMO-%'`);
+    expect(await Promise.all([seed(), seed()].map(sqlStateOf))).toEqual([undefined, undefined]);
+    expect(await Promise.all([seed(), seed()].map(sqlStateOf))).toEqual([undefined, undefined]);
 
     const [catalogue] = await db()
       .select({ products: count() })
