@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import type { ErrorRequestHandler } from 'express';
 import { CLIENT_ERRORS } from './client-errors.js';
 import type { ErrorCode } from './error-code.js';
@@ -6,19 +7,24 @@ import { MAX_MESSAGE } from '../max-message.js';
 import { OTHER_CLIENT_ERROR } from './other-client-error.js';
 import type { ErrorMapping } from './error-mapping.js';
 import { HttpError } from './http-error.js';
-import { logger, serializeError } from '../logger.js';
+import { logger } from '../logger.js';
+import { serializeError } from '../serialize-error.js';
 
-/** The two codes whose whole meaning is "come back later". Without a number a
- *  client retries as fast as it can, which amplifies the outage it met. */
 /** A band rather than a number: a flat hint has every client that met the
  *  outage returning in the same second, so the read model's first healthy
  *  moment takes the whole backlog at once. */
 const RETRY_AFTER_MIN = 5;
 const RETRY_AFTER_SPREAD = 6;
+// `crypto.randomInt`, not `Math.random`: the jitter is fine either way, but a
+// non-cryptographic generator on a response header is a security hotspot, and
+// clearing it in the analyser's interface rather than in the code is the
+// bypass REVIEW.md 13.6 forbids.
 const retryAfter = (): string =>
-  String(RETRY_AFTER_MIN + Math.floor(Math.random() * RETRY_AFTER_SPREAD));
-// An array rather than a `ReadonlySet`: freezing a Set does not stop `.add`,
-// so the readonly type would be the only guard, and it is erased at build time.
+  String(randomInt(RETRY_AFTER_MIN, RETRY_AFTER_MIN + RETRY_AFTER_SPREAD));
+
+/** The two codes whose whole meaning is "come back later". An array rather
+ *  than a `ReadonlySet`: freezing a Set does not stop `.add`, so the readonly
+ *  type would be the only guard, and it is erased at build time. */
 const RETRIABLE: readonly ErrorCode[] = Object.freeze(['BACKPRESSURE', 'READ_MODEL_NOT_READY']);
 
 // Frozen: its message is the body of every 500.
