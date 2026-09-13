@@ -197,11 +197,9 @@ All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are
 
 Every promotion response carries both `status`, the value an admin set (`draft`, `active`, `cancelled`), and `state`, what the promotion is doing right now (`draft`, `scheduled`, `live`, `expired`, `cancelled`). `state` is computed by PostgreSQL in every read and in every write's `returning` clause (one `sql` fragment in `src/modules/promotion/db/promotion-repository.ts`), never derived in TypeScript, so no Node clock can drift against it (ADR-0004).
 
-The overlap `409` is raised from SQLSTATE `23P01` — the two GiST exclusion constraints on `promotions` firing — never from a check-then-insert query: two admins creating the same window at once both pass such a check, so one of them has to lose in the database (ADR-0004). It names no promotion: the envelope carries a message and nothing else, and another row's identifier is not the caller's to read (REVIEW.md 8.3b). To find the blocker, list promotions filtered by the same `productId` or `category` and compare windows — the constraints are keyed on those two columns, so that filter is the one that finds it.
+The overlap `409` is raised from SQLSTATE `23P01` — the two GiST exclusion constraints on `promotions` firing — and names no promotion: the envelope carries a message and nothing else. An admin refused one finds the blocker with `GET /api/promotions` filtered by `productId` or `category`.
 
-An id that is not a positive integer answers `404`, not `400`: the caller named a promotion that does not exist rather than sending a bad body. A `productId` no product owns is the same `404`, raised from the foreign-key violation rather than from a prior lookup.
-
-`src/server.ts` builds the pool and the queues from the configuration and passes `db`, `publish` and `scheduler` into `createApp`, so every route above is served by `npm run dev`. The routers are mounted only when those dependencies are present (`src/app-dependencies.ts`), which is what lets a test build an app with just the middleware — and is why an omission in `server.ts` would be a 404 in production with a green suite, the file being the one excluded from coverage (REVIEW.md 7.2).
+An id that is not a positive integer answers `400`, the same as the storefront's: it is a malformed request rather than a promotion that does not exist. A `productId` no product owns answers `404`.
 
 ### Conventions
 

@@ -1083,33 +1083,26 @@ Evidence: `scripts/` arrived while `include` still read `["src", "tests"]`, so
 `--listFiles` counted nothing in it while `eslint .` walked it clean.
 
 13.11 A cleanliness check is evidence about the tree at the moment it ran, so
-re-run it on what you are about to commit rather than on what you merged into,
-and do not treat a merge's own list of conflicted files as the list to resolve:
-`git add -A` turns an unmerged path into a staged one, and the markers stop
-showing as unmerged. `git diff --check` and `git diff --cached --check` are
-git's own and cover both sides; a script that reimplemented them was written and
-then deleted, so look in the tool before writing a check.
+re-run it on what you are about to commit: `git add -A` after a conflict turns
+an unmerged path into a staged one and the markers stop showing as unmerged.
+`git diff --check` and `git diff --cached --check` cover both sides and are
+git's own, so look in the tool before writing a check.
 
-Evidence: three conflict markers reached `58c6f87` and the pull request opened
-from it, because the grep that would have caught them ran before the merge
-rather than after.
+Evidence: three conflict markers reached a pull request because the grep that
+would have caught them ran before the merge rather than after.
 
 13.12 **Two files that have to agree are checked by a test that reads both, not
-by a diff.** When a value is written twice — a URL in a compose healthcheck and
-the route that serves it, a port in a Dockerfile and in a config, a queue name
-in a producer and a consumer — changing one side leaves a diff that is
-individually correct and a review that has nothing to compare. The side that
-did not change is not in the diff at all, so the branch that broke the pair
-looks clean. Land a test that reads the value out of one file and exercises the
+by a diff.** Changing one side of a pair — a URL in a compose healthcheck and
+the route that serves it, a port in a Dockerfile and in a config — leaves a diff
+that is individually correct, because the side that did not change is not in the
+diff at all. Land a test that reads the value out of one file and exercises the
 other.
 
 Evidence: moving the health probe under `/api` left `docker-compose.yml`
-fetching `/health`. Both files were right on their own, this branch never
-edited compose so the textual diff against `main` was empty, and the container
-would never have reported healthy — `up --wait` hanging rather than failing,
-which is the slowest way to learn. `tests/unit/docs/compose-healthcheck.test.ts`
-now parses the URL out of compose and calls it, and was verified to fail when
-the path is put back.
+fetching `/health`, so the container would never have reported healthy and
+`up --wait` would have hung rather than failed;
+`tests/unit/docs/compose-healthcheck.test.ts` now parses the URL out of compose
+and calls it, and was verified to fail when the path is put back.
 
 ## 13b. The rulebook learns
 
@@ -1141,20 +1134,15 @@ is not scope creep (12.3): the preamble already says the design wins and the
 rule gets fixed in the same PR. Quote the amendment in the PR description so
 the change to the shared standard is reviewed, not just the code.
 
-13b.5 **A rule's number is allocated once and never reused, never compacted.**
-A branch appending to a section takes the next free number; if two branches take
-the same one, the loser becomes `13.10a`, not a renumber of everything after it.
-A number that moves is an edit to every file that cites it, in a merge where
-those files did not conflict — and a citation that has moved one rule off still
-names a rule that exists, so the citation check passes and a reader is sent to
-the wrong rule.
+13b.5 **A rule's number is allocated once and never reused or compacted.** A
+collision becomes `13.10a` rather than a renumber of everything after it,
+because a number that moves is an edit to every file citing it, in a merge where
+those files did not conflict.
 
-Evidence: section 13 was renumbered twice in one afternoon on one branch. Both
-times two branches had appended to the same section and both had claimed the
-next number; both times citations were repointed by hand. The second time, the
-check written that morning to catch exactly this stayed green, because the stale
-citation still resolved. The defect is the scheme, not the checker: ids that
-never move make the check that exists sufficient.
+Evidence: section 13 was renumbered twice in one afternoon, and the second time
+the check written that morning to catch it stayed green — a citation off by one
+rule still resolves to a rule that exists. The defect is the scheme, not the
+checker.
 
 ---
 
