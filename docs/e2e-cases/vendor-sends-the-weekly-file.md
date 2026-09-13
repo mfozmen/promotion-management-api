@@ -53,6 +53,7 @@ Acceptance criteria
 - A stored base price is the vendor price after the active rules, never the vendor price itself when a rule applies.
 - The rules live in ModaCo's system and change without a vendor knowing.
 - A file cannot be imported with no rules to apply.
+- A row that no active rule touches is stored at the vendor's price, unchanged (issue #9).
 
 Test cases
 
@@ -70,6 +71,14 @@ Test cases
 - Given: every ingestion rule deactivated
 - When: a vendor uploads a file
 - Then: the import is refused and no row is stored at the vendor's price
+- Measure: none
+
+### vendor-9
+
+- Precondition: `POST /api/vendor/imports`, the pricing rules table
+- Given: exactly one active ingestion rule, a 15 % markup on category Electronics, and a file with one row in category Home at vendor price 800.00 and stock 10
+- When: the import finishes
+- Then: the Home row's stored base price is 800.00, the vendor's own price, and the vendor is not told the import failed
 - Measure: none
 
 ## S3 The import survives the serverless plan
