@@ -15,6 +15,7 @@ Acceptance criteria
 - A valid promotion is stored and returned with its identifier.
 - A percentage above 100, a negative value, or an end before the start is rejected with a reason I can act on.
 - A promotion created without naming a product or a category is stored, but changes no price until it is assigned. (Case study section 2 lists creating and assigning as separate capabilities.)
+- A promotion created with a product or a category named is live from its start without a second call from me. (Issue #11 acceptance criteria, owner: "`POST /api/promotions` with `productId` or `category` … `201` with status `active`".)
 
 Test cases
 
@@ -41,6 +42,14 @@ Test cases
 - When: staff create a 20 % promotion running today without naming a product or a category, and a shopper then opens the product
 - Then: 201 with an identifier staff can assign later, and the product still shows 100.00
 - Measure: none
+
+### promotion-16
+
+- Precondition: `POST /api/promotions`, `GET /api/products/:id`
+- Given: a product at 40.00 in Accessories, and no promotion anywhere near it
+- When: staff create a 50 % promotion naming the category Accessories, starting now and ending tomorrow, and make no other call
+- Then: 201, and a shopper opening the product sees 20.00 and the promotion named
+- Measure: time from the create response to 20.00 appearing on the storefront, under 5 seconds
 
 ## S5 Assign a promotion to a product or a category
 
