@@ -2,6 +2,7 @@ import type { Logger } from 'pino';
 import type { PromotionScheduler } from './modules/promotion/domain/promotion-scheduler.js';
 import type { ProductReadRepository } from './modules/storefront/db/product-read-repository.js';
 import type { Db } from './shared/db/client.js';
+import type { Queue } from 'bullmq';
 
 /** Every dependency is required and every route is mounted: building a `Db` or
  *  a repository opens no connection, so the health probe answers either way. */
@@ -17,4 +18,5 @@ export interface AppDependencies {
   };
   scheduler: PromotionScheduler;
   products: ProductReadRepository;
+  boardQueues: Queue[];
 }

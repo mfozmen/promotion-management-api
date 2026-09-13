@@ -2,20 +2,11 @@ import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { createApp } from '@src/app.js';
 import type { Logger } from 'pino';
-import type { AppDependencies } from '@src/app-dependencies.js';
+import { appDeps } from '@tests/app-deps.js';
 import { logger as rootLogger } from '@src/shared/logger.js';
 import { captureLogger } from './capture-logger.js';
 
-/** These cases exercise the health route, the 404 and the logger; none reaches a
- *  product or promotion route, so no store or queue is ever called. */
-const deps = (logger: Logger): AppDependencies =>
-  ({
-    logger,
-    products: {},
-    db: {},
-    publish: () => Promise.resolve(),
-    scheduler: {},
-  }) as unknown as AppDependencies;
+const deps = (logger: Logger) => appDeps({ logger });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
