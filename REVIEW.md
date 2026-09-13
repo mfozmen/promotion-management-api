@@ -871,8 +871,14 @@ path, so the reviewer can tell a decision from an oversight.
 12.3 A PR delivers one story. Scope creep is a finding; the extra work goes in
 its own pull request, not in an issue to be dealt with later.
 
-12.4 Dependencies: prefer the standard library, then something already
-installed. A new dependency for a few lines of code is a finding.
+12.4 Dependencies: prefer the standard library, then a package already
+installed, then a widely used package, and only then code of our own. A
+hand-written solution to a problem a widely used package already solves is a
+finding, and so is a package that a few lines would express more readably.
+
+Evidence: an HTTP boundary re-implemented status, expose and headers from the
+error package its framework installs, and the error serialiser its logger
+ships.
 
 12.5 Startup validation checks only what would otherwise fail late and
 quietly (a URL that connects to the wrong database, two components sharing one
