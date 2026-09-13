@@ -21,8 +21,7 @@ function recorder(): Recorded & {
   scheduler: PromotionScheduler;
 } {
   const state: Recorded = { events: [], scheduled: [], removed: [] };
-  // The real scheduler over a fake queue, so the deterministic job id and the
-  // delay are exercised rather than stubbed away.
+  // The real scheduler over a fake queue: the job id and the delay are exercised.
   const scheduler = new PromotionScheduler({
     publish: (_name, payload, options) => {
       const jobId = String(options?.jobId ?? '');
@@ -101,15 +100,11 @@ describe('POST /api/promotions', () => {
     expect(rec.events).toEqual([
       { name: 'promotion.changed', payload: { promotionId: res.body.id } },
     ]);
-    // Both boundaries, order not asserted: they are scheduled concurrently so one
-    // cannot cost the other, which makes their order an accident rather than a
-    // contract.
+    // Order is not asserted: they are scheduled concurrently, so it is an accident.
     const sorted = [...rec.scheduled].sort((a, b) => a.boundary.localeCompare(b.boundary));
     expect(sorted.map((s) => s.boundary)).toEqual(['activate', 'expire']);
     expect(sorted.every((s) => s.promotionId === res.body.id)).toBe(true);
-    // The delay is the gap from the database's instant to the boundary, and it is
-    // what a stubbed scheduler hid: `now()` comes back as text, so computing it
-    // threw and both jobs were silently lost.
+    // `now()` comes back as text, so computing the delay from it can throw.
     expect(sorted[0]?.delay).toBeGreaterThan(0);
     expect(sorted[1]?.delay).toBeGreaterThan(sorted[0]!.delay);
   });
@@ -151,8 +146,7 @@ describe('POST /api/promotions', () => {
     expect(res.body.error).toEqual({
       message: 'An active promotion already covers that target for this window',
     });
-    // The conflicting promotion is named nowhere: the envelope carries a message
-    // and another row's identifier is not the caller's to read (REVIEW.md 8.3b).
+    // The conflicting promotion is named nowhere.
     expect(JSON.stringify(res.body)).not.toContain(String(first.body.id));
   });
 
@@ -521,8 +515,7 @@ describe('reading the whole list', () => {
 
 describe('two admins assigning one draft at the same moment', () => {
   it('lets exactly one win, because the guarded UPDATE matches one row', async () => {
-    // REVIEW.md 3.1 names this race by name. The claim in assign-promotion.ts
-    // that the loser "matches no row" is only worth what this test says it is.
+    // The claim that the loser "matches no row" is worth what this test says.
     const created = await request(app()).post('/api/promotions').send(draftBody());
     const [first, second] = await Promise.all([
       request(app())

@@ -51,8 +51,6 @@ const noopPublish = { publish: () => Promise.resolve() };
 
 describe('POST /api/promotions when the announcement fails', () => {
   it('still answers 201 and logs it for the reconciler', async () => {
-    // The row is committed. Refusing the write because Redis is unreachable
-    // would lose the admin's promotion to repair a cache that repairs itself.
     const { logger, lines } = captureLogger();
     const failing = { publish: () => Promise.reject(new Error('Redis is down')) };
 
@@ -136,9 +134,6 @@ describe('POST /api/promotions/:id/cancel when the announcement fails', () => {
 
 describe('POST /api/promotions/:id/cancel when the boundaries cannot be dropped', () => {
   it('still answers 200, because the row is already cancelled', async () => {
-    // The failure that made this a test: an unguarded await here turned a
-    // committed cancellation into a 500 and skipped promotion.changed, so the
-    // storefront kept serving the sale price with nothing to repair it.
     const { logger, lines } = captureLogger();
     const cancelled = { ...stored, status: 'cancelled' as const, state: 'cancelled' as const };
     const db = {
@@ -213,9 +208,7 @@ describe('a failing boundary call never costs the event', () => {
   } as unknown as Db;
 
   it('still emits promotion.changed when the boundary removal rejects', async () => {
-    // The regression this exists for: with `remove` awaited before `enqueue` in
-    // one try, a Redis timeout swallowed the invalidation and left a cancelled
-    // sale priced on the storefront. Asserting the 200 alone did not see it.
+    // The 200 alone does not see this: the order is what matters.
     const emitted: { name: string; payload: unknown }[] = [];
     const recording = {
       publish: (name: string, payload: unknown) => {
@@ -247,7 +240,7 @@ describe('a failing boundary call never costs the event', () => {
 
   it('schedules the expiry even when the activation fails to schedule', async () => {
     // Losing `expire` gives a discount away past its window; losing `activate`
-    // only delays one. Sequential awaits meant one failure took the other.
+    // only delays one, so one failure must not take the other.
     const scheduled: string[] = [];
     const res = await request(
       createApp(

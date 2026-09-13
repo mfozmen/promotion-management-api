@@ -8,12 +8,7 @@ import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
 
-/**
- * A queue stand-in that records what was enqueued. The queue contract itself is
- * tested against a real Redis in `queue.test.ts`; what these tests assert is that
- * the endpoint enqueues the right event after the commit, and that it survives the
- * enqueue failing — neither of which needs a broker to be true.
- */
+/** A queue stand-in: the contract itself is tested against a real Redis. */
 function recordingQueue() {
   const enqueued: { name: string; payload: unknown }[] = [];
 
@@ -93,10 +88,7 @@ describe('POST /api/products', () => {
   });
 
   it('enqueues only after the row is committed', async () => {
-    // The ordering this pins: an enqueue before the commit publishes an id a
-    // rollback would take away, and the worker then recomputes a product that
-    // does not exist. Reading the row from the pool at the moment the event is
-    // enqueued is how that ordering is visible from outside .
+    // An enqueue before the commit publishes an id a rollback would take away.
     let visibleWhenEnqueued: number | undefined;
     const queue = {
       publish: async (_name: string, payload: unknown) => {
@@ -133,8 +125,6 @@ describe('POST /api/products', () => {
   });
 
   it('still answers 201 when the event cannot be enqueued', async () => {
-    // The row is committed; losing the event costs read-model freshness until
-    // the reconciler sweeps, which is a smaller failure than losing the write.
     const body = newBody();
     const res = await request(createApp(appDeps({ db: db(), queue: failingQueue })))
       .post('/api/products')
@@ -166,7 +156,6 @@ describe('POST /api/products', () => {
   });
 
   it('does not echo the rejected value back to the caller', async () => {
-    // REVIEW.md 8.4: the response names the field, never what the client sent.
     const res = await request(createApp(appDeps({ db: db(), queue: recordingQueue().queue })))
       .post('/api/products')
       .send({ ...newBody(), sku: 'secret-looking-value'.repeat(20) });

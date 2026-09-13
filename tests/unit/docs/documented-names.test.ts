@@ -160,23 +160,12 @@ describe('the documents', () => {
   });
 
   it('cite only REVIEW.md rules that exist', async () => {
-    // A merge renumbered two rules and moved one citation, and nothing here could
-    // see it: this file checked paths, members and ADR numbers, and a rule number
-    // is the same kind of claim about another file (REVIEW.md 13.12). The renumber
-    // was verified by hand, which is the habit the rule exists to replace.
-    //
-    // What this does NOT catch, stated so nobody reads it as stronger than it is:
-    // a citation that moved one rule off still names a rule that exists. A second
-    // renumber on this same branch did exactly that — a citation of the two-files
-    // rule went on resolving, to the cleanliness rule that took its number — and
-    // this test stayed green. It catches a number nothing defines, which is the
-    // half a machine can see; the other half is still a reader's.
+    // What this does not catch: a citation off by one rule still names a rule
+    // that exists, and stays green. It catches a number nothing defines.
     const rules = new Set(
       [...(await readFile('REVIEW.md', 'utf8')).matchAll(RULE_DEFINITION)].map(([, n]) => n),
     );
     const dangling: string[] = [];
-    // The documents are the minority: most citations are in comments, where an
-    // author reaches for the rule that justifies the line they are writing.
     const sources = [...DOCUMENTS];
     for await (const file of glob('{src,tests}/**/*.ts')) sources.push(file);
 
