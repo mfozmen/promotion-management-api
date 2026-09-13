@@ -798,6 +798,39 @@ Each was written carefully, each was wrong, and none was caught by reading it ag
 - Verification: after the fact, which is the finding. The guard fired exactly as designed and was treated as friction to get past rather than as the report it was.
 - Lesson: on a lease rejection the only correct next action is to fetch and read the remote commit _before_ re-forcing. Inspecting afterwards converts a working guard into a coin flip, and it comes up heads often enough that the habit survives. Recorded by the session that did it, unprompted, which is the part worth keeping: the cost here was zero and the report was still made.
 
+### 2026-09-14 — Three checks that answered a narrower question than they printed
+
+- Challenge: after replacing two hand-started containers with compose's `test` profile, `docker compose up -d --wait` reported both healthy. Neither was publishing its port. The integration suite then failed to connect, and the obvious suspect was the branch that had just changed.
+- Verification: `docker port` on each container, and a direct connect to the two ports. The healthcheck runs _inside_ the container, so it passes whether or not anything outside can reach it; compose had reused containers created while the old ones still held the ports, and `--wait` was satisfied by a container no host could talk to.
+- Two more of the same shape landed within the hour, from two different sessions. A test default of `localhost` resolved to `::1` while the ports publish on IPv4 only, so a refused connection named an address nothing was listening on rather than the server sitting one family over. And an integration harness wrapped every connect failure in "PostgreSQL not reachable", so a missing database — `3D000`, from a server that was up — was reported as an unreachable server and sent its author to check ports for three steps.
+- Lesson, now REVIEW.md 13.13: a readiness check computed inside a thing cannot see whether anything outside can reach it. "Healthy" and "reachable" are different facts, and the first is routinely read as the second. Each of the three answered honestly; each printed a sentence wider than its answer.
+
+### 2026-09-14 — A control that passes in a configuration production never runs
+
+- Challenge: an admin endpoint reporting queue depth hung for about 210 seconds with Redis down. `publish` and `remove` carried the queue's 2 s bound; the five stats reads carried none, and a non-blocking BullMQ connection retries for minutes before rejecting. So the one endpoint an operator reaches for during a Redis outage was the one that would not answer during a Redis outage.
+- Verification, and the part worth keeping: there _was_ a test, and it passed. It injected a reporter that rejected immediately, so it proved the 500 in a configuration production does not run — the assertion held and the defect was untouched. The fix was found by driving reads that never settle, against an unreachable server rather than a stub.
+- The same shape twice more the same day. A log-scrubbing serializer was wired to the root logger and asserted through the root logger's symbol, while `pino-http` installs its own `err` serializer as a child and a child's serializers override the root's — so every error on the request path still carried the SQL statement and its bound values, with the wiring test green throughout. And an empty-pattern `grep -c $'\r'` reported every line of a file as matching, which is indistinguishable from a file that really is entirely CRLF.
+- Lesson: a green control proves the assertion, not the property. The question that separates them is not "does this test pass" but "in what configuration does it pass, and is that the one that ships".
+
+### 2026-09-14 — Deleting a feature by using the library's own product
+
+- Challenge: the operator surface for the queues was a hand-written module — an admin route, a `QueueStats` shape, a reporter with its own timed race, a widened `inspect` on the queue class. It worked. It also carried the 210-second hang above, and #18 still had pause, resume, retry and dead-letter handling open against it.
+- Resolution: the owner replaced it with Bull Board, BullMQ's own dashboard, mounted inside the API process outside the `/api` prefix. The whole module, the DTO, the reporter, `EventQueue.names()` and the six-method widening were deleted; `EventQueue.all()` hands the library the `Queue` objects it already holds. What the endpoint answered, the board answers — and it also answers everything #18 had left open.
+- Lesson stated as the trade rather than as a preference: the thing worth keeping was never the code, it was the operator being able to see a poisoned job. Once that is available off the shelf, the code is cost. The same reasoning had already deleted a thirty-line conflict-marker script the day before, on finding `git diff --check` does it.
+
+### 2026-09-14 — Which failure to keep, when neither is repaired
+
+- Challenge: the chunk processor stored a batch, announced it, then took the compare-and-set. A review agent argued for a transaction around the write and the checkpoint, publishing after commit. The author argued the current order: transaction-then-publish means a publish failure after commit is a batch checkpointed and never announced, the silent loss the ordering was chosen to avoid.
+- Verification: the deciding fact both sides named was whether the reconciler exists to repair an unannounced batch. It does not — `src/workers/reconciler/` holds one schema file and nothing consumes `reconciler.run`, checked rather than assumed. But that does not decide it, because with no reconciler _neither_ failure is repaired.
+- Resolution: transaction-then-publish, on the asymmetry rather than on the repair. A lost announcement leaves a projection stale, and the projection is derivable — the next event for that product corrects it. A superseded worker's late write corrupts PostgreSQL: the row looks current, nothing recomputes it, and a rebuild reads the wrong value back out. Delay something derivable rather than corrupt what it derives from. A second argument settled it: every other write path in the repository already commits then publishes and swallows the failure, so the ingestion ordering was the outlier and matching it removed a rule a reader had to hold.
+- Recorded honestly rather than closed: a batch that commits and fails to publish is stale with nothing to repair it until the rebuild or the reconciler exists. Both are named in the record; neither is credited with work it does not do.
+
+### 2026-09-14 — A job that reported success having stored nothing
+
+- Challenge: the ingestion reader accumulated to the next newline, and a file can have none in its body — a header terminated with LF and rows ending in CR alone, which is what Excel for Mac and several ERP exports produce. A 20 MiB file became one 20 MiB string, and the job reported success: the single row it built failed its column count and was skipped, so nothing was stored and nothing failed.
+- Verification: measured, not reasoned. Peak memory tracked the size of the upload, which is the one property Scenario A promises it does not.
+- Lesson: the memory bound and the success report failed together, and either alone would have been found sooner. A bound stated in an ADR needs a test that feeds it the input its author did not imagine; "no newline in the body" is not an edge case for a CSV, it is a platform.
+
 ## Overall reflection
 
 - Estimated ratio: for the scripting and documentation work measured so far, the code is roughly 80 % AI-generated and lightly edited; the documentation started AI-generated and is closer to half human, because nearly every correction recorded above came from a human or an agent reading a claim against the tree.
