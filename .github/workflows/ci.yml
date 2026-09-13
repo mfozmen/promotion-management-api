@@ -48,6 +48,17 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # The schema directory and the migrations are two descriptions of one database, and
+      # only the migrations are ever applied. A column added under schema/ without
+      # regenerating stays invisible until a query hits a table the migrated database does
+      # not have, and a regenerated 0000 silently drops the four hand-written objects
+      # schema.ts names. Both show up here as a non-empty diff. Needs no database:
+      # `generate` reads the schema files and the snapshots, it does not connect.
+      - name: No schema drift
+        run: |
+          npm run db:generate
+          git diff --exit-code src/shared/db/migrations
+
       - name: Test with coverage
         run: npm run test:cov
         env:

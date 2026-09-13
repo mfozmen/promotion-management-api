@@ -26,9 +26,13 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 ```bash
 npm ci
 cp .env.example .env          # placeholders only; .env is gitignored
-docker compose up -d --wait   # PostgreSQL on 5432, Redis on 6379, both healthy
+docker compose up -d --wait   # PostgreSQL on 5432, Redis on 6379, schema migrated
 npm run dev
 ```
+
+Migrating is not a step anyone has to remember: the `migrate` one-shot service applies `src/shared/db/migrations/` as part of `up`, and `--wait` does not return until it has exited cleanly. That single step creates the tables, constraints and the `active_promotions` view and seeds the `type = 'ingestion'` pricing rules of migration `0001`; there is no separate seed step. It is a stopgap — once the `api` image lands (issue #19) the migration moves into that image's entrypoint and the one-shot service goes, so the two never both run migrations.
+
+`npm run db:migrate` does the same thing from the host against whatever `DATABASE_URL` names, for a database that is not the compose one (`drizzle.config.ts` reads it from the environment, not from `.env`). There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
 
 Tests and checks:
 
@@ -84,7 +88,7 @@ tests/  automated tests (unit, integration, e2e), each layer mirroring src/
 docs/   design specs (docs/superpowers/specs), end-to-end cases (docs/e2e-cases)
 ```
 
-Inside a layer the tree mirrors `src/`, one test file per source file. Tests import their subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.config.ts` `resolve.alias`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
+Inside a layer the tree mirrors `src/`, one test file per source file. Tests import their subject through the `@src/*` alias (`tsconfig.json` `paths` + `vitest.workspace.ts`, which declares the alias once and spreads it into both projects — a workspace project does not inherit the root `vitest.config.ts` `resolve` block, so an alias declared only there fails every aliased import at load time; PR #50, commit `75130b7`); production code under `src/` uses relative specifiers and never the alias, because `tsc` does not rewrite path aliases on emit — an ESLint rule enforces that boundary ([CONTRIBUTING.md](./CONTRIBUTING.md)).
 
 ## Database schema
 

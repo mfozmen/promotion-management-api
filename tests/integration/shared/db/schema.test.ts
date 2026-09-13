@@ -6,7 +6,7 @@ import {
   products,
   promotions,
   reconcilerState,
-} from '../../../../src/shared/db/schema.js';
+} from '@src/shared/db/schema.js';
 import { sqlStateOf, useTestDatabase } from '../../db.js';
 
 const EXCLUSION_VIOLATION = '23P01';
