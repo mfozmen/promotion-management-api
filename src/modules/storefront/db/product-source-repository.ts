@@ -85,6 +85,26 @@ export class ProductSourceRepository {
     return rows.map((row) => Number(row.id));
   }
 
+  /** One page of the catalogue, by keyset, for the rebuild. */
+  async idsAfter(afterId: number): Promise<number[]> {
+    const { rows } = await this.db.execute<Record<string, unknown> & { id: number }>(sql`
+      select id from products where id > ${afterId} order by id
+      limit ${ProductSourceRepository.PAGE}
+    `);
+
+    return rows.map((row) => Number(row.id));
+  }
+
+  /** Which of these ids PostgreSQL still holds, so the rebuild recomputes only
+   *  the read-model entries that have nothing behind them. */
+  async presentIds(ids: readonly number[]): Promise<Set<number>> {
+    const { rows } = await this.db.execute<Record<string, unknown> & { id: number }>(
+      sql`select id from products where id = any(${sql.param(ids)}::bigint[])`,
+    );
+
+    return new Set(rows.map((row) => Number(row.id)));
+  }
+
   /** An empty batch still orders its removals, and the same clock has to render
    *  it: a worker's own would outrank every token PostgreSQL ever wrote. */
   private async instant(): Promise<string> {
