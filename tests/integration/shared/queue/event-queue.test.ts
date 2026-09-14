@@ -311,8 +311,7 @@ describe('EventQueue', () => {
   });
 
   it('schedules a repeatable the real library accepts, and re-asserting it adds no second', async () => {
-    // REVIEW.md 7.11: BullMQ parses the scheduler id, so the only proof it accepts ours is
-    // BullMQ accepting it. A hand-written double would pass whatever we wrote.
+    // BullMQ parses the scheduler id, so the only proof it accepts ours is BullMQ accepting it.
     const maintenance = new Queue('maintenance', {
       connection: { url: redisUrl, db: QUEUE_DB },
       prefix: PREFIX,
