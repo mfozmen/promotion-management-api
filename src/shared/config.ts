@@ -18,6 +18,8 @@ const env = z
       .transform(Number)
       .pipe(z.number().int())
       .default(10_000),
+    // A worker has no HTTP surface of its own; this is the one it gets for `/metrics`.
+    WORKER_METRICS_PORT: z.coerce.number().int().min(1).max(65535).default(3101),
     UPLOAD_DIR: z.string().default('./uploads'),
     // A vendor file is the 500 000-row one; the cap is what the intake refuses
     // rather than what the pipeline can process, and it is not the JSON body cap.

@@ -24,6 +24,7 @@ describe('loadConfig', () => {
     expect(loadConfig(validEnv)).toEqual({
       ...validEnv,
       PORT: 3100,
+      WORKER_METRICS_PORT: 3101,
       UPLOAD_DIR: './uploads',
       UPLOAD_MAX_BYTES: 256 * 1024 * 1024,
       REDIS_READ_MODEL_DB: 0,

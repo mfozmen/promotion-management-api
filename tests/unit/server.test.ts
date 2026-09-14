@@ -16,9 +16,12 @@ describe('server.ts', () => {
   it('hands createApp a real read-model client', async () => {
     const source = await live();
 
-    // Sliced from `createApp(` to the end rather than matched with a bounded pattern:
-    // the call spans six arguments, and `[^)]*` stopped at the first of them.
-    expect(source.slice(source.indexOf('createApp('))).toContain('createReadModelClient(');
+    // The client is built above the call now, because the readiness gauge needs the same
+    // object; what this still has to catch is a stub reaching `createApp`, so it asserts the
+    // binding is the one `createReadModelClient` produced rather than that the call is inline.
+    expect(source).toContain('const products = new ProductReadRepository(');
+    expect(source.slice(source.indexOf('const products ='))).toContain('createReadModelClient(');
+    expect(source.slice(source.indexOf('createApp('))).toContain('products,');
   });
 
   it('hands createApp the real queues, so the dashboard has something to show', async () => {
