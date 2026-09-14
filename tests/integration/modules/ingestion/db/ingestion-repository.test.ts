@@ -516,3 +516,93 @@ describe('IngestionRepository: complete job if done', () => {
     });
   });
 });
+
+describe('IngestionRepository: a chunk that gives up', () => {
+  async function jobWithChunks(statuses: ('pending' | 'running' | 'done' | 'failed')[]) {
+    const [job] = await db()
+      .insert(ingestionJobs)
+      .values({
+        vendor: `vendor-${(sequence += 1)}`,
+        fileRef: `file-${sequence}.csv`,
+        fileSha256: `sha-${sequence}`,
+        fileSizeBytes: 1000,
+        chunksTotal: statuses.length,
+      })
+      .returning({ id: ingestionJobs.id });
+
+    await db()
+      .insert(ingestionChunks)
+      .values(
+        statuses.map((status, chunkIndex) => ({
+          jobId: job!.id,
+          chunkIndex,
+          startOffset: 0,
+          endOffset: 1000,
+          nextOffset: 0,
+          status,
+        })),
+      );
+
+    return job!.id;
+  }
+
+  it('counts an attempt and keeps the reason where an operator reads it', async () => {
+    const jobId = await jobWithChunks(['running']);
+    const repository = new IngestionRepository(db());
+
+    const first = await repository.recordChunkFailure(jobId, 0, 'ENOENT: file is gone', 3);
+
+    expect(first).toEqual({ failures: 1, exhausted: false });
+    const [job] = await db().select().from(ingestionJobs).where(eq(ingestionJobs.id, jobId));
+    expect(job?.lastError).toBe('ENOENT: file is gone');
+  });
+
+  it('records nothing for a chunk that is not there, rather than inventing a count', async () => {
+    const jobId = await jobWithChunks(['running']);
+
+    // Reachable when the claim itself is what threw, so the chunk was never
+    // this worker's and may not exist at all.
+    await expect(
+      new IngestionRepository(db()).recordChunkFailure(jobId, 99, 'database down', 3),
+    ).resolves.toEqual({ failures: 0, exhausted: false });
+  });
+
+  it('gives up at the limit, which takes the chunk out of the sweep', async () => {
+    const jobId = await jobWithChunks(['running']);
+    const repository = new IngestionRepository(db());
+
+    await repository.recordChunkFailure(jobId, 0, 'gone', 2);
+    const second = await repository.recordChunkFailure(jobId, 0, 'gone', 2);
+
+    expect(second).toEqual({ failures: 2, exhausted: true });
+    const [chunk] = await db()
+      .select()
+      .from(ingestionChunks)
+      .where(eq(ingestionChunks.jobId, jobId));
+    expect(chunk?.status).toBe('failed');
+  });
+
+  it('fails the job once nothing is left to run, so the vendor is freed', async () => {
+    const jobId = await jobWithChunks(['done', 'failed']);
+
+    await expect(new IngestionRepository(db()).failJobIfExhausted(jobId)).resolves.toBe(true);
+
+    const [job] = await db().select().from(ingestionJobs).where(eq(ingestionJobs.id, jobId));
+    // `failed` is out of `ingestion_jobs_one_running_per_vendor`, which is the
+    // whole point: the next file is accepted.
+    expect(job).toMatchObject({ status: 'failed', chunksDone: 1 });
+  });
+
+  it('leaves a job alone while a chunk can still run', async () => {
+    const jobId = await jobWithChunks(['pending', 'failed']);
+
+    await expect(new IngestionRepository(db()).failJobIfExhausted(jobId)).resolves.toBe(false);
+  });
+
+  it('does not fail a job whose chunks all succeeded', async () => {
+    const jobId = await jobWithChunks(['done', 'done']);
+
+    await expect(new IngestionRepository(db()).failJobIfExhausted(jobId)).resolves.toBe(false);
+    await expect(new IngestionRepository(db()).completeJobIfDone(jobId)).resolves.toBe(true);
+  });
+});
