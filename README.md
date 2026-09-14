@@ -72,7 +72,11 @@ process that migrates.
   500 000 rows in 6 of 6 chunks with none rejected, peaking at 49.9 MiB of the 256 by container
   accounting, and a V8 heap flat across chunks (25 MB falling to 18 MB) — flat being the property
   rather than the peak, since nothing accumulates as the file is consumed. The reasoning and the
-  host-side figures are in ADR-0005. Scenario B has no measurement yet.
+  host-side figures are in ADR-0005. That run took 128 s end to end, which is the whole system
+  keeping its read model current while it ingests; the 29 s elsewhere on record is the importer
+  alone with nothing consuming its announcements, and neither figure means anything without
+  saying which. Both scenarios are now measured end to end, in
+  [`docs/e2e-evidence/`](./docs/e2e-evidence).
 
 Each start-up line carries a `consuming` list — `maintenance`, `ingestion`, and `products` with
 `promotions` — and the port that worker serves `/metrics` on. None of the three has a healthcheck,
@@ -211,13 +215,13 @@ delayed boundary jobs, `products` carries `product.upserted`, `ingestion` carrie
 announcements, or a full read-model rebuild, from sitting in front of a flash
 sale's `promotion.changed`: each queue gets its own worker, so two events that
 need different priority get different consumers rather than a priority number
-inside one queue (ADR-0003). One of the four has a consumer: `src/workers/reconciler.ts`
-takes `reconciler.run` off `maintenance` and runs the boundary sweep
-(`src/modules/reconciler/commands/sweep-boundaries-command.ts`). `readmodel.rebuild`
-shares that queue and has no handler, so publishing one fails into the dead-letter
-set rather than being acknowledged by a process that ignored it — deliberate, and the
-read-model story adds the handler. `ingestion` has a consumer — the chunk worker — and `maintenance` has the
-reconciler. `promotions` and `products` have none yet (issue #12).
+inside one queue (ADR-0003). All four have consumers: `src/workers/reconciler.ts`
+takes `reconciler.run` and `readmodel.rebuild` off `maintenance` through
+`MaintenanceDispatcher`, `src/workers/ingestion-worker.ts` drains `ingestion`, and
+`src/workers/event-handler.ts` drains `promotions` and `products` after rebuilding
+the read model on boot. A job whose name the dispatcher has no arm for still fails
+into the dead-letter set rather than being acknowledged by a process that ignored
+it.
 
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy

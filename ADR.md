@@ -294,10 +294,17 @@ repository:
 - **6 of 6 chunks completed, 500 000 rows processed, none rejected.**
 
 An earlier run on the host, uncontainerised, reported roughly **134 MB RSS** and **29 seconds**.
-Both runs are true and they measure different things: that one measures a Node process on this
-machine with no cgroup, this one measures the service as it ships. Neither is "the memory".
+Both runs are true and they measure different things. The memory differs because that one
+measures a Node process on this machine with no cgroup and this one measures the service as it
+ships; neither is "the memory". The **time** differs for another reason entirely: nothing was
+consuming the announcements on that run, so 29 s is the importer alone, where the 128 s a
+containerised run takes is the whole system keeping its read model current while it ingests.
+Neither figure means anything without saying which.
 
-What is not measured: **Scenario B has no run at all.** No figure in this record or in `README.md`
+Scenario B is measured too, in `docs/e2e-evidence/`: 34 400 storefront reads moved PostgreSQL by
+ten transactions, and a 50 % sale on 100 000 products cost a quarter of the throughput and
+doubled the tail while it ran, with no failed request. What is still not measured: no figure in
+this record or in `README.md`
 describes flash-sale read latency or throughput under load, and the storefront's own pass
 conditions in `.claude/agents/e2e-tester.md` are provisional for the same reason. Stated here so
 the absence is a recorded gap rather than something a reader has to notice.
