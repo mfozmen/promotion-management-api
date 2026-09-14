@@ -15,8 +15,11 @@ Acceptance criteria
 - The file is accepted in one request and I get an identifier I can ask about.
 - I can see whether the import is still running, finished, or failed.
 - When it finishes, every row of the file is in the catalogue.
-- A file I have already sent is not imported a second time; I am told it is the one I sent
-  before and given that import's identifier (owner decision on issue #15).
+- A file I have already sent is not imported a second time; I am refused, and the refusal
+  tells me nothing about an import that may not be mine. Issue #15 asked for the first
+  import's identifier and the owner reversed it: `file_sha256` is unique across all vendors
+  and no caller is authenticated, so the import collided with is often another vendor's
+  (ADR-0005 for the key's scope, ADR-0009 for the envelope that carries no identifier).
 
 Test cases
 
@@ -54,13 +57,10 @@ Test cases
 - Precondition: `POST /api/vendor/imports`
 - Given: a file the vendor has already uploaded, whose import is registered
 - When: the vendor uploads the identical file again
-- Then: it is refused as a duplicate, and the answer names no import
+- Then: the vendor is refused as a duplicate, no second import starts, the catalogue is
+  unchanged, and the refusal identifies no import — the vendor learns nothing about one that
+  may not be theirs
 - Measure: none
-- Why not the job id: issue #15's criterion asked for `409 { code, details: { jobId } }`, and
-  ADR-0009's envelope carries neither field. `file_sha256` is unique globally rather than per
-  vendor, so the import collided with is usually another vendor's, and nothing authenticates
-  the caller — `vendor` is a form field anyone can type. The id cannot be handed over, so the
-  answer is the bare sentence.
 
 ## S2 Every row goes through ModaCo's pricing rules
 
