@@ -4,6 +4,7 @@ import { BoundaryRepository } from '../modules/reconciler/db/boundary-repository
 import { ReconcilerRunHandler } from '../modules/reconciler/events/reconciler-run-handler.js';
 import { createDb, createPool } from '../shared/db/client.js';
 import { logger } from '../shared/logger.js';
+import { exitIfScheduleLost } from './exit-if-schedule-lost.js';
 import { startWorker } from './start-worker.js';
 
 /** Spec section 9. The window the sweep reads is the watermark's, so a missed run costs
@@ -19,14 +20,12 @@ const handler = new ReconcilerRunHandler(
 const worker = new Worker(
   'maintenance',
   async (job) => {
-    // `readmodel.rebuild` shares this queue and has no handler yet, so it fails loudly into
-    // the dead-letter set rather than being acknowledged by a process that did nothing with
-    // it; the storefront story adds its arm here.
-    if (job.name !== 'reconciler.run') throw new Error(`no handler for ${job.name}`);
-    await handler.handle();
+    await handler.handle(job.name);
   },
   { connection: { url: config.REDIS_URL, db: config.REDIS_QUEUE_DB } },
 );
+
+worker.on('error', (error: Error) => exitIfScheduleLost('reconciler', error));
 
 await queue.schedule('reconciler.run', SWEEP_EVERY_MS, {});
 

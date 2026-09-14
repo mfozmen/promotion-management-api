@@ -225,6 +225,15 @@ mechanism.
 or checkpoints the current batch, and exits. A handler that can be killed
 mid-write without a durable checkpoint is a finding.
 
+3.12 **One rendering per ordering token.** A token that decides which write wins
+has exactly one textual form, produced in exactly one place, and every path that
+needs one — including the batch that matched no rows — takes it from there. Two
+formats of the same instant do not compare: an ISO `T` sorts above a
+space-separated `clock_timestamp()::text` of the same day, so one fallback token
+beat every real one and a tombstone written on an empty batch froze that product
+out for good. Digits compare as a number under every locale, `DateStyle` and
+`TimeZone`; a comparison on a rendered timestamp is a finding.
+
 ---
 
 ## 4. Serverless constraints on the ingestion path
@@ -550,7 +559,25 @@ fixtures, no random data, no `sleep` to wait for a worker. Poll a condition with
 a timeout. A flaky test is a finding, not a retry.
 
 7.6 **Isolation.** Each test file owns its data; tests pass in any order and in
-parallel. Shared mutable fixtures across files are a finding.
+parallel. Shared mutable fixtures across files are a finding. A helper that
+clears a whole store between tests carries the rule with it: the second file to
+call it deletes the first file's keys mid-run, and the suite then fails a
+different test on every run. Give each file its own store — a cloned database,
+its own Redis logical database — rather than a shared one that is emptied.
+
+Evidence: one Redis logical database served every integration file and was
+flushed in `beforeEach`. One file made that safe; the day a second and third
+arrived, four tests failed per run and never the same four.
+
+7.6a **A green check that depended on the runner is not evidence.** When a
+suite's outcome turns on how many workers the runner happened to allocate, the
+required check passes or fails by luck and cannot gate what it exists to gate.
+Before trusting green on a change that touches a shared fixture, run the layer
+more than once; a single pass proves one allocation.
+
+Evidence: the pull request that turned one shared Redis database into three
+files' shared Redis database went green on CI and was merged on that green. The
+same suite failed four tests locally, and a different four each run.
 
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
 the tree mirrors `src/`, one test file per source file, with the same name
