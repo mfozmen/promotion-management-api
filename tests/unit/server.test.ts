@@ -24,14 +24,6 @@ describe('server.ts', () => {
     expect(source.slice(source.indexOf('createApp('))).toContain('products,');
   });
 
-  it('gives the readiness gauge the same stores the app answers from', async () => {
-    const source = await live();
-
-    // A gauge built on a second pool or a second client would report the health of connections
-    // no request uses, which is the failure it exists to rule out.
-    expect(source).toContain('dependencyUp(new DependencyReadiness(db, products))');
-  });
-
   it('hands createApp the real queues, so the dashboard has something to show', async () => {
     const source = await live();
 

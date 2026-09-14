@@ -33,8 +33,16 @@ Docker with the Compose plugin, and Node for the two npm scripts below.
 
 ```bash
 cp .env.example .env   # placeholders only; .env is gitignored
-npm run up             # PostgreSQL, Redis, the api, three workers and the test stores
+npm run up             # the stores, the api, three workers, the test stores and monitoring
 ```
+
+Grafana is on http://localhost:3001, no login, with Prometheus scraping the api and each worker
+every five seconds. The dashboard is the community **NodeJS Application Dashboard**
+([grafana.com id 11159](https://grafana.com/grafana/dashboards/11159)) rather than one of ours;
+pick the process in the `instance` list. During a 500 000-row import, the panel to watch is the
+`ingestion-worker` instance's heap and resident memory against the 256 MiB the container is
+limited to — the heap is what `--max-old-space-size=192` bounds and the resident figure is what
+the cgroup kills on.
 
 The API is on http://127.0.0.1:3100 and BullMQ's dashboard on
 http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data; add `-v` to that compose command to

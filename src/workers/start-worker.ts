@@ -4,7 +4,6 @@ import { loadConfig } from '../shared/config.js';
 import { GracefulShutdown } from '../shared/graceful-shutdown.js';
 import { logger } from '../shared/logger.js';
 import { EventQueue } from '../shared/queue/event-queue.js';
-import { queueDepth } from '../shared/metrics/queue-depth.js';
 import { serveMetrics } from '../shared/metrics/serve-metrics.js';
 import type { QueueName } from '../shared/queue/queue-name.js';
 
@@ -33,9 +32,8 @@ export function startWorker(name: WorkerName, consuming: QueueName[] = []): Conn
     eventRouting,
   );
 
-  // Every worker serves `/metrics`: the numbers a scrape wants from a queue consumer — its heap,
-  // the repairs it made — exist nowhere else, and the api's registry cannot see them.
-  queueDepth(queue.all());
+  // Every worker serves `/metrics`: Prometheus scrapes each process by name, and a worker's
+  // heap and event loop exist nowhere else. The api serves its own on `PORT`.
   const metrics = serveMetrics(config.WORKER_METRICS_PORT);
 
   logger.info({ worker: name, consuming, metricsPort: config.WORKER_METRICS_PORT }, 'connected');

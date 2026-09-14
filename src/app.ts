@@ -1,7 +1,6 @@
 import express, { type Express } from 'express';
 import createError from 'http-errors';
 import type { AppDependencies } from './app-dependencies.js';
-import { measureRequests } from './shared/metrics/request-duration.js';
 import { metricsRegistry } from './shared/metrics/metrics-registry.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
@@ -40,7 +39,6 @@ export function createApp({
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');
   app.use(httpLogger(logger));
-  app.use(measureRequests());
   app.use(express.json({ limit: BODY_LIMIT }));
 
   const api = express.Router();

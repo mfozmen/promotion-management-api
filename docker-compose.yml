@@ -6,7 +6,6 @@ x-app-environment: &app-environment
   REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
   REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
   SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
-  WORKER_HEAP_LIMIT_BYTES: ${WORKER_HEAP_LIMIT_BYTES:-167772160}
   WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-3101}
 
 x-stores-healthy: &stores-healthy
@@ -137,6 +136,43 @@ services:
     networks:
       - promotion
 
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: [monitoring]
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=6h'
+    ports:
+      - '127.0.0.1:9090:9090'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - promotion
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    profiles: [monitoring]
+    restart: unless-stopped
+    environment:
+      # 3000 is taken on the owner's machine, and the show should need no login.
+      GF_SERVER_HTTP_PORT: 3001
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+    ports:
+      - '127.0.0.1:3001:3001'
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+    networks:
+      - promotion
+
   adminer:
     image: adminer:4
     profiles: [tools]
@@ -202,3 +238,6 @@ networks:
 volumes:
   postgres-data:
   redis-data:
+  uploads:
+  prometheus-data:
+  grafana-data:

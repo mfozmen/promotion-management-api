@@ -5,7 +5,6 @@ import { pricingRules } from '../modules/pricing/db/schema/pricing-rules.js';
 import { BasePriceCalculatorCache } from '../modules/pricing/domain/base-price-calculator-cache.js';
 import { ProductRepository } from '../modules/product/db/product-repository.js';
 import { createDb, createPool } from '../shared/db/client.js';
-import { exitIfHeapExceeded } from './exit-if-heap-exceeded.js';
 import { logger } from '../shared/logger.js';
 import { startWorker } from './start-worker.js';
 
@@ -54,10 +53,6 @@ const worker = new Worker(
       { ...outcome, heapUsedMb: Math.round(heapUsed / 1048576), rssMb: Math.round(rss / 1048576) },
       'chunk finished',
     );
-    // Between chunks, never mid-batch: the checkpoint has committed by here, so the restart
-    // resumes from it rather than repeating work.
-    exitIfHeapExceeded('ingestion-worker', config.WORKER_HEAP_LIMIT_BYTES);
-
     return outcome;
   },
   {

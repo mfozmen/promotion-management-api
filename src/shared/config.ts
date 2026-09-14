@@ -18,14 +18,6 @@ const env = z
       .transform(Number)
       .pipe(z.number().int())
       .default(10_000),
-    // Chosen, not measured: 160 MiB is five sixths of the 192 MiB `--max-old-space-size`
-    // ceiling the ingestion worker runs under, so the guard fires before V8 does. The measured
-    // peak for a 500 000-row import is 25 MB, so it does not fire today (ADR-0005).
-    WORKER_HEAP_LIMIT_BYTES: z.coerce
-      .number()
-      .int()
-      .positive()
-      .default(160 * 1024 * 1024),
     // A worker has no HTTP surface of its own; this is the one it gets for `/metrics`.
     WORKER_METRICS_PORT: z.coerce.number().int().min(1).max(65535).default(3101),
     UPLOAD_DIR: z.string().default('./uploads'),

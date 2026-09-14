@@ -15,7 +15,7 @@ describe('GET /metrics', () => {
     const res = await request(createApp(appDeps())).get('/metrics');
 
     expect(res.status).toBe(200);
-    expect(res.text).toContain('http_request_duration_seconds');
+    expect(res.text).toContain('process_resident_memory_bytes');
   });
 
   it('is not under the /api prefix, where the error envelope would wrap it', async () => {
