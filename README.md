@@ -56,18 +56,25 @@ process that migrates.
   stack with nothing to start by hand.
 - `event-handler` will drain `promotions` and `products` for the read model; it consumes nothing
   yet (issue #12).
-- `ingestion-worker` will drain `ingestion` for the chunk processor; it consumes nothing yet
-  (issue #105). It is capped at 256 MiB and half a CPU — the case study's own constraint, and what
-  Scenario A's 500 000-row import is measured against — and runs with
-  `NODE_OPTIONS=--max-old-space-size=192` so V8's heap ceiling sits under that cap.
+- `ingestion-worker` drains `ingestion` for the chunk processor, one chunk at a time. It is
+  capped at 256 MiB and half a CPU — the case study's own constraint, and what Scenario A's
+  500 000-row import is measured against — and runs with `NODE_OPTIONS=--max-old-space-size=192`
+  so V8's heap ceiling sits under that cap. One containerised run at those limits processed all
+  500 000 rows in 6 of 6 chunks with none rejected, peaking at 49.9 MiB of the 256 by container
+  accounting, and a V8 heap flat across chunks (25 MB falling to 18 MB) — flat being the property
+  rather than the peak, since nothing accumulates as the file is consumed. The reasoning and the
+  host-side figures are in ADR-0005. Scenario B has no measurement yet.
 
 Each start-up line carries a `consuming` list: `maintenance` for the reconciler, empty for the
 other two, so an idle queue is not read as a drained one. None of the three has a healthcheck, so
 `--wait` treats them as up once they are running.
 
-`api` and `ingestion-worker` share a named `uploads` volume at `/app/uploads`, because `api` writes
-the uploaded file and the worker reads it back by `file_ref`; nothing writes to it yet (the upload
-endpoint and chunk worker arrive with issue #16).
+`api` and `ingestion-worker` bind-mount `./uploads` at `/app/uploads`, because whoever registers a
+file writes it there and the worker reads it back by `file_ref` — a name inside that directory
+rather than a path, so the two processes agree on where it is across a container boundary. A named
+volume would not have done: the host's `./uploads`, which `npm run ingest` writes to, would have
+been a different directory that looked identical in this file. `npm run ingest -- <file>` is the
+writer today; the upload endpoint arrives with issue #15.
 
 `docker compose stop` gives those four services — `api` and the three workers, the ones that close
 a queue — `stop_grace_period: 15s` for a shutdown budgeted at `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s),
@@ -91,7 +98,10 @@ That one command is the whole boot. `api` migrates before it listens, so `--wait
 
 It is one verb rather than two because a one-shot migration service cannot be waited on: `--wait` means "running, or healthy where a healthcheck exists", and a one-shot is neither for long, so it reports green over a migration still installing and red over one that finished. A long-lived service with a healthcheck has no such gap — the check cannot answer in front of a missing schema. ADR-0003 holds the measurements.
 
-For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
+For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. `npm run ingest -- <file> [vendor]` registers a vendor file: it copies the file into `UPLOAD_DIR`,
+stores the job and one chunk row per byte range, and enqueues a `chunk.process` job for each, which
+the `ingestion-worker` drains. `npm run generate:vendor -- --rows 500000` writes a file to register.
+The HTTP upload endpoint arrives with issue #15.
 
 Demo data. Once the schema is up, one more command fills it:
 
@@ -105,7 +115,7 @@ Run it as often as you like: what you get depends on the migrations and this run
 
 Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own: an active `Electronics` promotion under another name is not deleted by name, so the insert aborts on `23P01` and the whole file rolls back, leaving no half-written catalogue behind.
 
-[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the `ingestion-worker` container runs but registers no consumer, and the upload endpoint and chunk worker arrive with issue #16.
+[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. `npm run ingest -- fixtures/vendor-sample.csv` registers it and the `ingestion-worker` drains it; the HTTP upload endpoint that would accept it over the wire arrives with issue #15.
 
 Tests and checks. The whole integration layer runs against the `test` profile's own PostgreSQL and Redis, never the ones `api` and the workers use: the queue and shutdown tests obliterate the queues they touch, and the layer clones a database per test file. `npm run up` starts both, and neither holds anything worth keeping.
 
@@ -178,8 +188,8 @@ takes `reconciler.run` off `maintenance` and runs the boundary sweep
 (`src/modules/reconciler/commands/sweep-boundaries-command.ts`). `readmodel.rebuild`
 shares that queue and has no handler, so publishing one fails into the dead-letter
 set rather than being acknowledged by a process that ignored it — deliberate, and the
-read-model story adds the handler. Nothing consumes `promotions`, `products` or
-`ingestion` yet (issues #12 and #105).
+read-model story adds the handler. `ingestion` has a consumer — the chunk worker — and `maintenance` has the
+reconciler. `promotions` and `products` have none yet (issue #12).
 
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
@@ -206,7 +216,35 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 
 ## Database schema
 
-The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables, the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), `0002_active_promotions.sql` creates the `active_promotions` view, `0003_promotion_list_indexes.sql` adds the two `(product_id, id)` and `(category, id)` btree indexes the admin promotion list filters and orders on — the GiST exclusion indexes cannot serve it, being partial on `status = 'active'` — and `0004_promotion_boundary_indexes.sql` adds four partial btree indexes on `starts_at`, `ends_at`, `cancelled_at` and `created_at` for the reconciler's boundary sweep, each skipping the rows that sweep never reads (`status <> 'draft'`, and `cancelled_at is not null` for its own), and `0005_reconciler_watermark_milliseconds.sql` narrows `reconciler_state.last_boundary_sweep_at` to `timestamp (3) with time zone`, so the watermark holds only the milliseconds the sweep's compare-and-set can send back (ADR-0007). Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/modules/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
+[`docs/schema.sql`](./docs/schema.sql) is the schema as a single file, for a reader who wants to
+open one rather than read six migrations. It is a copy, not an input: nothing reads it at
+runtime and no check compares it, and it is re-taken when a migration lands, from a throwaway
+database created empty and migrated forward — never from a store that has been developed
+against, where an object a regeneration dropped from the migrations can still be present:
+
+```bash
+docker compose --profile test exec -T postgres-test createdb -U postgres ddl_export
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/ddl_export npm run db:migrate
+docker compose --profile test exec -T postgres-test pg_dump --schema-only --no-owner --no-privileges --exclude-schema=drizzle -U postgres ddl_export > docs/schema.sql
+```
+
+against PostgreSQL 16.14 with `pg_dump` 16.14 — a dump from another major is a different file
+for reasons that have nothing to do with this schema, so the versions are part of the command.
+`--exclude-schema=drizzle` drops the `__drizzle_migrations` ledger, which is the ORM's
+bookkeeping rather than part of the design. `--schema=public` looks like the same thing and is
+not: it omits `CREATE EXTENSION btree_gist` while keeping both `EXCLUDE USING gist` constraints
+that need it, and it adds a `CREATE SCHEMA public` that fails on any database that already has
+one — so the file stops replaying, in two ways at once.
+
+Two things the file does not carry, neither accidental. `--schema-only` means the `ingestion`
+pricing rules migration `0001` seeds and the single `reconciler_state` row are absent: this is
+the schema, and that state lives in the migration where a reader can find it. And `pg_dump`
+16.14 writes `\restrict` and `\unrestrict` with a fresh random token on every run, so two dumps
+of an unchanged schema differ on exactly two lines, the file's first and last statements — a diff
+of that size and shape is the token, not the schema, and it is left alone so that regenerating the
+file reproduces what the command emits.
+
+The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables with their own three indexes (`products_category_id_idx`, `pricing_rules_active_idx`, and the partial unique `ingestion_jobs_one_running_per_vendor`), the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), `0002_active_promotions.sql` creates the `active_promotions` view, `0003_promotion_list_indexes.sql` adds the two `(product_id, id)` and `(category, id)` btree indexes the admin promotion list filters and orders on — the GiST exclusion indexes cannot serve it, being partial on `status = 'active'` — and `0004_promotion_boundary_indexes.sql` adds four partial btree indexes on `starts_at`, `ends_at`, `cancelled_at` and `created_at` for the reconciler's boundary sweep, each skipping the rows that sweep never reads (`status <> 'draft'`, and `cancelled_at is not null` for its own), and `0005_reconciler_watermark_milliseconds.sql` narrows `reconciler_state.last_boundary_sweep_at` to `timestamp (3) with time zone`, so the watermark holds only the milliseconds the sweep's compare-and-set can send back (ADR-0007). Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/modules/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver selects from it instead of restating the predicate (ADR-0004). The admin reads do not: `GET /api/promotions` and `GET /api/promotions/:id` have to show drafts, scheduled and expired promotions too, which the view by definition does not hold, so they project a five-valued `state` from the same half-open window in SQL (one `sql` fragment in `src/modules/promotion/db/promotion-repository.ts`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
 
@@ -241,6 +279,7 @@ All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are
 | Method | Path                         | Description                                                                                                             | Statuses            |
 | ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------- |
 | GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`               |
+| GET    | `/api/ready`                 | Readiness probe: asks PostgreSQL and Redis and names which one is unreachable                                           | `200`, `503`        |
 | GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503` |
 | GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503` |
 | POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`        |

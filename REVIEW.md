@@ -559,7 +559,25 @@ fixtures, no random data, no `sleep` to wait for a worker. Poll a condition with
 a timeout. A flaky test is a finding, not a retry.
 
 7.6 **Isolation.** Each test file owns its data; tests pass in any order and in
-parallel. Shared mutable fixtures across files are a finding.
+parallel. Shared mutable fixtures across files are a finding. A helper that
+clears a whole store between tests carries the rule with it: the second file to
+call it deletes the first file's keys mid-run, and the suite then fails a
+different test on every run. Give each file its own store — a cloned database,
+its own Redis logical database — rather than a shared one that is emptied.
+
+Evidence: one Redis logical database served every integration file and was
+flushed in `beforeEach`. One file made that safe; the day a second and third
+arrived, four tests failed per run and never the same four.
+
+7.6a **A green check that depended on the runner is not evidence.** When a
+suite's outcome turns on how many workers the runner happened to allocate, the
+required check passes or fails by luck and cannot gate what it exists to gate.
+Before trusting green on a change that touches a shared fixture, run the layer
+more than once; a single pass proves one allocation.
+
+Evidence: the pull request that turned one shared Redis database into three
+files' shared Redis database went green on CI and was merged on that green. The
+same suite failed four tests locally, and a different four each run.
 
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
 the tree mirrors `src/`, one test file per source file, with the same name
@@ -1134,6 +1152,26 @@ signal that reports the first is read as the second.
 
 Evidence: `docker compose up -d --wait` called two containers healthy while
 neither published its port, because the healthcheck runs inside the container.
+
+13.14 **A number states what produced it and what it is compared against, or
+it is deleted.** A figure in a document is read as a decision someone made, so a
+measured one names the run, the machine and the accounting it came from; a
+chosen one says it was chosen; and one with neither behind it goes. Two figures
+in one sentence are two measurements until proved otherwise: a host process's
+resident memory and a container's own accounting are different quantities, and
+putting them either side of "against" asserts a comparison neither supports. The
+places that reach for a quantity are trade-offs and pass conditions rather than
+context or decision paragraphs, so that is where to look.
+
+Evidence: an appendix entry sourced a `130-192 ms p99` for `GET /api/health` to
+"the project's own ADR", which records no p99 for any route; the same sweep found
+a healthy-in-6.4 s figure that belonged to the healthcheck it replaced, a 5-second
+propagation bound with no run behind it, and a 100 ms pass condition sitting
+inside its own machine's 106-to-63 ms variance. Every one of the four read
+fluently because the method was missing. The comparison half has its own count:
+host RSS was measured against a cgroup limit in four places in one day — an ADR
+trade-off, an agent's pass condition, a case file's measure line and a run
+report — and each read as one quantity because both were spelled in megabytes.
 
 ## 13b. The rulebook learns
 

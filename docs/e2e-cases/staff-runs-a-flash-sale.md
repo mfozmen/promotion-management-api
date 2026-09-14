@@ -43,7 +43,7 @@ Test cases
 - Given: the Accessories sale active
 - When: staff create a new Accessories product at base 40.00 and a shopper opens it
 - Then: the page shows 20.00 and names the sale as the promotion applied
-- Measure: time from the create response to the first read showing 20.00, under 5 seconds
+- Measure: time from the create response to the first read showing 20.00; measured and recorded, with no bound until a run sets one (owner, 2026-09-14)
 
 ## S13 The storefront stays fast while the sale is applied
 

@@ -22,7 +22,9 @@
     "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
     "prepare": "husky",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "ingest": "tsx scripts/ingest.ts",
+    "generate:vendor": "tsx scripts/generate-vendor-csv.ts"
   },
   "dependencies": {
     "@bull-board/api": "^9.10.1",

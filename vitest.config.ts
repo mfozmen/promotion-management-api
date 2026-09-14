@@ -17,6 +17,11 @@ export default defineConfig({
       // Process entry points, per the design spec's section 12: they wire collaborators and
       // install signal handlers, and exercising them means starting a process.
       // `sonar-project.properties` repeats the list because SonarCloud reads its own.
+      //
+      // Everything an excluded file decides lives in a class it calls, so coverage
+      // still sees it: `ChunkProcessHandler` carries the ingestion worker's concurrency
+      // and its lock duration for that reason. The last thing excluded here shipped
+      // a 404 for every route in production with a green suite.
       exclude: [
         'src/server.ts',
         'src/workers/event-handler.ts',
