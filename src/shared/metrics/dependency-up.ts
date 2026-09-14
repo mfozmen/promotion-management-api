@@ -13,8 +13,6 @@ interface Readiness {
  * nobody is watching the route while `autocannon` is going.
  */
 export function dependencyUp(readiness: Readiness): void {
-  if (metricsRegistry.getSingleMetric('dependency_up') !== undefined) return;
-
   new Gauge({
     name: 'dependency_up',
     help: 'Whether this process could reach each store at scrape time',
