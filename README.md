@@ -279,6 +279,7 @@ All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are
 | Method | Path                         | Description                                                                                                             | Statuses            |
 | ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------- |
 | GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`               |
+| GET    | `/api/ready`                 | Readiness probe: asks PostgreSQL and Redis and names which one is unreachable                                           | `200`, `503`        |
 | GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503` |
 | GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503` |
 | POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`        |
