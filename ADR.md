@@ -301,6 +301,24 @@ consuming the announcements on that run, so 29 s is the importer alone, where th
 containerised run takes is the whole system keeping its read model current while it ingests.
 Neither figure means anything without saying which.
 
+**The interrupted run, 2026-09-14.** The same 500 000-row file, with the worker killed with
+`SIGKILL` while chunk 2 was mid-flight — what a serverless invocation running out of budget
+looks like. At the kill, chunk 2 had committed **537 360 bytes and 12 000 rows**; chunks 3, 4 and
+5 had not started. On restart the worker resumed chunk 2 **from its checkpoint rather than from
+its start**, reaching 71 000 rows on the second attempt, while 3, 4 and 5 ran to completion
+untouched. The clean run the same day: **6 of 6 chunks, 500 000 rows, none rejected, ~85 s, peak
+55.7 MiB of 256**, and the catalogue holds **500 000 distinct SKUs** afterwards — no row lost and
+none written twice.
+
+What that run also found is that **the resume has a hole this record must not paper over**: a
+chunk whose worker dies twice is moved to BullMQ's failed set as stalled, and nothing re-enqueues
+it, so the import stops at 5 of 6 for ever and its vendor stays locked out by the
+one-running-import index. `DeadLetterGrowing` fired on it within two minutes and
+`npm run retry-failed -- ingestion` returned the job to waiting, so the alert and the bulk retry
+both work; what does not exist yet is the sweep that notices without a human. That is issue #134,
+and until it merges the sentence to believe about Scenario A is "an interrupted chunk resumes
+from its checkpoint", not "an interrupted import always finishes".
+
 Scenario B is measured too, in `docs/e2e-evidence/`: 34 400 storefront reads moved PostgreSQL by
 ten transactions, and a 50 % sale on 100 000 products cost a quarter of the throughput and
 doubled the tail while it ran, with no failed request. Those are one run each on one machine over
@@ -374,6 +392,34 @@ A category promotion must affect tens of thousands of products the moment it is 
 - A bounded offset bounds one request rather than one client, and there is no rate limiter on these unauthenticated routes.
 - An empty promotion name in the database arrives as half a pair and is refused with its page; the column has no non-empty check, and that check belongs to the story that writes promotions.
 - A caller's bytes are never concatenated into a message an operator reads, so a wrong-typed index key is named only when this module composed it.
+
+### Measured
+
+One run each, 2026-09-14, on one machine over loopback, `autocannon -c 100`; the catalogue holds
+**100 000 products in `Accessories`, twice the 50 000 the case study names**.
+
+- **The measurement that could falsify the design, reported first.** The claim is that storefront
+  reads are served from Redis and do not reach PostgreSQL. Under load, a 20-second window moved
+  `pg_stat_database` by **ten transactions** — and those ten are the readiness probe and the
+  workers, not the reads. An idle stack commits about one a second on its own, so the read load
+  adds nothing above its own floor. `pg_stat_statements` is not installed on this stack and was
+  not installed for the run, because installing it changes the system being measured.
+- **Sustained read load:** 390 000 requests over 240 s, **1 625 req/s mean**, p50 **50 ms**,
+  p97.5 **147 ms**, **zero non-2xx and zero errors**, while promotions and products were being
+  written.
+- **A category-wide sale reaching 100 000 products:** the watched product was discounted **2.97 s**
+  after the `201`, and five sampled pages spread across the category were all discounted within
+  **~5 s**. The propagation is visible mid-flight — at three seconds some pages were discounted
+  and others were not — because the recompute walks the category rather than blocking the write.
+- **A product created while the sale ran** was discounted **2.03 s** later, with the sale named,
+  and with no second step from staff.
+- **Under the same load, writes still answered:** a product `201` in 269 ms, a promotion `201` in
+  109 ms, and a second promotion on an already-covered category `409` in 0.86 s — the exclusion
+  constraint refusing under load rather than only when idle.
+
+Ceilings for this hardware, not service levels. The tail figure is the one to distrust first:
+`express-prom-bundle`'s default buckets have no resolution between 0.1 s and 0.3 s, which is
+where every number above lives (ADR-0012).
 
 ### Rejected alternatives
 
