@@ -649,8 +649,9 @@ rather than ignored, so a typo in a client is visible.
 `page=1e9`, `pageSize=99999` and `page=abc` each have a defined answer.
 
 8.3 Errors are `{ error: { message } }` with the right status: `400`
-validation, `404` missing, `409` conflict, `429` backpressure, `503` read model
-not ready. The status is the taxonomy a client branches on; the message is for a
+validation, `404` missing, `409` conflict, `503` read model not ready. No route
+answers `429`: the intake has no backpressure control, so a rule naming one
+would be a rule no endpoint can satisfy. The status is the taxonomy a client branches on; the message is for a
 human, and it is the whole body: no code, no field-level breakdown (ADR-0009).
 
 8.3b A response may name where a problem is and which of the caller's own
@@ -893,8 +894,8 @@ the first classes (#39). ADR-0008.
 **Severity: warning. Blocking when a failure path has no recovery.**
 
 9.1 Every automated recovery has a manual counterpart and vice versa: retry and
-dead-letter, reconciler and rebuild, backpressure and drain. A failure mode with
-neither is a finding.
+dead-letter, reconciler and rebuild, a stalled lease and a re-claim. A failure
+mode with neither is a finding.
 
 9.2 Retries have exponential backoff and a ceiling. A retry loop without backoff
 is an outage amplifier.

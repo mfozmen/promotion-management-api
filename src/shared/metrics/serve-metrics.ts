@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
+import { logger } from '../logger.js';
 import { metricsRegistry } from './metrics-registry.js';
 
 /**
@@ -19,7 +20,8 @@ export function serveMetrics(port: number): Server {
       .then((body) => {
         res.writeHead(200, { 'content-type': metricsRegistry.contentType }).end(body);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        logger.error({ err }, 'metrics collection failed');
         res.writeHead(500).end();
       });
   }).listen(port);

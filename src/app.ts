@@ -92,7 +92,12 @@ export function createApp({
     void metricsRegistry
       .metrics()
       .then((body) => res.type(metricsRegistry.contentType).send(body))
-      .catch(() => res.status(500).end());
+      .catch((err: unknown) => {
+        // One collector throwing takes every metric with it, so the line is the only way to
+        // find out which; a bare 500 reads as the endpoint being broken.
+        logger.error({ err }, 'metrics collection failed');
+        res.status(500).end();
+      });
   });
 
   // Outside `/api` and outside the envelope: the board serves its own HTML and its own

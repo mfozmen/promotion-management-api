@@ -1,6 +1,4 @@
 global:
-  # Five seconds, not the default fifteen: a 500 000-row import finishes in about half a minute,
-  # and three points do not draw a curve.
   scrape_interval: 5s
 
 scrape_configs:
@@ -8,8 +6,6 @@ scrape_configs:
     static_configs:
       - targets: ['api:3100']
         labels: { service: api }
-      # Each worker serves its own /metrics: a heap is a fact about one process, and the api
-      # cannot see the ingestion worker's.
       - targets: ['event-handler:3101']
         labels: { service: event-handler }
       - targets: ['ingestion-worker:3101']

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '@src/app.js';
 import type { Logger } from 'pino';
 import { appDeps } from '@tests/app-deps.js';
+import { metricsRegistry } from '@src/shared/metrics/metrics-registry.js';
 import { logger as rootLogger } from '@src/shared/logger.js';
 import { captureLogger } from './capture-logger.js';
 
@@ -20,6 +21,23 @@ describe('GET /metrics', () => {
 
   it('is not under the /api prefix, where the error envelope would wrap it', async () => {
     expect((await request(createApp(appDeps())).get('/api/metrics')).status).toBe(404);
+  });
+
+  it('answers 500 and says so when a collector throws, rather than hanging the scrape', async () => {
+    // A hung scrape reads as a dead process to Prometheus, which is the wrong diagnosis; a bare
+    // 500 reads as the endpoint being broken when it is one collector. `serve-metrics` covers
+    // the same path on the worker side.
+    const error = vi.spyOn(rootLogger, 'error').mockReturnValue(undefined);
+    vi.spyOn(metricsRegistry, 'metrics').mockRejectedValue(new Error('collector threw'));
+
+    const res = await request(createApp(appDeps())).get('/metrics');
+
+    expect(res.status).toBe(500);
+    expect(error).toHaveBeenCalledWith(
+      { err: expect.objectContaining({ message: 'collector threw' }) },
+      'metrics collection failed',
+    );
+    vi.restoreAllMocks();
   });
 });
 

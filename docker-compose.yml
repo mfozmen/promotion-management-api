@@ -156,7 +156,6 @@ services:
     profiles: [monitoring]
     restart: unless-stopped
     environment:
-      # 3000 is taken on the owner's machine, and the show should need no login.
       GF_SERVER_HTTP_PORT: 3001
       GF_AUTH_ANONYMOUS_ENABLED: 'true'
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
@@ -238,6 +237,5 @@ networks:
 volumes:
   postgres-data:
   redis-data:
-  uploads:
   prometheus-data:
   grafana-data:
