@@ -10,7 +10,9 @@ describe('queueDepth', () => {
       getWaitingCount: () => Promise.resolve(3),
       getFailedCount: () => Promise.resolve(1),
     }));
-    queueDepth({ inspect }, ['promotions', 'ingestion']);
+    const gauges = queueDepth({ inspect }, ['promotions', 'ingestion']);
+
+    expect(gauges).toHaveLength(2);
 
     const scrape = await metricsRegistry.metrics();
 
