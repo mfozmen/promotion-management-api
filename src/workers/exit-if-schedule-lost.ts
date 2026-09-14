@@ -1,6 +1,6 @@
 import { logger } from '../shared/logger.js';
 
-/** The prose BullMQ builds this error from; `is-schedule-lost.test.ts` reads the library's own
+/** The prose BullMQ builds this error from; this file's test reads the library's own
  *  source for it, because it is a template string rather than anything the API promises. */
 const SCHEDULE_LOST = 'Failed to add repeatable job';
 
