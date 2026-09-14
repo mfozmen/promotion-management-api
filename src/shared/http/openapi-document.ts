@@ -34,7 +34,8 @@ const ERROR_SCHEMA = {
 const DESCRIPTION = `Generated from the zod schemas that validate each request, so what is written
 here is what the API enforces rather than what someone remembered to write down.
 
-Requests only. What each endpoint returns is in the README's API table: one response shape is a zod
+What each endpoint accepts, plus the one error envelope they all share. What an endpoint returns on
+success is in the README's API table and nowhere else: one response shape is a zod
 transform and the rest are TypeScript interfaces, and neither can be converted, so publishing them
 here would mean writing them by hand — the one part of this document that could then drift while
 looking exactly like the parts that cannot.

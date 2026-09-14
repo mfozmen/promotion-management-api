@@ -1206,6 +1206,22 @@ had one, "the one payload whose module does not exist", and "the monitoring
 profile is not built yet" written above the dashboard the evidence was read off.
 Every one was found by a person reading, not by a check.
 
+13.16 **A test that derives both sides of an equality from the same source
+proves consistency, not correctness.** A generated artefact checked against the
+thing that generated it passes while both are wrong in the same direction, and
+its trigger is not unreachable — it fires every run and goes green, which is
+worse, because a green check is read as evidence. When a generated artefact
+makes a claim about a contract — an envelope, a prefix, a status, a content type
+— one assertion must come from the contract rather than from the generator.
+
+Evidence: the OpenAPI document published `GET /metrics` promising the shared
+error envelope, which that endpoint has never answered — it is mounted outside
+`/api` precisely because its failure is an empty `500`. The parity test
+comparing the document's paths against the route walk that produced them was
+green throughout. One assertion anchored outside the generator is the remedy,
+not a different generator test: the other parity assertions are still worth
+having.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
