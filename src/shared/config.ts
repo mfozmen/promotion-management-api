@@ -19,6 +19,13 @@ const env = z
       .pipe(z.number().int())
       .default(10_000),
     UPLOAD_DIR: z.string().default('./uploads'),
+    // A vendor file is the 500 000-row one; the cap is what the intake refuses
+    // rather than what the pipeline can process, and it is not the JSON body cap.
+    UPLOAD_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(256 * 1024 * 1024),
     INGESTION_CHUNK_BYTES: z.coerce
       .number()
       .int()
