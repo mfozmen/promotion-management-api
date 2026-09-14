@@ -22,6 +22,12 @@ export class ProductReadRepository {
     return `category:${category}`;
   }
 
+  /** Whether Redis answers at all, which `isReady` cannot say: an unreachable store
+   *  and a store with no `readmodel:ready` key both make that method false. */
+  async ping(): Promise<void> {
+    await this.redis.ping();
+  }
+
   async isReady(): Promise<boolean> {
     const key = ProductReadRepository.READY_KEY;
 
