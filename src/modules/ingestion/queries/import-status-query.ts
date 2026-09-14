@@ -2,7 +2,6 @@ import { eq } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
 import { ingestionJobs } from '../db/schema/ingestion-jobs.js';
 
-/** What an import has done so far, for whoever is following it. */
 export interface ImportStatus {
   id: number;
   vendor: string;
