@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict K13MVh1eOqdkHh7YEB1WnJxANaR11fIKpt0ZvRr0YJTfj5AGc4atykSgs3YXFfS
+\restrict WPcz2V4hGf0a5zkegPdATnEJYUJJhOOVxTGKQWe1FFUvwDGbfUnyZgfgc52bCre
 
 -- Dumped from database version 16.14
 -- Dumped by pg_dump version 16.14
@@ -292,7 +292,7 @@ ALTER TABLE public.promotions ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 CREATE TABLE public.reconciler_state (
     id boolean DEFAULT true NOT NULL,
-    last_boundary_sweep_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_boundary_sweep_at timestamp(3) with time zone DEFAULT now() NOT NULL,
     CONSTRAINT reconciler_state_single_row_check CHECK (id)
 );
 
@@ -407,6 +407,48 @@ CREATE INDEX products_category_id_idx ON public.products USING btree (category, 
 
 
 --
+-- Name: promotions_cancelled_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX promotions_cancelled_at_idx ON public.promotions USING btree (cancelled_at) WHERE (cancelled_at IS NOT NULL);
+
+
+--
+-- Name: promotions_category_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX promotions_category_id_idx ON public.promotions USING btree (category, id);
+
+
+--
+-- Name: promotions_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX promotions_created_at_idx ON public.promotions USING btree (created_at) WHERE (status <> 'draft'::public.promotion_status);
+
+
+--
+-- Name: promotions_ends_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX promotions_ends_at_idx ON public.promotions USING btree (ends_at) WHERE (status <> 'draft'::public.promotion_status);
+
+
+--
+-- Name: promotions_product_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX promotions_product_id_idx ON public.promotions USING btree (product_id, id);
+
+
+--
+-- Name: promotions_starts_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX promotions_starts_at_idx ON public.promotions USING btree (starts_at) WHERE (status <> 'draft'::public.promotion_status);
+
+
+--
 -- Name: pricing_rules pricing_rules_set_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -433,5 +475,5 @@ ALTER TABLE ONLY public.promotions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict K13MVh1eOqdkHh7YEB1WnJxANaR11fIKpt0ZvRr0YJTfj5AGc4atykSgs3YXFfS
+\unrestrict WPcz2V4hGf0a5zkegPdATnEJYUJJhOOVxTGKQWe1FFUvwDGbfUnyZgfgc52bCre
 
