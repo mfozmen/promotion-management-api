@@ -1153,6 +1153,20 @@ signal that reports the first is read as the second.
 Evidence: `docker compose up -d --wait` called two containers healthy while
 neither published its port, because the healthcheck runs inside the container.
 
+13.14 **A number states what produced it, or it is deleted.** A figure in a
+document is read as a decision someone made, so a measured one names the run,
+the machine and the accounting it came from; a chosen one says it was chosen;
+and one with neither behind it goes. The places that reach for a quantity are
+trade-offs and pass conditions rather than context or decision paragraphs, so
+that is where to look.
+
+Evidence: an appendix entry sourced a `130-192 ms p99` for `GET /api/health` to
+"the project's own ADR", which records no p99 for any route; the same sweep found
+a healthy-in-6.4 s figure that belonged to the healthcheck it replaced, a 5-second
+propagation bound with no run behind it, and a 100 ms pass condition sitting
+inside its own machine's 106-to-63 ms variance. Every one of the four read
+fluently because the method was missing.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**

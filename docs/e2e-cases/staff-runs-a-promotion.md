@@ -49,7 +49,7 @@ Test cases
 - Given: a product at 40.00 in Accessories, and no promotion anywhere near it
 - When: staff create a 50 % promotion naming the category Accessories, starting now and ending tomorrow, and make no other call
 - Then: 201, and a shopper opening the product sees 20.00 and the promotion named
-- Measure: time from the create response to 20.00 appearing on the storefront, under 5 seconds
+- Measure: time from the create response to 20.00 appearing on the storefront; measured and recorded, with no bound until a run sets one (owner, 2026-09-14)
 
 ## S5 Assign a promotion to a product or a category
 
@@ -182,7 +182,7 @@ Test cases
 - Given: a product discounted by an active promotion
 - When: staff cancel that promotion
 - Then: the product's detail shows its base price
-- Measure: time from the cancel response to the base price appearing on the storefront, under 5 seconds
+- Measure: time from the cancel response to the base price appearing on the storefront; measured and recorded, with no bound until a run sets one (owner, 2026-09-14)
 
 ### promotion-9
 
@@ -198,7 +198,7 @@ Test cases
 - Given: a product at 100.00 with its own 25 % promotion, and its category carrying a 10 % promotion over the same days
 - When: staff cancel the product's own promotion
 - Then: the product shows 90.00 and names the category promotion, not 100.00 and not 75.00
-- Measure: time from the cancel response to 90.00 appearing on the storefront, under 5 seconds
+- Measure: time from the cancel response to 90.00 appearing on the storefront; measured and recorded, with no bound until a run sets one (owner, 2026-09-14)
 
 ### promotion-15
 
@@ -227,7 +227,7 @@ Test cases
 - Given: a promotion on a product with a start two minutes away and an end four minutes away
 - When: the product is read before the start, after the start, and after the end
 - Then: base price, then discounted price, then base price again
-- Measure: each boundary takes effect within 5 seconds of its time
+- Measure: the delay between each boundary's time and its effect on the storefront; measured and recorded, with no bound until a run sets one (owner, 2026-09-14)
 
 ### promotion-20
 
