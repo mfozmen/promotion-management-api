@@ -3,8 +3,7 @@ import type { Db } from '../../../shared/db/client.js';
 import type { PromotionCandidate } from '../domain/dto/promotion-candidate.js';
 import type { SourceRow } from '../domain/dto/source-row.js';
 
-/** Epoch microseconds as digits: two renderings of a timestamp do not compare,
- *  and `clock_timestamp()::text` follows the session `TimeZone` (ADR-0003). */
+/** Epoch microseconds as digits, because two renderings do not compare (ADR-0003). */
 const INSTANT = sql`(extract(epoch from clock_timestamp()) * 1000000)::bigint::text`;
 
 type SelectedRow = Record<string, unknown> & {
@@ -20,9 +19,6 @@ type SelectedRow = Record<string, unknown> & {
   source_read_at: string;
 };
 
-/** Which promotions are running is decided by `active_promotions` on the
- *  database clock, in the same statement that reads the product and stamps the
- *  instant: three reads would be three answers about one product. */
 const CANDIDATE = (alias: string) =>
   sql.raw(`
   case when ${alias}.id is null then null else
@@ -30,11 +26,9 @@ const CANDIDATE = (alias: string) =>
                       'discountType', ${alias}.discount_type, 'value', ${alias}.value)
   end`);
 
-/** The rows a recompute works from, their candidate promotions, and the instant
- *  PostgreSQL read all of it (ADR-0003). */
+/** The rows a recompute works from, their candidate promotions and the instant
+ *  PostgreSQL read all of it, in one statement (ADR-0003). */
 export class ProductSourceRepository {
-  /** The page the announcement carries, which is also the cap `product.upserted`
-   *  validates against. */
   static readonly PAGE = 1_000;
 
   constructor(private readonly db: Db) {}
@@ -53,8 +47,6 @@ export class ProductSourceRepository {
     `);
 
     return {
-      // The instant rides on every row and belongs to the batch, not to any
-      // one of them.
       rows: selected.map((row) => ({
         id: Number(row.id),
         sku: row.sku,
@@ -71,9 +63,7 @@ export class ProductSourceRepository {
     };
   }
 
-  /** One page of a category, by keyset: an OFFSET scan re-reads every row it
-   *  skipped, and a 50 000-product category is fifty pages of that. The index is
-   *  `products (category, id)`. */
+  /** Keyset, never OFFSET: an OFFSET scan re-reads every row it skipped. */
   async idsInCategory(category: string, afterId: number): Promise<number[]> {
     const { rows } = await this.db.execute<Record<string, unknown> & { id: number }>(sql`
       select id from products
@@ -85,7 +75,6 @@ export class ProductSourceRepository {
     return rows.map((row) => Number(row.id));
   }
 
-  /** One page of the catalogue, by keyset, for the rebuild. */
   async idsAfter(afterId: number): Promise<number[]> {
     const { rows } = await this.db.execute<Record<string, unknown> & { id: number }>(sql`
       select id from products where id > ${afterId} order by id
@@ -105,8 +94,8 @@ export class ProductSourceRepository {
     return new Set(rows.map((row) => Number(row.id)));
   }
 
-  /** An empty batch still orders its removals, and the same clock has to render
-   *  it: a worker's own would outrank every token PostgreSQL ever wrote. */
+  /** An empty batch still orders its removals, and a worker's own clock would
+   *  outrank every token PostgreSQL ever wrote. */
   private async instant(): Promise<string> {
     const { rows } = await this.db.execute<Record<string, unknown> & { source_read_at: string }>(
       sql`select ${INSTANT} as source_read_at`,

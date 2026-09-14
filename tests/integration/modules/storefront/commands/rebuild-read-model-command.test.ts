@@ -108,6 +108,25 @@ describe('RebuildReadModelCommand', () => {
     expect(await read.find(coat)).toMatchObject({ basePriceCents: '10000' });
   });
 
+  it('recomputes a product in the category once, not once per pass', async () => {
+    const stays = await insert('SKU-R9', 'hats');
+    await (await rebuild()).rebuildAll();
+    const counted: number[] = [];
+    const source = new ProductSourceRepository(db());
+    const recompute = {
+      handle: ({ productIds }: { productIds: number[] }) => {
+        counted.push(...productIds);
+        return Promise.resolve();
+      },
+    };
+
+    await new RebuildReadModelCommand(source, recompute, redis(), logger).rebuildCategory('hats');
+
+    // The sorted set lists what the source pass just wrote; rebuilding a
+    // 50 000-product category twice doubles the slowest thing there is.
+    expect(counted).toEqual([stays]);
+  });
+
   it('moves a product the scoped rebuild finds in the wrong category', async () => {
     const moved = await insert('SKU-R7', 'knitwear');
     await (await rebuild()).rebuildAll();

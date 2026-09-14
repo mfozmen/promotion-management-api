@@ -31,20 +31,15 @@ describe('readModelConsumer', () => {
   it('builds every consumer the read model needs from the two stores', async () => {
     const consumer = await readModelConsumer(db, redis, queue, captureLogger().logger);
 
-    // The wiring is what a worker cannot be tested through: its entry point is
-    // excluded from coverage and imported by no test.
     expect(consumer.upserted).toBeInstanceOf(ProductUpsertedHandler);
     expect(consumer.promotionChanged).toBeInstanceOf(PromotionChangedHandler);
     expect(consumer.rebuild).toBeInstanceOf(ReadModelRebuildHandler);
-    // A warm read model is not rebuilt, which is the boot path's whole gate.
     await expect(consumer.rebuildOnBoot()).resolves.toBe(false);
   });
 
   it('refuses to start when the policy has no rule to read', async () => {
     const empty = { select: () => ({ from: () => Promise.resolve([]) }) } as unknown as Db;
 
-    // A worker that started anyway would price every product at base and
-    // publish `readmodel:ready` over it.
     await expect(readModelConsumer(empty, redis, queue, captureLogger().logger)).rejects.toThrow(
       /no active promotion rules/,
     );

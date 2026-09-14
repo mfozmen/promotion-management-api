@@ -13,13 +13,8 @@ interface Recompute {
 }
 
 /** Builds the read model from PostgreSQL and publishes the key that lets the
- *  storefront answer. Every entry goes through the same compare-and-set the
- *  event handlers use: a prefix purge in front of the rebuild would take each
- *  token minutes before its own write, and a recompute in flight from before the
- *  purge would then find no token and apply unconditionally over newer truth.
- *
- *  Two rebuilds at once are correct and slow, for the same reason. A lock would
- *  buy nothing and can be held by a dead process. */
+ *  storefront answer. Why it writes through the compare-and-set and never purges
+ *  first, and why two at once need no lock: ADR-0006. */
 export class RebuildReadModelCommand {
   /** One page of ids per round, matching the announcement cap. */
   static readonly PAGE = 1_000;
@@ -31,10 +26,8 @@ export class RebuildReadModelCommand {
     private readonly logger: Logger,
   ) {}
 
-  /** What a worker calls on boot. A rebuild is how the key gets set, so a check
-   *  that finds it means some rebuild finished rather than that this one can be
-   *  skipped for free. Without it every restart recomputes the whole catalogue,
-   *  and `restart: unless-stopped` makes restarts routine. */
+  /** Skipped when the key is there: `restart: unless-stopped` makes restarts
+   *  routine, and every one of them would otherwise recompute the catalogue. */
   async rebuildUnlessReady(): Promise<boolean> {
     if ((await this.redis.exists(ProductReadRepository.READY_KEY)) === 1) {
       this.logger.info('read model is already published; skipping the boot rebuild');
@@ -45,8 +38,7 @@ export class RebuildReadModelCommand {
     return true;
   }
 
-  /** The cold start. Every product is recomputed, every entry with nothing
-   *  behind it is tombstoned, and only then is the storefront opened. */
+  /** The key is published last, so no shopper reads a half-built model. */
   async rebuildAll(): Promise<void> {
     const products = await this.recomputePages((afterId) => this.source.idsAfter(afterId));
     const dropped = await this.dropOrphans();
@@ -55,19 +47,24 @@ export class RebuildReadModelCommand {
     this.logger.info({ products, dropped }, 'read model rebuilt; storefront open');
   }
 
-  /** One category, for a reconciler that found drift. The entries PostgreSQL
-   *  says are in the category and the ones the sorted set still lists are both
-   *  recomputed, which is what moves a product that changed category. */
+  /** Both what PostgreSQL says is in the category and what the sorted set still
+   *  lists, which is how a product that left the category is found. */
   async rebuildCategory(category: string): Promise<number> {
-    const fromSource = await this.recomputePages((afterId) =>
-      this.source.idsInCategory(category, afterId),
+    const handled = new Set<number>();
+    const recomputed = await this.recomputePages(
+      (afterId) => this.source.idsInCategory(category, afterId),
+      handled,
     );
     const listed = await this.redis.zrange(ProductReadRepository.categoryKey(category), '0', '-1');
+    // Only the ones the source pass did not already write: a 50 000-product
+    // category is the flash-sale path, and recomputing it twice doubles the
+    // slowest thing the system does.
+    const left = listed.map(Number).filter((id) => !handled.has(id));
 
-    for (const page of RebuildReadModelCommand.pages(listed.map(Number)))
-      await this.recompute.handle({ productIds: page });
+    for (const productIds of RebuildReadModelCommand.pages(left))
+      await this.recompute.handle({ productIds });
 
-    return fromSource;
+    return recomputed + left.length;
   }
 
   private static *pages(ids: readonly number[]): Generator<number[]> {
@@ -75,7 +72,10 @@ export class RebuildReadModelCommand {
       yield ids.slice(from, from + RebuildReadModelCommand.PAGE);
   }
 
-  private async recomputePages(page: (afterId: number) => Promise<number[]>): Promise<number> {
+  private async recomputePages(
+    page: (afterId: number) => Promise<number[]>,
+    handled?: Set<number>,
+  ): Promise<number> {
     let afterId = 0;
     let seen = 0;
 
@@ -85,14 +85,14 @@ export class RebuildReadModelCommand {
       if (productIds.length === 0) return seen;
 
       await this.recompute.handle({ productIds });
+      for (const id of productIds) handled?.add(id);
       seen += productIds.length;
       afterId = productIds[productIds.length - 1]!;
     }
   }
 
   /** `SCAN` by prefix, never `FLUSHDB`: the queue shares this server in
-   *  development and a rebuild is not entitled to anything but its own keys. The
-   *  removal itself is the compare-and-set, so a tombstone is left behind. */
+   *  development. */
   private async dropOrphans(): Promise<number> {
     let cursor = '0';
     let dropped = 0;

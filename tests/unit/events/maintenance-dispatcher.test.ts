@@ -29,8 +29,6 @@ describe('MaintenanceDispatcher', () => {
   it('refuses a job it has no handler for rather than acknowledging it', async () => {
     const c = collaborators();
 
-    // Returning would mark the job done and the work would never run; throwing
-    // puts it in the failed set where it can be seen.
     await expect(
       new MaintenanceDispatcher(c.reconciler, c.rebuild).handle('chunk.process', {}),
     ).rejects.toThrow('no handler for chunk.process');

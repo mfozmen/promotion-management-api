@@ -2,7 +2,6 @@ import type { Logger } from 'pino';
 import type { PromotionChanged } from '../../promotion/events/promotion-changed.js';
 import type { PromotionView } from '../../promotion/domain/dto/promotion-view.js';
 
-/** Enough of the admin repository to name a promotion's target. */
 interface Promotions {
   find(id: number): Promise<PromotionView | undefined>;
 }
@@ -15,10 +14,9 @@ interface AnnouncementQueue {
   publish(name: 'product.upserted', payload: { productIds: number[] }): Promise<unknown>;
 }
 
-/** A promotion changed, so every product it covers is recomputed. The row is
- *  re-read rather than trusted from the payload: a boundary job means re-read,
- *  never activate, so one firing against a cancelled promotion republishes the
- *  base price. */
+/** The row is re-read rather than trusted from the payload: a boundary job means
+ *  re-read and never activate, so one firing against a cancelled promotion
+ *  republishes the base price. */
 export class PromotionChangedHandler {
   constructor(
     private readonly promotions: Promotions,
@@ -40,17 +38,14 @@ export class PromotionChangedHandler {
       return;
     }
 
-    // A draft carries no target and a deleted row is not a thing this system
-    // makes, so both are worth a line rather than a silent return.
     this.logger.warn(
       { promotionId },
       'promotion.changed named a promotion with no target; nothing was recomputed',
     );
   }
 
-  /** Each page is enqueued rather than recomputed here: scanning 50 000 products
-   *  inline would hold the urgent queue for the length of a flash sale, and a
-   *  cancel would wait behind the sale's own rescan (ADR-0003). */
+  /** Pages go to the products queue so a cancel never waits behind the sale's
+   *  own rescan (ADR-0003). */
   private async recomputeCategory(category: string): Promise<void> {
     let afterId = 0;
 

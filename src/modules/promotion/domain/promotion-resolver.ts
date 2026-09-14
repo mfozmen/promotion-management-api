@@ -5,12 +5,7 @@ import type { CandidateLevel } from './dto/candidate-level.js';
 import type { PromotionRuleRow } from './dto/promotion-rule-row.js';
 import { selectCandidateEvent } from './dto/select-candidate-event.js';
 
-/** Which promotion applies to a product, decided by rows rather than by a branch
- *  here, so the policy changes without a deploy. Each candidate is priced by
- *  `EffectivePriceCalculator` before the rules run, so a rule compares outcomes
- *  and never does arithmetic. */
 export class PromotionResolver {
-  /** Tests build one around their own engine; production goes through fromRules. */
   constructor(
     private readonly engine: Engine,
     readonly ruleIds: readonly number[],
@@ -39,19 +34,13 @@ export class PromotionResolver {
     );
   }
 
-  /** Undefined when no rule fired, which is a product with no candidate — or a
-   *  policy that stopped covering a case, and the caller prices at base either
-   *  way. Every product goes through the rules, including one with a single
-   *  candidate: a rule that rejects a candidate outright has to be consulted
-   *  there too, or it is a control that is present and never runs. */
+  /** Every product goes through the rules, one candidate included: a rule that
+   *  rejects a candidate outright must be consulted there too, or it is a
+   *  control that is present and never runs. */
   async select(facts: CandidateFacts): Promise<CandidateLevel | undefined> {
     const { results } = await this.engine.run(facts);
 
-    // Every matching event comes back, not the first, and same-priority rules
-    // run concurrently, so position is the library's business and priority is
-    // the seed's.
-    // `priority` is optional in the typings and always set by the library, which
-    // a test pins against the installed version.
+    // All matching events come back; the seed's priority picks, not position.
     const winner = results.reduce<(typeof results)[number] | undefined>(
       (best, result) => (best === undefined || result.priority! > best.priority! ? result : best),
       undefined,
@@ -76,9 +65,6 @@ export class PromotionResolver {
     };
   }
 
-  /** A tie makes the winner an ordering detail rather than a policy, and the
-   *  only writer is a person at a psql prompt, so this is said rather than
-   *  enforced. */
   private static reportSharedPriorities(rows: readonly PromotionRuleRow[], logger: Logger): void {
     const shared = rows.filter((row, index) => rows[index + 1]?.priority === row.priority);
 
