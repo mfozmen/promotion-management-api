@@ -107,6 +107,23 @@ assertions.
 
 ## What to test, in this order
 
+0a. **The DDL deliverable replays into an empty database and matches the
+migrations.** `docs/schema.sql` is a deliverable a reviewer may build from
+rather than a file anyone runs, so nothing else in this repository would
+notice it going stale — and it had already gone stale by three migrations
+once. Create two empty databases; replay the dump into one with
+`psql -v ON_ERROR_STOP=1`, run `drizzle-kit migrate` into the other, and
+compare the two schemas object by object: tables, columns with their type
+and precision, indexes, constraints, enum labels, triggers, functions,
+extensions and views. They must be identical, and the comparison must be
+shown to be capable of failing — a query that errors on both sides produces
+two empty lists and a diff that says nothing.
+
+Then report what the dump does **not** carry: `pg_dump --schema-only` omits
+data, so the `reconciler_state` watermark row and the seeded `pricing_rules`
+are absent, and a database built from the dump alone cannot run the
+reconciler. That is a property to state, not a failure.
+
 0. **The cases in `docs/e2e-cases/`**, first. Each file is one user journey
    from the case study — the vendor sending the weekly file, staff running a
    promotion, the shopper browsing, staff running a flash sale — holding that
@@ -224,7 +241,12 @@ first result is ambiguous, and say so.
   median of three runs. The bar is provisional — it came from a run of the
   health route on one machine and no record holds it — but it is a bar: a run
   above it fails and is reported, and only the owner moves the number.
-- Peak RSS under 256 MB for the API, under 128 MB for an ingestion run.
+- Peak RSS under 256 MB for the API. For an ingestion run the bar is the case
+  study's 256 MiB container limit, measured as the container's own accounting
+  (`docker stats` or the cgroup) rather than host RSS — the two count different
+  things and a host sampler cannot see a container boundary. A measured run of
+  500 000 rows peaked at 49.9 MiB of 256.
+- `docs/schema.sql` replays clean and matches the migrated schema (0a).
 - Every invariant in section 2 holds after every race scenario in section 3.
 
 ## Report format
