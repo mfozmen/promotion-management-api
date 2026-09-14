@@ -20,7 +20,7 @@ interface Recompute {
  *
  *  Two rebuilds at once are correct and slow, for the same reason. A lock would
  *  buy nothing and can be held by a dead process. */
-export class ReadModelRebuild {
+export class RebuildReadModelCommand {
   /** One page of ids per round, matching the announcement cap. */
   static readonly PAGE = 1_000;
 
@@ -64,15 +64,15 @@ export class ReadModelRebuild {
     );
     const listed = await this.redis.zrange(ProductReadRepository.categoryKey(category), '0', '-1');
 
-    for (const page of ReadModelRebuild.pages(listed.map(Number)))
+    for (const page of RebuildReadModelCommand.pages(listed.map(Number)))
       await this.recompute.handle({ productIds: page });
 
     return fromSource;
   }
 
   private static *pages(ids: readonly number[]): Generator<number[]> {
-    for (let from = 0; from < ids.length; from += ReadModelRebuild.PAGE)
-      yield ids.slice(from, from + ReadModelRebuild.PAGE);
+    for (let from = 0; from < ids.length; from += RebuildReadModelCommand.PAGE)
+      yield ids.slice(from, from + RebuildReadModelCommand.PAGE);
   }
 
   private async recomputePages(page: (afterId: number) => Promise<number[]>): Promise<number> {
@@ -103,7 +103,7 @@ export class ReadModelRebuild {
         'MATCH',
         ProductReadRepository.productKey('*'),
         'COUNT',
-        String(ReadModelRebuild.PAGE),
+        String(RebuildReadModelCommand.PAGE),
       );
       cursor = next;
 

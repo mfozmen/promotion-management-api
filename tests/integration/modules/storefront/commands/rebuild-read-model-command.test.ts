@@ -5,7 +5,7 @@ import { ProductSourceRepository } from '@src/modules/storefront/db/product-sour
 import { ProductWriteRepository } from '@src/modules/storefront/db/product-write-repository.js';
 import { ProductUpsertedHandler } from '@src/modules/storefront/events/product-upserted-handler.js';
 import { ProductPricer } from '@src/modules/storefront/domain/product-pricer.js';
-import { ReadModelRebuild } from '@src/modules/storefront/commands/read-model-rebuild.js';
+import { RebuildReadModelCommand } from '@src/modules/storefront/commands/rebuild-read-model-command.js';
 import { PromotionResolver } from '@src/modules/promotion/domain/promotion-resolver.js';
 import { EffectivePriceCalculator } from '@src/modules/promotion/domain/effective-price-calculator.js';
 import { pricingRules } from '@src/modules/pricing/db/schema/pricing-rules.js';
@@ -26,7 +26,7 @@ async function insert(sku: string, category = 'knitwear'): Promise<number> {
   return inserted!.id;
 }
 
-async function rebuild(): Promise<ReadModelRebuild> {
+async function rebuild(): Promise<RebuildReadModelCommand> {
   const rules = await db().select().from(pricingRules);
   const source = new ProductSourceRepository(db());
   const write = new ProductWriteRepository(redis());
@@ -36,7 +36,7 @@ async function rebuild(): Promise<ReadModelRebuild> {
     logger,
   );
 
-  return new ReadModelRebuild(
+  return new RebuildReadModelCommand(
     source,
     new ProductUpsertedHandler(source, write, pricer, logger),
     redis(),
@@ -44,7 +44,7 @@ async function rebuild(): Promise<ReadModelRebuild> {
   );
 }
 
-describe('ReadModelRebuild', () => {
+describe('RebuildReadModelCommand', () => {
   it('builds the catalogue from PostgreSQL and only then opens the storefront', async () => {
     const one = await insert('SKU-R1');
     const two = await insert('SKU-R2');
