@@ -11,6 +11,8 @@ import { ProductReadRepository } from './modules/storefront/db/product-read-repo
 import { createReadModelClient } from './shared/read-model-client.js';
 import { EventQueue } from './shared/queue/event-queue.js';
 import { queueDepth } from './shared/metrics/queue-depth.js';
+import { dependencyUp } from './shared/metrics/dependency-up.js';
+import { DependencyReadiness } from './shared/dependency-readiness.js';
 
 const config = loadConfig();
 
@@ -27,14 +29,22 @@ const queue = EventQueue.connect(
 // Read at scrape time from the handles this process already holds.
 queueDepth(queue.all());
 
+const db = createDb(pool);
+const products = new ProductReadRepository(
+  createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB),
+);
+
+// Asked on every scrape, so a report can say whether the stores answered during a run and not
+// only when someone looked. Registered here rather than in `createApp`: a gauge that queries the
+// stores would otherwise be built by every test that renders an app.
+dependencyUp(new DependencyReadiness(db, products));
+
 const app = createApp({
   logger,
-  db: createDb(pool),
+  db,
   queue,
   scheduler: new PromotionScheduler(queue),
-  products: new ProductReadRepository(
-    createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB),
-  ),
+  products,
   boardQueues: queue.all(),
 });
 

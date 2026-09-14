@@ -3,7 +3,6 @@ import createError from 'http-errors';
 import type { AppDependencies } from './app-dependencies.js';
 import { measureRequests } from './shared/metrics/request-duration.js';
 import { metricsRegistry } from './shared/metrics/metrics-registry.js';
-import { dependencyUp } from './shared/metrics/dependency-up.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -52,7 +51,6 @@ export function createApp({
     res.status(200).json({ status: 'ok' });
   });
   const readiness = new DependencyReadiness(db, products);
-  dependencyUp(readiness);
   api.get('/ready', (_req, res, next) => {
     readiness
       .check()
