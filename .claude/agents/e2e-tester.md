@@ -108,7 +108,19 @@ a server you launched by hand.
    seconds. Every route is mounted under `/api`, including the liveness probe,
    and the container's own healthcheck calls the same path. If it never
    answers, print `docker compose -p pma-e2e logs --tail 40 api` and FAIL.
-6. **If something else holds port 3100, stop and say so; never kill it.** The
+6. Fetch `curl -sf localhost:3100/api/openapi.json` and keep its `paths` beside
+   you as a diagnostic, never as the scope of the run. Scope comes from the
+   cases: a case runs when the tree satisfies its `Precondition`, and that is
+   also the only thing that makes it a SKIP. The document is generated from what
+   the build mounted, so it agrees with the build by construction and cannot
+   tell a route that was never written from one that was dropped, unmounted or
+   left unregistered. A case whose precondition the tree satisfies but whose
+   path is missing from `paths` is a FAIL to report, not a route to drop from
+   the run: probe it anyway and say both things — what the case got, and that
+   the document did not list it. The page at `/api/docs` renders the same
+   document and is worth opening once in a browser, because a spec that parses
+   and a page that renders are two different claims.
+7. **If something else holds port 3100, stop and say so; never kill it.** The
    process you did not start may be another run mid-measurement or a server the
    owner is using, and you cannot tell an orphan from a live server. Reaping one
    is a person's decision, not yours.

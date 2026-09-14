@@ -17,7 +17,7 @@ export function validate(schemas: {
     return schema ? [[part, schema.strict()] as const] : [];
   });
 
-  return (req, _res, next) => {
+  const handler: RequestHandler = (req, _res, next) => {
     for (const [part, schema] of strict) {
       const result = schema.safeParse(req[part]);
       if (!result.success) {
@@ -35,4 +35,8 @@ export function validate(schemas: {
     }
     next();
   };
+  // What the route accepts, where `route-inventory.ts` can read it.
+  (handler as unknown as Record<symbol, unknown>)[Symbol.for('pma.validates')] = schemas;
+
+  return handler;
 }

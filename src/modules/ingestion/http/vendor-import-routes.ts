@@ -4,6 +4,7 @@ import { extname } from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import createError from 'http-errors';
 import multer from 'multer';
+import { bodyReadBy } from '../../../shared/http/body-read-by.js';
 import { validate } from '../../../shared/http/request-validator.js';
 import type { RegisterImportCommand } from '../commands/register-import-command.js';
 import { importIdInput, type ImportIdInput } from '../domain/dto/import-id-input.js';
@@ -41,23 +42,26 @@ export function vendorImportRoutes(deps: {
     },
   }).single('file');
 
-  router.post('/', (req: Request, res: Response, next) => {
-    upload(req, res, (error: unknown) => {
-      if (error instanceof multer.MulterError) {
-        next(
-          error.code === 'LIMIT_FILE_SIZE'
-            ? createError(413, 'Vendor file is larger than this endpoint accepts')
-            : createError(400, 'Invalid upload'),
-        );
-        return;
-      }
-      if (error !== undefined && error !== null) {
-        next(error);
-        return;
-      }
-      void registered(req, res, next, deps.register);
-    });
-  });
+  router.post(
+    '/',
+    bodyReadBy((req: Request, res: Response, next) => {
+      upload(req, res, (error: unknown) => {
+        if (error instanceof multer.MulterError) {
+          next(
+            error.code === 'LIMIT_FILE_SIZE'
+              ? createError(413, 'Vendor file is larger than this endpoint accepts')
+              : createError(400, 'Invalid upload'),
+          );
+          return;
+        }
+        if (error !== undefined && error !== null) {
+          next(error);
+          return;
+        }
+        void registered(req, res, next, deps.register);
+      });
+    }, 'multipart/form-data: file, vendor'),
+  );
 
   router.get('/:id', validate({ params: importIdInput }), async (req: Request, res: Response) => {
     const { id } = req.params as unknown as ImportIdInput;

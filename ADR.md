@@ -642,3 +642,49 @@ Three of the five triggers also had no series to fire on. Queue depth and the fa
 - A gauge for drift instead of a counter: a repair count that falls back to zero hides the repair that already happened.
 - Alerting on the reconciler's log line through a log pipeline: a second collector and a parser for a number the process can register directly.
 - Alertmanager with a receiver: a destination nobody reads, configured for a demo.
+
+---
+
+## ADR-0013: The OpenAPI document is generated from the schemas that validate
+
+**Status:** Accepted
+
+### Context
+
+Until now the only description of this API's surface was the README's table, written by hand: it agrees with the code on the day it is written and afterwards only if someone remembers. Every request the API accepts is already described precisely, and in one place, by the zod schemas `validate()` enforces at the boundary (ADR-0009). A second description of the same thing is the thing that drifts, so the question is not whether to write a document but where to read it from.
+
+### Decision
+
+- **Generated from the schemas, never from a list.** `validate()` stamps the schemas it was handed onto the handler it returns, under a global symbol. `route-inventory.ts` walks Express's own router stack and reads them back, so the document's routes are the routes the application answers rather than a list kept beside them. A route added later appears without anyone editing anything; a route added without schemas appears with no inputs.
+- **The mount path is the only thing written by hand.** Express 5 keeps no readable mount path on a mounted router — `layer.path` is filled during a match and the matchers are closures over a regexp — so `mountAt(parent, path, router)` stamps the path as it mounts it. The string exists once, in the call that uses it, and the inventory reads it back out of the global symbol registry rather than importing it.
+- **Zod's own JSON Schema export.** zod 4 emits JSON Schema directly, so there is no registry, no `.openapi()` call on every schema and no second schema library. Conversion asks for the input side: a query schema that parses `"7"` into `7` must publish the string, because a string is what goes in the URL.
+- **Requests, plus the one response every route shares.** Each operation publishes its path, query and body parameters and a `default` response referencing `components.schemas.Error` — the `{ error: { message } }` envelope of ADR-0009. Success bodies are not published; the README's table is where they are, and the document's own description says so.
+- **Scope is what this API serves**, so the walk covers the whole application and the document is filtered to the routes under `/api`, less `/api/docs`. The operator surfaces ADR-0009 deliberately mounts outside the prefix — Bull Board's HTML at `/admin/queues` and `GET /metrics`'s Prometheus text — answer neither this API's envelope nor its content type, and the documentation page itself serves HTML, so none of the three is in the document. Publishing `/metrics` would have promised the envelope for an endpoint whose failure is an empty `500`.
+- **Served by the API it describes.** `GET /api/openapi.json` builds the document per request from the application read back, because the docs router is mounted while the application is still being built and a document taken at mount time would describe only what preceded it. `GET /api/docs` is swagger-ui-express pointed at that URL rather than handed a copy, so the page renders what a caller gets.
+- **The fence is three tests, and they do not all hold the same thing.** The first asserts that the documented paths are exactly the routes the application answers within the scope above — under `/api`, less `/api/docs` — so a route added inside the prefix is documented or the build fails. The second asserts that the only routes validating nothing are the ones that take nothing, each named, so a route added without a schema fails a test that says which route it is rather than producing a document that quietly says less. The third asserts that nothing outside the prefix is published, and it is the only one of the three that holds the document to something other than the walk it came from.
+
+### Consequences
+
+- The request half of the API's documentation cannot drift from the code, because it is the code.
+- The boundary and the inventory are joined by two global symbols rather than by an import in either direction: the validator does not know the document exists.
+- `POST /api/vendor/imports` is multipart and bounded by multer rather than by a schema, so it appears with no inputs and sits in the parity test's named exemption set. It is documented less than it is validated, and the exemption is where that is written down.
+- The walk reads Express's router internals — `app.router.stack`, `layer.route.methods`, a nested `handle.stack`. An Express upgrade can break it, and the parity test is what reports that.
+- Swagger UI is unauthenticated, like every other route here; the case study puts authentication out of scope (ADR-0009).
+
+### Trade-offs
+
+- **Success responses are not published.** One of them is a zod transform and the rest are TypeScript interfaces; neither converts, so publishing them means writing them by hand — the exact drift this record exists to prevent, in the one half of the document where it would look identical to the half that cannot drift. What is given up is that a caller cannot generate a typed client from this document, and reads the README table for what comes back. Acceptable for ModaCo: the document's readers are a reviewer exploring the API and a caller building a request, and both are served by the request side being exact.
+- **One `default` response instead of a response per status.** A per-status list would have to be kept true per route by hand, which is the second thing that drifts, and it would say no more: every status answers the same envelope. The cost is that the document does not say which statuses an endpoint can return — the README table's `Statuses` column does.
+- **The error schema is ADR-0009's envelope, not the richer `code`/`details` shape the case study's wording suggests.** The document follows the code; publishing a `code` field nothing sends would be drift in the other direction, and widening the envelope is the decision ADR-0009 already declined.
+- **Two global symbols are a contract nothing type-checks.** Renaming either string breaks the document silently at build time and loudly in the parity test, which is the only thing holding them together.
+- **The document agrees with the build by construction**, so it cannot tell a route that was never written from one that was dropped or never mounted. It is a diagnostic for an end-to-end run, never the scope of one.
+- **A parity test between a generated document and the walk that generated it proves consistency, not correctness.** Both sides are the same reading of the application, so both can be wrong in the same direction at once, and the test passes. That is how `GET /metrics` came to be published promising an envelope it has never answered: the first parity test compared the document to the routes, and the routes were where the mistake was. What caught it was building the document and reading its paths against ADR-0009. Every later claim of this kind — that the document says only what the API does — needs a check written against the contract rather than against the walk, and the third test is the only one here that is.
+
+### Rejected alternatives
+
+- `@asteasolutions/zod-to-openapi`, as the story suggested: a registry and an `.openapi()` call on every schema, for what zod 4 now does natively.
+- A hand-written `openapi.yaml`: the second description this record exists to avoid.
+- A constant listing the routes, read by the generator: a list to keep true, which is the same drift with an extra file.
+- Building the document once at startup: the routes mounted after the docs router would be missing from it.
+- Publishing response schemas by hand alongside the generated requests: the half that can drift, looking exactly like the half that cannot.
+- Serving the UI outside `/api` where Bull Board lives: the board describes a queue and is an operator surface, while this document describes this API and is part of it.

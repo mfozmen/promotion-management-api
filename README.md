@@ -143,6 +143,8 @@ vantage point each number was taken from, are in [docs/e2e-evidence/](./docs/e2e
 
 ## Endpoints
 
+The live reference is `GET /api/docs`, a Swagger UI page over `GET /api/openapi.json`. That document is generated from the zod schemas that validate each request, so the request side of it cannot drift from the code (ADR-0013). It describes what each endpoint accepts, plus the one error envelope they all share; what an endpoint returns on success is the table below, and the semantics are in [docs/api.md](./docs/api.md). `POST /api/vendor/imports` is the one endpoint the document describes less than it validates: its multipart upload is bounded by multer rather than by a schema, so the document has nothing to read and the row below is where that request is described.
+
 | Method | Path                         | Description                                                                                                             | Statuses                          |
 | ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
 | GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`                             |
@@ -157,6 +159,8 @@ vantage point each number was taken from, are in [docs/e2e-evidence/](./docs/e2e
 | POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`                      |
 | GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`                             |
 | GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`                      |
+| GET    | `/api/openapi.json`          | The OpenAPI 3.1 document, built per request from the schemas that validate the routes above                             | `200`                             |
+| GET    | `/api/docs`                  | Swagger UI over that document; it fetches the URL above rather than rendering a copy                                    | `200`                             |
 
 Query parameters, the error envelope, validation and the `status` / `state` distinction are in
 [docs/api.md](./docs/api.md).
