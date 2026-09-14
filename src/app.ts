@@ -22,6 +22,7 @@ import { CancelPromotionCommand } from './modules/promotion/commands/cancel-prom
 import { FindPromotionQuery } from './modules/promotion/queries/find-promotion-query.js';
 import { ListPromotionsQuery } from './modules/promotion/queries/list-promotions-query.js';
 import { promotionRoutes } from './modules/promotion/http/promotion-routes.js';
+import { DependencyReadiness } from './shared/dependency-readiness.js';
 import { errorHandler } from './shared/http/error-handler.js';
 import { httpLogger } from './shared/http/http-logger.js';
 
@@ -44,8 +45,21 @@ export function createApp({
   app.use(express.json({ limit: BODY_LIMIT }));
 
   const api = express.Router();
+  // Liveness, not readiness: the compose healthcheck calls this and every worker
+  // waits on `api` being healthy, so a route that failed when a store was down
+  // would keep the workers that repair it from ever starting (ADR-0003).
   api.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
+  });
+  const readiness = new DependencyReadiness(db, products);
+  api.get('/ready', (_req, res, next) => {
+    readiness
+      .check()
+      .then((dependencies) => {
+        const ready = dependencies.postgres === 'up' && dependencies.redis === 'up';
+        res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'degraded', dependencies });
+      })
+      .catch(next);
   });
   // Both mount on /products: the read side answers GET, the write side POST.
   api.use(

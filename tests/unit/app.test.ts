@@ -179,3 +179,43 @@ describe('GET /api/health', () => {
     expect(res.body).toEqual({ error: { message: 'Route not found' } });
   });
 });
+
+describe('GET /api/ready', () => {
+  const stores = (dbUp: boolean, redisUp: boolean) =>
+    appDeps({
+      db: {
+        execute: () => (dbUp ? Promise.resolve([]) : Promise.reject(new Error('refused'))),
+      },
+      products: {
+        ping: () => (redisUp ? Promise.resolve('PONG') : Promise.reject(new Error('refused'))),
+      },
+    } as never);
+
+  it('answers 200 and names both stores when each one replies', async () => {
+    const res = await request(createApp(stores(true, true))).get('/api/ready');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'ready', dependencies: { postgres: 'up', redis: 'up' } });
+  });
+
+  it('answers 503 naming the store that is down, rather than a bare failure', async () => {
+    // The point of the route is which one: a load balancer needs the code and an
+    // operator needs the name, and a 503 with neither sends them to the logs.
+    const res = await request(createApp(stores(true, false))).get('/api/ready');
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({
+      status: 'degraded',
+      dependencies: { postgres: 'up', redis: 'down' },
+    });
+  });
+
+  it('keeps /api/health answering 200 while a store is down', async () => {
+    // Liveness, not readiness: every worker waits on `api` being healthy, so a
+    // health route that failed here would stop the workers that repair it from
+    // ever starting.
+    const res = await request(createApp(stores(false, false))).get('/api/health');
+
+    expect(res.status).toBe(200);
+  });
+});
