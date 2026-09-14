@@ -13,7 +13,7 @@ import { EventQueue } from '../src/shared/queue/event-queue.js';
  *
  *   npm run ingest -- <file> [vendor]
  *
- * There is no upload endpoint — issue #15 was not planned — so this is the entry
+ * The upload endpoint (issue #15) is not built yet, so this is the entry
  * point, and the work it does is `RegisterImportCommand`'s so that it is testable.
  * The worker does the rest.
  */

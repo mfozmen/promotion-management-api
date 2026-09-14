@@ -18,7 +18,7 @@ interface Registration {
  * Turns a vendor file into an import: one job row, one chunk row per byte range,
  * and one `chunk.process` job per chunk.
  *
- * There is no upload endpoint — issue #15 was not planned — so this is reached
+ * The upload endpoint (issue #15) is not built yet, so this is reached
  * from `npm run ingest -- <file>` and the file is already on disk.
  */
 export class RegisterImportCommand {
