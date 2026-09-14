@@ -1,20 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { ProductSourceRepository } from '@src/modules/storefront/db/product-source-repository.js';
 import { products } from '@src/modules/product/db/schema/products.js';
+import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
 import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
 
 /** `id` is `generated always`, so the database chooses it and the test reads it
  *  back rather than inventing one. */
-async function insert(rows: { sku: string; pricingRulesVersion?: number }[]): Promise<number[]> {
+async function insert(
+  rows: { sku: string; pricingRulesVersion?: number }[],
+  // A category of its own per test: the exclusion constraints are all-time, so
+  // one test's category promotion would refuse the next test's insert.
+  category = 'knitwear',
+): Promise<number[]> {
   const inserted = await db()
     .insert(products)
     .values(
       rows.map(({ sku, pricingRulesVersion }) => ({
         sku,
         name: `Product ${sku}`,
-        category: 'knitwear',
+        category,
         basePriceCents: 10_000,
         stockQuantity: 5,
         ...(pricingRulesVersion === undefined ? {} : { pricingRulesVersion }),
@@ -25,7 +31,84 @@ async function insert(rows: { sku: string; pricingRulesVersion?: number }[]): Pr
   return inserted.map(({ id }) => id);
 }
 
+/** A running promotion, unless the caller moves the window or the status. */
+async function promote(
+  target: { productId: number } | { category: string },
+  over: Partial<typeof promotions.$inferInsert> = {},
+): Promise<number> {
+  const [inserted] = await db()
+    .insert(promotions)
+    .values({
+      name: 'Winter sale',
+      discountType: 'percentage',
+      value: 2_000,
+      startsAt: new Date(Date.now() - 60_000),
+      endsAt: new Date(Date.now() + 3_600_000),
+      status: 'active',
+      ...target,
+      ...over,
+    })
+    .returning({ id: promotions.id });
+
+  return inserted!.id;
+}
+
 describe('ProductSourceRepository', () => {
+  it('carries the product own promotion as a candidate', async () => {
+    const [one] = await insert([{ sku: 'SKU-J' }]);
+    const promotionId = await promote({ productId: one! });
+
+    const { rows } = await new ProductSourceRepository(db()).read([one!]);
+
+    expect(rows[0]?.productPromotion).toEqual({
+      id: promotionId,
+      name: 'Winter sale',
+      discountType: 'percentage',
+      value: 2_000,
+    });
+    expect(rows[0]?.categoryPromotion).toBeNull();
+  });
+
+  it('carries the category promotion as the other candidate', async () => {
+    const [one] = await insert([{ sku: 'SKU-K' }], 'coats');
+    const promotionId = await promote({ category: 'coats' });
+
+    const { rows } = await new ProductSourceRepository(db()).read([one!]);
+
+    expect(rows[0]?.categoryPromotion).toMatchObject({ id: promotionId, value: 2_000 });
+    expect(rows[0]?.productPromotion).toBeNull();
+  });
+
+  it('carries both when both are running, because the resolver chooses between them', async () => {
+    const [one] = await insert([{ sku: 'SKU-L' }], 'scarves');
+    await promote({ productId: one! }, { name: 'Its own' });
+    await promote({ category: 'scarves' }, { name: 'The sale' });
+
+    const { rows } = await new ProductSourceRepository(db()).read([one!]);
+
+    expect(rows[0]?.productPromotion?.name).toBe('Its own');
+    expect(rows[0]?.categoryPromotion?.name).toBe('The sale');
+  });
+
+  it('leaves out a promotion that is not running, on the database clock alone', async () => {
+    const [one] = await insert([{ sku: 'SKU-M' }], 'hats');
+    await promote({ productId: one! }, { status: 'cancelled' });
+    await promote(
+      { category: 'hats' },
+      {
+        startsAt: new Date(Date.now() + 3_600_000),
+        endsAt: new Date(Date.now() + 7_200_000),
+      },
+    );
+
+    const { rows } = await new ProductSourceRepository(db()).read([one!]);
+
+    // A second opinion about the window in TypeScript is what publishes a
+    // discount for a promotion SQL considers expired.
+    expect(rows[0]?.productPromotion).toBeNull();
+    expect(rows[0]?.categoryPromotion).toBeNull();
+  });
+
   it('reads the rows a recompute works from', async () => {
     const [one, two] = await insert([{ sku: 'SKU-A' }, { sku: 'SKU-B' }]);
 
@@ -53,6 +136,16 @@ describe('ProductSourceRepository', () => {
     const { rows } = await new ProductSourceRepository(db()).read([one!, 999_999]);
 
     expect(rows.map((r) => r.id)).toEqual([one]);
+  });
+
+  it('pages a category by the last id it saw, in the order the index holds', async () => {
+    const ids = await insert([{ sku: 'SKU-N1' }, { sku: 'SKU-N2' }, { sku: 'SKU-N3' }], 'jumpers');
+    await insert([{ sku: 'SKU-N4' }], 'socks');
+    const source = new ProductSourceRepository(db());
+
+    await expect(source.idsInCategory('jumpers', 0)).resolves.toEqual(ids);
+    await expect(source.idsInCategory('jumpers', ids[1]!)).resolves.toEqual([ids[2]]);
+    await expect(source.idsInCategory('jumpers', ids[2]!)).resolves.toEqual([]);
   });
 
   it('reads the instant from the database clock, as epoch microseconds', async () => {

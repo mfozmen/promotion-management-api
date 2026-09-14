@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import { ListProductsQuery } from '@src/modules/storefront/queries/list-products-query.js';
+import { captureLogger } from '../../../capture-logger.js';
 
 const row = (id: string, price = '10000') => ({
   id,
@@ -24,8 +25,24 @@ function products(over: Partial<Record<string, unknown>> = {}) {
 }
 
 describe('ListProductsQuery', () => {
+  it('names the members it dropped, so a short page is not read as a paging bug', async () => {
+    const { logger, lines } = captureLogger();
+    const gappy = products({
+      page: () => Promise.resolve(['1', '2']),
+      count: () => Promise.resolve(2),
+      findAll: () => Promise.resolve([row('1'), undefined]),
+    });
+
+    const result = await new ListProductsQuery(gappy, logger).execute(input);
+
+    // The page is short and `total` still says two: without this line that
+    // reads as a paging bug rather than as the read model being behind.
+    expect(result.items).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ level: 40, productIds: ['2'] });
+  });
+
   it('builds the page a client reads, with the total beside it', async () => {
-    const result = await new ListProductsQuery(products()).execute(input);
+    const result = await new ListProductsQuery(products(), captureLogger().logger).execute(input);
 
     expect(result).toMatchObject({ page: 1, pageSize: 20, total: 1 });
     expect(result.items).toHaveLength(1);
@@ -46,7 +63,7 @@ describe('ListProductsQuery', () => {
       },
     });
 
-    await new ListProductsQuery(model).execute(input);
+    await new ListProductsQuery(model, captureLogger().logger).execute(input);
 
     expect(asked).toEqual([undefined, undefined]);
   });
@@ -67,7 +84,10 @@ describe('ListProductsQuery', () => {
       findAll: () => Promise.resolve([]),
     });
 
-    await new ListProductsQuery(model).execute({ ...input, category: 'knitwear' });
+    await new ListProductsQuery(model, captureLogger().logger).execute({
+      ...input,
+      category: 'knitwear',
+    });
 
     expect(asked).toEqual(['knitwear', 'knitwear']);
   });
@@ -75,7 +95,7 @@ describe('ListProductsQuery', () => {
   it('drops a member whose entry is gone rather than failing the page', async () => {
     const model = products({ findAll: () => Promise.resolve([row('1'), undefined]) });
 
-    const result = await new ListProductsQuery(model).execute(input);
+    const result = await new ListProductsQuery(model, captureLogger().logger).execute(input);
 
     expect(result.items).toHaveLength(1);
   });
@@ -92,7 +112,11 @@ describe('ListProductsQuery', () => {
       findAll: () => Promise.resolve([]),
     });
 
-    await new ListProductsQuery(model).execute({ ...input, page: 3, pageSize: 20 });
+    await new ListProductsQuery(model, captureLogger().logger).execute({
+      ...input,
+      page: 3,
+      pageSize: 20,
+    });
 
     expect(seen).toBe(40);
   });
@@ -101,7 +125,7 @@ describe('ListProductsQuery', () => {
     const unreachable = new Error('closed');
     const model = products({ page: () => Promise.reject(unreachable) });
 
-    const raised = await new ListProductsQuery(model)
+    const raised = await new ListProductsQuery(model, captureLogger().logger)
       .execute(input)
       .catch((error: unknown) => error);
 
