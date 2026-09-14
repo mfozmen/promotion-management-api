@@ -60,6 +60,35 @@ describe('queueDepth when Redis will not answer', () => {
     ]);
   });
 
+  it('says it once, and says when it comes back', async () => {
+    // Eight reads every five seconds is eight lines every five seconds for as long
+    // as Redis is away, and the line that says why is then the one an operator
+    // cannot find. The alert sends them to this log, so it has to be readable.
+    const { logger, lines } = captureLogger();
+    let answers = false;
+    queueDepth(
+      {
+        inspect: () => ({
+          getWaitingCount: () => (answers ? Promise.resolve(7) : Promise.reject(new Error('gone'))),
+          getFailedCount: () => Promise.resolve(0),
+        }),
+      },
+      ['promotions'],
+      logger,
+    );
+
+    await metricsRegistry.metrics();
+    await metricsRegistry.metrics();
+    answers = true;
+    const back = await metricsRegistry.metrics();
+
+    expect(lines.map((line) => line.msg)).toEqual([
+      'queue depth read failed',
+      'queue depth readable again',
+    ]);
+    expect(back).toContain('queue_waiting_jobs{queue="promotions"} 7');
+  });
+
   it('spends one timeout on four hung queues, not four', async () => {
     // Serially, four queues past the 2 s bound is 8 s, and Prometheus clamps a
     // scrape's timeout down to scrape_interval - so the whole endpoint is lost and

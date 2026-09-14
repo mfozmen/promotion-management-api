@@ -85,7 +85,15 @@ with was wrong.
 - **StorefrontSlow** was never reached: p99 on this stack is 42 ms quiet and 104 ms
   under a flash sale's recompute, both far under the provisional 300 ms bar
   (ADR-0012).
-- **QueueDepthUnreadable** was added after this run and is the paragraph above.
+- **QueueDepthUnreadable** did not exist when this stack ran; it came out of the
+  architecture review, as the note under the rule list above says. It was checked
+  the only way it could be before a stack runs again: `promtool test rules` against
+  both depths at `-1` for one queue, which produced exactly one alert carrying the
+  queue label. That run also settled a real suspicion about it - that `or` between
+  two metrics would collide on an identical labelset once `__name__` is dropped and
+  error the evaluation out. Set operators match ignoring `__name__`, so it does
+  not. That is a fixture, not a firing, and `alerts-11` is the case that will fire
+  it by pausing Redis rather than stopping it.
 
 ## Vantage
 

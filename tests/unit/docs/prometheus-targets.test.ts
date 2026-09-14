@@ -122,9 +122,12 @@ describe('the alert rules', () => {
     // reading a metric nobody exports.
     const wiring = await read('src/workers/reconciler.ts');
 
-    expect(wiring).toContain(
-      "queueDepth(queue, ['promotions', 'products', 'ingestion', 'maintenance']",
-    );
+    // Matched loosely: a re-wrap of that call would fail an exact substring with
+    // no behaviour change.
+    expect(wiring).toMatch(/queueDepth\(\s*queue,/);
+    for (const queue of ['promotions', 'products', 'ingestion', 'maintenance']) {
+      expect(wiring).toContain(`'${queue}'`);
+    }
   });
 
   it('says what to do, not only what happened', async () => {
