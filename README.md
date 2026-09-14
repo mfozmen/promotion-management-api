@@ -143,6 +143,16 @@ most once per run: a retried job that fails again re-enters the set while the co
 walking it, so a loop that stopped only when the set emptied would never stop against a consumer
 that rejects everything.
 
+[`docs/postman/ModaCo.postman_collection.json`](./docs/postman/ModaCo.postman_collection.json)
+is a Postman collection for every endpoint in the table above, with assertions rather than bare
+requests. Import it, bring the stack up with `npm run up`, and run the folders in order: **1
+Health**, **2 Storefront**, **3 Promotions**, **4 Vendor import**, **5 Refusals** — every request
+in that last folder is expected to fail, and a 2xx there is the finding. `baseUrl` defaults to
+`http://127.0.0.1:3100/api`; the upload request needs a file picked by hand, for which
+`fixtures/vendor-sample.csv` is the one to choose. Propagation is asynchronous, so a storefront
+assertion run immediately after a write may need a second attempt: that is the design rather than
+a flaky test.
+
 Demo data. Once the schema is up, one more command fills it:
 
 ```bash
