@@ -1153,19 +1153,25 @@ signal that reports the first is read as the second.
 Evidence: `docker compose up -d --wait` called two containers healthy while
 neither published its port, because the healthcheck runs inside the container.
 
-13.14 **A number states what produced it, or it is deleted.** A figure in a
-document is read as a decision someone made, so a measured one names the run,
-the machine and the accounting it came from; a chosen one says it was chosen;
-and one with neither behind it goes. The places that reach for a quantity are
-trade-offs and pass conditions rather than context or decision paragraphs, so
-that is where to look.
+13.14 **A number states what produced it and what it is compared against, or
+it is deleted.** A figure in a document is read as a decision someone made, so a
+measured one names the run, the machine and the accounting it came from; a
+chosen one says it was chosen; and one with neither behind it goes. Two figures
+in one sentence are two measurements until proved otherwise: a host process's
+resident memory and a container's own accounting are different quantities, and
+putting them either side of "against" asserts a comparison neither supports. The
+places that reach for a quantity are trade-offs and pass conditions rather than
+context or decision paragraphs, so that is where to look.
 
 Evidence: an appendix entry sourced a `130-192 ms p99` for `GET /api/health` to
 "the project's own ADR", which records no p99 for any route; the same sweep found
 a healthy-in-6.4 s figure that belonged to the healthcheck it replaced, a 5-second
 propagation bound with no run behind it, and a 100 ms pass condition sitting
 inside its own machine's 106-to-63 ms variance. Every one of the four read
-fluently because the method was missing.
+fluently because the method was missing. The comparison half has its own count:
+host RSS was measured against a cgroup limit in four places in one day — an ADR
+trade-off, an agent's pass condition, a case file's measure line and a run
+report — and each read as one quantity because both were spelled in megabytes.
 
 ## 13b. The rulebook learns
 
