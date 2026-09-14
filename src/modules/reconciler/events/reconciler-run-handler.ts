@@ -16,6 +16,7 @@ interface Drift {
 export class ReconcilerRunHandler {
   constructor(
     private readonly sweep: Sweep,
+    private readonly imports: Sweep,
     private readonly drift: Drift,
     private readonly logger: Logger,
   ) {}
@@ -28,6 +29,9 @@ export class ReconcilerRunHandler {
    *  exactly like one with nothing to repair. */
   async handle(): Promise<void> {
     await this.sweep.execute();
+    // An import whose worker died holds its vendor's next one out until a chunk
+    // is re-enqueued, and nothing else ever asks (issue #134).
+    await this.imports.execute();
 
     const repaired = await this.drift.execute();
     if (repaired > 0) this.logger.warn({ repaired }, 'categories repaired by the drift check');

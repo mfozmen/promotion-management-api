@@ -1,6 +1,8 @@
 import { Worker } from 'bullmq';
 import { RepairDriftCommand } from '../modules/reconciler/commands/repair-drift-command.js';
 import { SweepBoundariesCommand } from '../modules/reconciler/commands/sweep-boundaries-command.js';
+import { SweepOrphanChunksCommand } from '../modules/reconciler/commands/sweep-orphan-chunks-command.js';
+import { OrphanChunkRepository } from '../modules/reconciler/db/orphan-chunk-repository.js';
 import { BoundaryRepository } from '../modules/reconciler/db/boundary-repository.js';
 import { ReconcilerRunHandler } from '../modules/reconciler/events/reconciler-run-handler.js';
 import { MaintenanceDispatcher } from '../events/maintenance-dispatcher.js';
@@ -33,6 +35,7 @@ const {
 const handler = new MaintenanceDispatcher(
   new ReconcilerRunHandler(
     new SweepBoundariesCommand(new BoundaryRepository(db), queue, logger),
+    new SweepOrphanChunksCommand(new OrphanChunkRepository(db), queue, logger),
     new RepairDriftCommand(source, listing, rebuildCategory, driftRepairs, logger),
     logger,
   ),
