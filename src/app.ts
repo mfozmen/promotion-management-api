@@ -1,5 +1,6 @@
 import express, { type Express } from 'express';
 import createError from 'http-errors';
+import promBundle from 'express-prom-bundle';
 import type { AppDependencies } from './app-dependencies.js';
 import { metricsRegistry } from './shared/metrics/metrics-registry.js';
 import { createBullBoard } from '@bull-board/api';
@@ -27,6 +28,17 @@ import { httpLogger } from './shared/http/http-logger.js';
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
 
+// Built once, not per app: the registry is the process's, and a second histogram of the same name
+// is a registration error. The path label is the pattern the library derives, never the request's
+// own path — one series per product id is how the endpoint added to watch memory becomes the
+// memory problem.
+const requestMetrics = promBundle({
+  autoregister: false,
+  includeMethod: true,
+  includePath: true,
+  promRegistry: metricsRegistry,
+});
+
 export function createApp({
   logger,
   db,
@@ -39,6 +51,7 @@ export function createApp({
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');
   app.use(httpLogger(logger));
+  app.use(requestMetrics);
   app.use(express.json({ limit: BODY_LIMIT }));
 
   const api = express.Router();

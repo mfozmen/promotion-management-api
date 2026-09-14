@@ -39,6 +39,18 @@ describe('GET /metrics', () => {
     );
     vi.restoreAllMocks();
   });
+
+  it('counts a request under its route pattern, never the id in the path', async () => {
+    // One series per product is how the endpoint added to watch memory becomes the memory
+    // problem. The library normalises; this asserts the id it normalised away is not a label.
+    const app = createApp(appDeps());
+    await request(app).get('/api/products/12345');
+
+    const res = await request(app).get('/metrics');
+
+    expect(res.text).toContain('http_request_duration_seconds');
+    expect(res.text).not.toContain('12345');
+  });
 });
 
 describe('unknown routes', () => {

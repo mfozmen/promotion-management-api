@@ -5,8 +5,11 @@ import { startWorker } from '../../../src/workers/start-worker.js';
 
 // The listener is real HTTP; six tests binding the same port is a flake, and what this file is
 // about is the queue and the shutdown rather than the socket.
+const closeMetrics = vi.fn((done: () => void) => {
+  done();
+});
 vi.mock('../../../src/shared/metrics/serve-metrics.js', () => ({
-  serveMetrics: () => ({ close: (done: () => void) => done() }),
+  serveMetrics: () => ({ close: closeMetrics }),
 }));
 
 /** What every entry point runs, whatever else it wires up afterwards. */
@@ -83,6 +86,9 @@ describe('startWorker', () => {
 
     expect(pool).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
+    // Without this the listener leaks: the mock's `close` was never asserted, so deleting the
+    // line that closes it left every test green.
+    expect(closeMetrics).toHaveBeenCalledOnce();
   });
 
   it('exits anyway when a close never settles, rather than waiting for SIGKILL', async () => {
