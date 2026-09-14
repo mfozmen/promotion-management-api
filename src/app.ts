@@ -1,6 +1,9 @@
 import express, { type Express } from 'express';
 import createError from 'http-errors';
 import type { AppDependencies } from './app-dependencies.js';
+import { measureRequests } from './shared/metrics/request-duration.js';
+import { metricsRegistry } from './shared/metrics/metrics-registry.js';
+import { dependencyUp } from './shared/metrics/dependency-up.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -38,6 +41,7 @@ export function createApp({
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');
   app.use(httpLogger(logger));
+  app.use(measureRequests());
   app.use(express.json({ limit: BODY_LIMIT }));
 
   const api = express.Router();
@@ -48,6 +52,7 @@ export function createApp({
     res.status(200).json({ status: 'ok' });
   });
   const readiness = new DependencyReadiness(db, products);
+  dependencyUp(readiness);
   api.get('/ready', (_req, res, next) => {
     readiness
       .check()
@@ -84,6 +89,15 @@ export function createApp({
     }),
   );
   app.use('/api', api);
+
+  // Outside `/api` for the same reason the board is: a scrape is not part of this API's
+  // contract and must not be wrapped in its error envelope (ADR-0009).
+  app.get('/metrics', (_req, res) => {
+    void metricsRegistry
+      .metrics()
+      .then((body) => res.type(metricsRegistry.contentType).send(body))
+      .catch(() => res.status(500).end());
+  });
 
   // Outside `/api` and outside the envelope: the board serves its own HTML and its own
   // error pages, so it is not part of this API's contract (ADR-0009).

@@ -1,7 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ReconcilerRunHandler } from '@src/modules/reconciler/events/reconciler-run-handler.js';
+import { boundaryRepairs } from '@src/shared/metrics/boundary-repairs.js';
+import { metricsRegistry } from '@src/shared/metrics/metrics-registry.js';
 
 describe('ReconcilerRunHandler', () => {
+  it('counts what the sweep repaired, so a scrape can answer "one per boundary"', async () => {
+    metricsRegistry.resetMetrics();
+    const sweep = { execute: vi.fn<() => Promise<number>>().mockResolvedValue(4) };
+
+    await new ReconcilerRunHandler(sweep).handle('reconciler.run');
+
+    expect(await boundaryRepairs.get()).toMatchObject({ values: [{ value: 4 }] });
+  });
+
   it('runs the sweep', async () => {
     const sweep = { execute: vi.fn<() => Promise<number>>().mockResolvedValue(0) };
 

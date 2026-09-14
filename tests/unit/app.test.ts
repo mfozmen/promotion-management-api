@@ -10,6 +10,19 @@ const deps = (logger: Logger) => appDeps({ logger });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+describe('GET /metrics', () => {
+  it('serves the registry outside `/api`, so a scrape is not part of the API contract', async () => {
+    const res = await request(createApp(appDeps())).get('/metrics');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('http_request_duration_seconds');
+  });
+
+  it('is not under the /api prefix, where the error envelope would wrap it', async () => {
+    expect((await request(createApp(appDeps())).get('/api/metrics')).status).toBe(404);
+  });
+});
+
 describe('unknown routes', () => {
   it('does not advertise the framework it runs on', async () => {
     const res = await request(createApp(deps(rootLogger))).get('/api/health');

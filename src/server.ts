@@ -10,6 +10,7 @@ import { logger } from './shared/logger.js';
 import { ProductReadRepository } from './modules/storefront/db/product-read-repository.js';
 import { createReadModelClient } from './shared/read-model-client.js';
 import { EventQueue } from './shared/queue/event-queue.js';
+import { queueDepth } from './shared/metrics/queue-depth.js';
 
 const config = loadConfig();
 
@@ -23,6 +24,9 @@ const queue = EventQueue.connect(
   eventRegistry,
   eventRouting,
 );
+// Read at scrape time from the handles this process already holds.
+queueDepth(queue.all());
+
 const app = createApp({
   logger,
   db: createDb(pool),
