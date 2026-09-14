@@ -7,6 +7,7 @@ import {
 } from '@src/modules/storefront/db/product-write-repository.js';
 import { ProductUpsertedHandler } from '@src/modules/storefront/events/product-upserted-handler.js';
 import { products } from '@src/modules/product/db/schema/products.js';
+import { pino } from 'pino';
 import { useTestDatabase } from '../../../db.js';
 import { useTestRedis } from '../../../redis.js';
 
@@ -43,6 +44,7 @@ function handler(): ProductUpsertedHandler {
   return new ProductUpsertedHandler(
     new ProductSourceRepository(db()),
     new ProductWriteRepository(redis()),
+    pino({ level: 'silent' }),
   );
 }
 

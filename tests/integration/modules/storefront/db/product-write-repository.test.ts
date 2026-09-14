@@ -122,6 +122,30 @@ describe('ProductWriteRepository', () => {
     expect(await read.find(1)).not.toHaveProperty('pricingRulesVersion');
   });
 
+  it('keeps a category that contains a colon whole, so the token splits on the first', async () => {
+    // The token is `<microseconds>:<category>` and category is free text, so a
+    // colon in the name is what tells a first-colon split from a last one.
+    await write.write(entry({ category: 'knitwear:winter' }), EARLY);
+
+    await write.write(entry({ category: 'coats' }), LATER);
+
+    expect(
+      await redis().zscore(ProductReadRepository.categoryKey('knitwear:winter'), '1'),
+    ).toBeNull();
+  });
+
+  it('lets exactly one of two writers at the same product win', async () => {
+    const [first, second] = await Promise.all([
+      write.write(entry({ effectivePriceCents: 8_000 }), LATER),
+      write.write(entry({ effectivePriceCents: 5_000 }), EARLY),
+    ]);
+
+    // Whichever order the server ran them in, the later read is the price that
+    // stands and the earlier one is refused.
+    expect([first, second]).toContain(false);
+    expect(await redis().zscore(ProductReadRepository.ALL_PRODUCTS, '1')).toBe('8000');
+  });
+
   it('treats an absent token as never written, so the first write applies', async () => {
     expect(await redis().hget(ProductWriteRepository.TOKENS, '1')).toBeNull();
 

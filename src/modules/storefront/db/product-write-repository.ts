@@ -71,16 +71,67 @@ export class ProductWriteRepository {
    *  sees it, and a catalogue costs one key instead of one per product. */
   static readonly TOKENS = 'readmodel:source-read-at';
 
+  /** The chunk the spec asks for: a pipeline of a million commands is one reply
+   *  array held in memory on both ends. */
+  static readonly CHUNK = 1_000;
+
   constructor(private readonly redis: Redis) {
     // Sends each body once and calls it by SHA afterwards.
     redis.defineCommand('writeProductEntry', { numberOfKeys: 4, lua: WRITE });
     redis.defineCommand('removeProductEntry', { numberOfKeys: 3, lua: REMOVE });
   }
 
-  /** False when an equal or later token was already stored: that caller's read
-   *  of PostgreSQL was not the newest. */
+  /** One round trip per thousand products, never one per product. Each answer
+   *  is false when an equal or later token already stood: that caller's read of
+   *  PostgreSQL was not the newest. */
+  async writeAll(entries: readonly ProductEntry[], sourceReadAt: string): Promise<boolean[]> {
+    return this.appliedAll(
+      'writeProductEntry',
+      entries.map((entry) => [
+        ProductWriteRepository.TOKENS,
+        ProductReadRepository.productKey(entry.id),
+        ProductReadRepository.categoryKey(entry.category),
+        ProductReadRepository.ALL_PRODUCTS,
+        String(entry.id),
+        sourceReadAt,
+        // The key the product may be leaving is not known until Lua reads the
+        // token, so the prefix travels and the name is joined there.
+        ProductReadRepository.categoryKey(''),
+        String(entry.effectivePriceCents),
+        entry.category,
+        ...ProductWriteRepository.fieldsOf(entry, sourceReadAt),
+      ]),
+    );
+  }
+
+  /** The category comes from the token rather than the caller: a row PostgreSQL
+   *  no longer holds cannot say which set it was scored in. */
+  async removeAll(ids: readonly number[], sourceReadAt: string): Promise<boolean[]> {
+    return this.appliedAll(
+      'removeProductEntry',
+      ids.map((id) => [
+        ProductWriteRepository.TOKENS,
+        ProductReadRepository.productKey(id),
+        ProductReadRepository.ALL_PRODUCTS,
+        String(id),
+        sourceReadAt,
+        ProductReadRepository.categoryKey(''),
+      ]),
+    );
+  }
+
   async write(entry: ProductEntry, sourceReadAt: string): Promise<boolean> {
-    const fields: string[] = [
+    return (await this.writeAll([entry], sourceReadAt))[0]!;
+  }
+
+  async remove(id: number, sourceReadAt: string): Promise<boolean> {
+    return (await this.removeAll([id], sourceReadAt))[0]!;
+  }
+
+  /** `updatedAt` is rendered from the token, so the entry carries one clock and
+   *  it is the database's. */
+  private static fieldsOf(entry: ProductEntry, sourceReadAt: string): string[] {
+    const fields = [
       'id',
       String(entry.id),
       'sku',
@@ -96,7 +147,7 @@ export class ProductWriteRepository {
       'stockQuantity',
       String(entry.stockQuantity),
       'updatedAt',
-      new Date().toISOString(),
+      new Date(Number(sourceReadAt) / 1000).toISOString(),
     ];
     // Both or neither (ADR-0006).
     if (entry.promotionId !== undefined && entry.promotionName !== undefined) {
@@ -106,40 +157,29 @@ export class ProductWriteRepository {
       fields.push('pricingRulesVersion', String(entry.pricingRulesVersion));
     }
 
-    return this.applied('writeProductEntry', [
-      ProductWriteRepository.TOKENS,
-      ProductReadRepository.productKey(entry.id),
-      ProductReadRepository.categoryKey(entry.category),
-      ProductReadRepository.ALL_PRODUCTS,
-      String(entry.id),
-      sourceReadAt,
-      // The key the product may be leaving is not known until Lua reads the
-      // token, so the prefix travels and the name is joined there.
-      ProductReadRepository.categoryKey(''),
-      String(entry.effectivePriceCents),
-      entry.category,
-      ...fields,
-    ]);
-  }
-
-  /** The category comes from the token rather than the caller: a row PostgreSQL
-   *  no longer holds cannot say which set it was scored in. */
-  async remove(id: number, sourceReadAt: string): Promise<boolean> {
-    return this.applied('removeProductEntry', [
-      ProductWriteRepository.TOKENS,
-      ProductReadRepository.productKey(id),
-      ProductReadRepository.ALL_PRODUCTS,
-      String(id),
-      sourceReadAt,
-      ProductReadRepository.categoryKey(''),
-    ]);
+    return fields;
   }
 
   /** `defineCommand` adds the method at runtime, which the ioredis types do not
    *  see; the script returns 0 when an equal or later token already stood. */
-  private async applied(name: string, args: string[]): Promise<boolean> {
-    const redis = this.redis as unknown as Record<string, (...a: string[]) => Promise<unknown>>;
+  private async appliedAll(name: string, calls: string[][]): Promise<boolean[]> {
+    const applied: boolean[] = [];
 
-    return (await redis[name]!.call(this.redis, ...args)) === 1;
+    for (let from = 0; from < calls.length; from += ProductWriteRepository.CHUNK) {
+      const chunk = calls.slice(from, from + ProductWriteRepository.CHUNK);
+      const pipeline = this.redis.pipeline();
+      const queue = pipeline as unknown as Record<string, (...a: string[]) => unknown>;
+      for (const args of chunk) queue[name]!.call(pipeline, ...args);
+
+      // `exec` resolves with each reply's error rather than rejecting, so a
+      // failed script in the middle of a pipeline is only visible here.
+      const replies = (await pipeline.exec()) ?? [];
+      for (const [error, reply] of replies) {
+        if (error !== null) throw error;
+        applied.push(reply === 1);
+      }
+    }
+
+    return applied;
   }
 }
