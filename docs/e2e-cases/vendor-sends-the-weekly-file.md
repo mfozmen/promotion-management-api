@@ -54,9 +54,13 @@ Test cases
 - Precondition: `POST /api/vendor/imports`
 - Given: a file the vendor has already uploaded, whose import is registered
 - When: the vendor uploads the identical file again
-- Then: it is refused as a duplicate and the answer carries the first import's job id, so the
-  vendor can poll that one instead of starting a second run over the same rows
+- Then: it is refused as a duplicate, and the answer names no import
 - Measure: none
+- Why not the job id: issue #15's criterion asked for `409 { code, details: { jobId } }`, and
+  ADR-0009's envelope carries neither field. `file_sha256` is unique globally rather than per
+  vendor, so the import collided with is usually another vendor's, and nothing authenticates
+  the caller — `vendor` is a form field anyone can type. The id cannot be handed over, so the
+  answer is the bare sentence.
 
 ## S2 Every row goes through ModaCo's pricing rules
 
