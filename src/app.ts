@@ -67,7 +67,7 @@ export function createApp({
     productReadRoutes({
       readiness: new ReadModelReadinessQuery(products),
       find: new FindProductQuery(products),
-      list: new ListProductsQuery(products),
+      list: new ListProductsQuery(products, logger),
     }),
   );
   // The use cases are built here from the repositories, so a route receives
