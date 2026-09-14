@@ -61,13 +61,18 @@ process that migrates.
   against — and runs with `NODE_OPTIONS=--max-old-space-size=192` so V8's heap ceiling sits under
   that cap.
 
-  **Measured on 500 000 rows**: 500 000 products stored in 29 seconds with none rejected, across
-  six chunks. The worker reports its own memory as each chunk finishes, and `heapUsed` was 24, 25,
-  25, 25, 25 and 36 MB — **flat across all six chunks**, which is the property that matters rather
+  **Measured on 500 000 rows, inside this container**, under its own 256 MiB and half a CPU:
+  500 000 products stored with none rejected, across six chunks, `status = completed` and
+  `rows_processed = 500000`.
+
+  Two numbers, because they answer different questions. The **container's own accounting** —
+  what the kernel enforces and would kill on — peaked at **49.9 MiB of 256 MiB, 19.5 %**, with CPU
+  pegged at the 0.5 limit while working and idle at zero after. **V8's heap inside it**, which is
+  what `--max-old-space-size=192` bounds, reported 25, 22, 22, 22, 22 and 18 MB as each chunk
+  finished — **flat from the first chunk to the last**, which is the property that matters rather
   than the peak: nothing accumulates as the file is consumed, so a larger file costs time and not
-  memory. Resident size stayed near 134 MB. Those are the process's own numbers, taken from inside
-  it; the container's accounting is a different measurement and is not claimed here, because the
-  image was built before the worker consumed anything.
+  memory. The worker reports its own figures because a host-side sampler cannot see a container
+  boundary and counts every other process on the machine.
 
 Each start-up line carries a `consuming` list: `maintenance` for the reconciler, empty for the
 other two, so an idle queue is not read as a drained one. None of the three has a healthcheck, so
