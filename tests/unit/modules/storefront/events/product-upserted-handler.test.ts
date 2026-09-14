@@ -5,6 +5,7 @@ import type { ProductWriteRepository } from '@src/modules/storefront/db/product-
 import { captureLogger } from '../../../capture-logger.js';
 
 const READ_AT = '1789380000000000';
+const LATER = '1789380001000000';
 
 const row = (id: number, over: Record<string, unknown> = {}) => ({
   id,
@@ -22,8 +23,8 @@ function collaborators(rows: ReturnType<typeof row>[]) {
     read: vi.fn().mockResolvedValue({ rows, sourceReadAt: READ_AT }),
   } as unknown as ProductSourceRepository;
   const write = {
-    writeAll: vi.fn((entries: unknown[]) => Promise.resolve(entries.map(() => true))),
-    removeAll: vi.fn((ids: unknown[]) => Promise.resolve(ids.map(() => true))),
+    writeAll: vi.fn((entries: unknown[]) => Promise.resolve(entries.map(() => undefined))),
+    removeAll: vi.fn((ids: unknown[]) => Promise.resolve(ids.map(() => undefined))),
   } as unknown as ProductWriteRepository;
   const { logger, lines } = captureLogger();
 
@@ -105,7 +106,7 @@ describe('ProductUpsertedHandler', () => {
 
   it('does not fail the batch when a write is refused by an older token', async () => {
     const { source, write, logger } = collaborators([row(1), row(2)]);
-    vi.mocked(write.writeAll).mockResolvedValueOnce([false, true]);
+    vi.mocked(write.writeAll).mockResolvedValueOnce([LATER, undefined]);
 
     await expect(
       new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1, 2] }),
@@ -114,14 +115,18 @@ describe('ProductUpsertedHandler', () => {
 
   it('names the products a refusal dropped, so an inversion is not silent', async () => {
     const { source, write, logger, lines } = collaborators([row(1), row(2)]);
-    vi.mocked(write.writeAll).mockResolvedValueOnce([false, true]);
+    vi.mocked(write.writeAll).mockResolvedValueOnce([LATER, undefined]);
 
     await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1, 2] });
 
     // ADR-0003 clause 4 will not widen the token without a count of the ties it
     // loses, and nothing can count what nothing records.
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({ level: 40, productIds: [1], sourceReadAt: READ_AT });
+    expect(lines[0]).toMatchObject({
+      level: 40,
+      refused: [{ productId: 1, storedToken: LATER }],
+      sourceReadAt: READ_AT,
+    });
   });
 
   it('says nothing when every write applied', async () => {
@@ -134,10 +139,10 @@ describe('ProductUpsertedHandler', () => {
 
   it('names a refused removal too', async () => {
     const { source, write, logger, lines } = collaborators([]);
-    vi.mocked(write.removeAll).mockResolvedValueOnce([false]);
+    vi.mocked(write.removeAll).mockResolvedValueOnce([LATER]);
 
     await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [9] });
 
-    expect(lines[0]).toMatchObject({ productIds: [9] });
+    expect(lines[0]).toMatchObject({ refused: [{ productId: 9, storedToken: LATER }] });
   });
 });

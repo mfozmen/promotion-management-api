@@ -67,6 +67,15 @@ describe('ProductWriteRepository', () => {
     expect(await write.write(entry({ effectivePriceCents: 1 }), EARLY)).toBe(false);
   });
 
+  it('answers with the token that beat it, so a tie is separable from a stale batch', async () => {
+    await write.write(entry(), LATER);
+
+    // An equal token is a tie; a larger one is an ordinary loss. ADR-0003
+    // clause 4 will not widen the token without being able to tell them apart.
+    expect(await write.writeAll([entry()], LATER)).toEqual([LATER]);
+    expect(await write.writeAll([entry()], EARLY)).toEqual([LATER]);
+  });
+
   it('leaves no field of an older entry behind when a newer one omits it', async () => {
     await write.write(entry({ promotionId: 7, promotionName: 'Winter sale' }), EARLY);
 

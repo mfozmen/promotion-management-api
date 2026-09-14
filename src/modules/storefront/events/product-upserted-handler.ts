@@ -42,13 +42,20 @@ export class ProductUpsertedHandler {
 
   /** A refused write is ordinary and does not fail the batch, but unrecorded it
    *  is indistinguishable from an inversion, and ADR-0003 clause 4 asks for the
-   *  count before it will widen the token. */
-  private report(sourceReadAt: string, ids: readonly number[], applied: readonly boolean[]): void {
-    const refused = ids.filter((_, index) => !applied[index]);
+   *  count before it will widen the token. The stored token rides along because
+   *  an equal one is a tie and a larger one is an ordinary loss. */
+  private report(
+    sourceReadAt: string,
+    ids: readonly number[],
+    outcomes: readonly (string | undefined)[],
+  ): void {
+    const refused = ids
+      .map((productId, index) => ({ productId, storedToken: outcomes[index] }))
+      .filter((refusal) => refusal.storedToken !== undefined);
 
     if (refused.length > 0)
       this.logger.warn(
-        { productIds: refused, sourceReadAt },
+        { refused, sourceReadAt },
         'read-model write refused by a newer or equal token',
       );
   }
