@@ -39,8 +39,9 @@ const handler = new MaintenanceDispatcher(
   rebuild,
 );
 
-// Every process that holds queue handles reports their depth; Prometheus keeps one
-// series per queue whichever of them answered the scrape.
+// One process reports the depths, and this is it: a queue's depth is shared state,
+// so four processes answering would be four copies of one number. The reconciler
+// is the one that is always running and consumes the least.
 queueDepth(queue, ['promotions', 'products', 'ingestion', 'maintenance']);
 
 const worker = new Worker(

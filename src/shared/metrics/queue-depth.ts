@@ -16,7 +16,25 @@ interface Depths {
  *
  * Read at scrape time: a gauge set on a timer would report the last moment the
  * timer fired, which is the interval Prometheus is already choosing.
+ *
+ * Each read is bounded, because these bypass `EventQueue.bounded()` — a Redis that
+ * accepts and never answers would otherwise hold the scrape open until Prometheus
+ * times it out, and the metrics endpoint is what an operator reaches for when Redis
+ * is the thing that is wrong.
  */
+const READ_TIMEOUT_MS = 2_000;
+
+/** A depth nobody could read is reported as -1 rather than as zero: zero is a
+ *  queue that is empty, and an alert on either must be able to tell them apart. */
+async function within(read: Promise<number>): Promise<number> {
+  // Definite assignment: the executor runs before the race is handed back.
+  let timer!: NodeJS.Timeout;
+  const capped = new Promise<number>((resolve) => {
+    timer = setTimeout(() => resolve(-1), READ_TIMEOUT_MS);
+  });
+  return Promise.race([read.catch(() => -1), capped]).finally(() => clearTimeout(timer));
+}
+
 export function queueDepth(queues: Depths, names: readonly QueueName[]): Gauge[] {
   const waiting = new Gauge({
     name: 'queue_waiting_jobs',
@@ -25,7 +43,7 @@ export function queueDepth(queues: Depths, names: readonly QueueName[]): Gauge[]
     registers: [metricsRegistry],
     collect: async function () {
       for (const name of names)
-        this.set({ queue: name }, await queues.inspect(name).getWaitingCount());
+        this.set({ queue: name }, await within(queues.inspect(name).getWaitingCount()));
     },
   });
 
@@ -36,7 +54,7 @@ export function queueDepth(queues: Depths, names: readonly QueueName[]): Gauge[]
     registers: [metricsRegistry],
     collect: async function () {
       for (const name of names)
-        this.set({ queue: name }, await queues.inspect(name).getFailedCount());
+        this.set({ queue: name }, await within(queues.inspect(name).getFailedCount()));
     },
   });
 

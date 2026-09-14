@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { RepairDriftCommand } from '@src/modules/reconciler/commands/repair-drift-command.js';
+import { driftRepairs } from '@src/shared/metrics/drift-repairs.js';
+import { metricsRegistry } from '@src/shared/metrics/metrics-registry.js';
 import { captureLogger } from '../../../capture-logger.js';
 
 const counter = () => ({ inc: vi.fn() });
@@ -35,8 +37,13 @@ describe('RepairDriftCommand', () => {
     expect(rebuild.rebuildCategory.mock.calls).toEqual([['Accessories']]);
   });
 
-  it('counts each repair, because an alert cannot read a log line', async () => {
-    const repairs = counter();
+  it('counts each repair on the metric an alert reads, not on a log line', async () => {
+    // The rule fires on this counter moving, so the assertion is the scrape rather
+    // than a call: a mock that was called proves the wiring and not the number a
+    // rule would evaluate.
+    const before = Number(
+      /readmodel_drift_repairs_total (\d+)/.exec(await metricsRegistry.metrics())?.[1] ?? 0,
+    );
 
     await new RepairDriftCommand(
       catalogue([
@@ -45,11 +52,14 @@ describe('RepairDriftCommand', () => {
       ]),
       readModel({ Shoes: 4, Knitwear: 1 }),
       { rebuildCategory: () => Promise.resolve(0) },
-      repairs,
+      driftRepairs,
       captureLogger().logger,
     ).execute();
 
-    expect(repairs.inc).toHaveBeenCalledTimes(2);
+    const after = Number(
+      /readmodel_drift_repairs_total (\d+)/.exec(await metricsRegistry.metrics())?.[1] ?? 0,
+    );
+    expect(after - before).toBe(2);
   });
 
   it('rebuilds nothing when every category agrees', async () => {
