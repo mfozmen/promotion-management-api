@@ -5,21 +5,36 @@ import { cloneName, templateDatabase, urlFor } from '../env.js';
 import { onAdmin } from '../db.js';
 
 /**
- * Every object the two databases must agree on, as one sorted list of strings. Read from the
- * catalog rather than diffed as text: two `pg_dump` runs of the same schema already differ on
- * the `\restrict` token they open and close with, and a check that fails on every unchanged run
- * is switched off within a week.
+ * What the two databases must agree on, as one sorted list of strings. Read from the catalog
+ * rather than diffed as text: two `pg_dump` runs of the same schema already differ on the
+ * `\restrict` token they open and close with, and a check that fails on every unchanged run is
+ * switched off within a week.
+ *
+ * A column carries its type modifiers, not only its type name. `timestamp(3)` and
+ * `timestamp(6)` are both `timestamp with time zone` and `varchar(10)` and `varchar(255)` are
+ * both `character varying`, so a fact list without the lengths and precisions compares equal
+ * across exactly the change migration `0005` makes — a lossy projection is the same defect as
+ * an over-wide normalisation, reached from the other side.
  */
 const FACTS = `
-  select 'column ' || table_name || '.' || column_name || ' ' || data_type || ' ' || udt_name
+  select 'column ' || table_name || '.' || ordinal_position || ' ' || column_name || ' '
+         || data_type || ' ' || udt_name
+         || '(' || coalesce(character_maximum_length::text, '') || ','
+         || coalesce(numeric_precision::text, '') || ',' || coalesce(numeric_scale::text, '')
+         || ',' || coalesce(datetime_precision::text, '') || ')'
+         || ' collation=' || coalesce(collation_name, '-')
          || ' null=' || is_nullable || ' default=' || coalesce(column_default, '-')
          || ' identity=' || is_identity || coalesce(identity_generation, '') as fact
   from information_schema.columns where table_schema = 'public'
   union all
-  select 'sequence ' || sequence_name || ' ' || data_type || ' start=' || start_value
-         || ' increment=' || increment || ' min=' || minimum_value || ' max=' || maximum_value
-         || ' cycle=' || cycle_option
-  from information_schema.sequences where sequence_schema = 'public'
+  select 'sequence ' || sequencename || ' ' || data_type || ' start=' || start_value
+         || ' increment=' || increment_by || ' min=' || min_value || ' max=' || max_value
+         || ' cycle=' || cycle || ' cache=' || cache_size
+  from pg_sequences where schemaname = 'public'
+  union all
+  select 'rls ' || relname || ' ' || relrowsecurity || ' ' || relforcerowsecurity
+         || ' options=' || coalesce(array_to_string(reloptions, ','), '-')
+  from pg_class where relnamespace = 'public'::regnamespace and relkind in ('r', 'p')
   union all
   select 'enum ' || t.typname || ' ' || e.enumsortorder || ' ' || e.enumlabel
   from pg_enum e join pg_type t on t.oid = e.enumtypid
@@ -82,9 +97,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const database of [fromMigrations, fromFile]) {
-    await onAdmin(`drop database if exists "${database}" with (force)`);
-  }
+  // `allSettled`, so a failure dropping the first still drops the second; awaited in sequence,
+  // the pair that a half-built `beforeAll` leaves behind would be half-cleaned.
+  await Promise.allSettled(
+    [fromMigrations, fromFile].map((database) =>
+      onAdmin(`drop database if exists "${database}" with (force)`),
+    ),
+  );
 });
 
 describe('docs/schema.sql', () => {
@@ -95,8 +114,9 @@ describe('docs/schema.sql', () => {
     const [migrated, committed] = await Promise.all([factsOf(fromMigrations), factsOf(fromFile)]);
 
     expect(committed).toEqual(migrated);
-    // The comparison is only worth something if both sides found the schema: two empty lists
-    // are equal, and a query that silently matched nothing would pass for ever.
+    // A floor, not a count: two empty lists are equal, so a query that silently matched nothing
+    // would pass for ever. The schema yields well over a hundred facts, and this number is not
+    // meant to track that.
     expect(committed.length).toBeGreaterThan(50);
   });
 });
