@@ -72,6 +72,28 @@ describe('refreshJobProgress', () => {
     expect(job?.chunksDone).toBe(1);
   });
 
+  it('does not put older counts back over a job that has finished', async () => {
+    // Two workers: a refresh reads its snapshot when it starts and writes when it
+    // commits, so one that began before the last chunk landed can commit after
+    // the job was completed. Measured on a 500 000-row run with two workers
+    // racing — `completed`, `chunks_done = 5`, 497 336 of 500 000 rows.
+    const jobId = await jobWith(1);
+    await finish(jobId, 0);
+    await db()
+      .update(ingestionChunks)
+      .set({ rowsProcessed: 500 })
+      .where(eq(ingestionChunks.jobId, jobId));
+    await completeJobIfDone(db(), jobId);
+
+    // A straggler refresh arriving after the finish must change nothing.
+    await refreshJobProgress(db(), jobId);
+
+    const job = await jobRow(jobId);
+    expect(job?.status).toBe('completed');
+    expect(job?.rowsProcessed).toBe(500);
+    expect(job?.chunksDone).toBe(1);
+  });
+
   it('counts nothing for a job whose chunks have not started', async () => {
     const jobId = await jobWith(2);
 

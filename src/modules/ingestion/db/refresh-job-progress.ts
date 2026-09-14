@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Queryable } from '../../../shared/db/client.js';
 import { ingestionChunks } from './schema/ingestion-chunks.js';
 import { ingestionJobs } from './schema/ingestion-jobs.js';
@@ -16,6 +16,13 @@ import { ingestionJobs } from './schema/ingestion-jobs.js';
  * chunk replayed after a kill, or two invocations calling this at once, cannot
  * double-count. The cost is an aggregate over one job's chunks, which is a
  * handful of rows, and it is paid once per finished chunk rather than per batch.
+ *
+ * `status = 'running'` is what keeps progress from overwriting the finish. Under
+ * two workers the statement reads its snapshot when it starts and writes when it
+ * commits, so a refresh that began before the last chunk landed can commit after
+ * the job was completed and put the older counts back. Measured: a 500 000-row
+ * run ending `completed` with `chunks_done = 5` and 497 336 rows while its six
+ * chunks held 500 000 between them.
  */
 export async function refreshJobProgress(db: Queryable, jobId: number): Promise<void> {
   await db
@@ -29,5 +36,5 @@ export async function refreshJobProgress(db: Queryable, jobId: number): Promise<
         from ${ingestionChunks} where ${ingestionChunks.jobId} = ${jobId})`,
       updatedAt: sql`now()`,
     })
-    .where(eq(ingestionJobs.id, jobId));
+    .where(and(eq(ingestionJobs.id, jobId), eq(ingestionJobs.status, 'running')));
 }

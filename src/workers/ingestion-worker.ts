@@ -46,13 +46,34 @@ const handler = new ChunkJobHandler({
   leaseMs: config.INGESTION_LEASE_MS,
 });
 
-const worker = new Worker('ingestion', (job) => handler.handle(job.data), {
-  connection: { url: config.REDIS_URL, db: config.REDIS_QUEUE_DB },
-  concurrency: ChunkJobHandler.CONCURRENCY,
-  // Longer than the budget the handler gives itself, or the queue hands the same
-  // chunk to a second worker while this one is still inside a batch.
-  lockDuration: ChunkJobHandler.lockDurationFor(config.INGESTION_BUDGET_MS),
-});
+const worker = new Worker(
+  'ingestion',
+  async (job) => {
+    const outcome = await handler.handle(job.data);
+    // Reported per chunk, from inside the process, because that is the only
+    // vantage point that can see this worker rather than every node on the host
+    // or a container built from a different commit. `heapUsed` is what
+    // `--max-old-space-size` bounds; the container's own accounting is a
+    // different number and the cgroup is where it is read.
+    const { heapUsed, rss } = process.memoryUsage();
+    logger.info(
+      {
+        ...outcome,
+        heapUsedMb: Math.round(heapUsed / 1048576),
+        rssMb: Math.round(rss / 1048576),
+      },
+      'chunk finished',
+    );
+    return outcome;
+  },
+  {
+    connection: { url: config.REDIS_URL, db: config.REDIS_QUEUE_DB },
+    concurrency: ChunkJobHandler.CONCURRENCY,
+    // Longer than the budget the handler gives itself, or the queue hands the
+    // same chunk to a second worker while this one is still inside a batch.
+    lockDuration: ChunkJobHandler.lockDurationFor(config.INGESTION_BUDGET_MS),
+  },
+);
 
 worker.on('failed', (job, error) => {
   logger.error({ jobId: job?.id, name: job?.name, err: error }, 'chunk job failed');
