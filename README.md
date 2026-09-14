@@ -72,11 +72,12 @@ process that migrates.
   500 000 rows in 6 of 6 chunks with none rejected, peaking at 49.9 MiB of the 256 by container
   accounting, and a V8 heap flat across chunks (25 MB falling to 18 MB) — flat being the property
   rather than the peak, since nothing accumulates as the file is consumed. The reasoning and the
-  host-side figures are in ADR-0005. That run took 128 s end to end, which is the whole system
-  keeping its read model current while it ingests; the 29 s elsewhere on record is the importer
-  alone with nothing consuming its announcements, and neither figure means anything without
-  saying which. Both scenarios are now measured end to end, in
-  [`docs/e2e-evidence/`](./docs/e2e-evidence).
+  host-side figures are in ADR-0005. That run predates the read-model consumer, so it measures
+  the importer alone; a later run through `POST /api/vendor/imports` with the consumer draining
+  its announcements took **128 s** and peaked at 54.9 MiB, and the difference between the two is
+  the system keeping its read model current rather than anything about the importer. No duration
+  here means anything without saying which of the two it is. Both scenarios are measured end to
+  end in [`docs/e2e-evidence/`](./docs/e2e-evidence).
 
 Each start-up line carries a `consuming` list — `maintenance`, `ingestion`, and `products` with
 `promotions` — and the port that worker serves `/metrics` on. None of the three has a healthcheck,
