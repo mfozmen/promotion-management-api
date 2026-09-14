@@ -15,7 +15,13 @@ export interface AppDependencies {
   queue: {
     publish(name: 'product.upserted', payload: { productIds: number[] }): Promise<unknown>;
     publish(name: 'promotion.changed', payload: { promotionId: number }): Promise<unknown>;
+    publish(
+      name: 'chunk.process',
+      payload: { jobId: number; chunkIndex: number },
+    ): Promise<unknown>;
   };
+  /** Where vendor files land, how wide a chunk is, and what the intake accepts. */
+  uploads: { dir: string; chunkBytes: number; maxBytes: number };
   scheduler: PromotionScheduler;
   products: ProductReadRepository;
   boardQueues: Queue[];

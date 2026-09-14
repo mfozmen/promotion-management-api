@@ -907,6 +907,24 @@ explicit confirmation parameter and say in their response what they removed.
 
 9.5 A new failure mode arrives with its metric, so the Grafana rules can see it.
 
+9.6 Cleanup of a resource a row will reference happens only where no committed
+row references it yet, never in a `catch` that spans the commit. A write that a
+later step can still fail after — an enqueue outside the transaction, a response
+that throws — leaves the resource in place, because the row that names it is
+already durable. The failure: a `catch` wrapping both the commit and the
+announcement deleted a vendor upload after its job row existed, leaving a
+running import whose chunks named bytes no worker could open, behind two unique
+indexes that refused both the re-upload and the same bytes. The leak the cleanup
+was added to fix was recoverable; the cleanup was not. A test that makes the
+post-commit step fail and asserts the resource survives is what distinguishes
+the two. When the commit happens inside the function you called, the two throws
+are indistinguishable at the call site, so assume every `catch` around that call
+spans the commit. What that leaves is a resource orphaned by a pre-commit
+failure — one unreferenced upload per failed registration, which no sweep
+reclaims; it is accepted because an operator can delete it and a deleted upload
+cannot be recovered, and reclaiming it by reintroducing the catch is the failure
+above.
+
 ---
 
 ## 10. Observability
