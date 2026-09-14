@@ -14,8 +14,9 @@ such choice is in [ADR.md](./ADR.md), which is the document to read after this o
 ## Topology
 
 Four application containers share two stores. Everything a shopper reads comes from the Redis
-read model, everything anyone writes lands in PostgreSQL, and the queue is the only thing that
-connects the two.
+read model, everything anyone writes lands in PostgreSQL, and the queue carries the writes across
+to the read model - except on the paths that repair it, where the reconciler and a worker's boot
+rebuild read PostgreSQL and write the read model directly.
 
 ```mermaid
 flowchart LR
@@ -34,7 +35,7 @@ flowchart LR
     postgres[("PostgreSQL 16<br/>system of record")]
     queue[("Redis db 1<br/>BullMQ queues")]
     readmodel[("Redis db 0<br/>read model")]
-    uploads[/"uploads volume"/]
+    uploads[/"./uploads bind mount"/]
   end
 
   subgraph monitoring["Monitoring (profile)"]
@@ -53,12 +54,13 @@ flowchart LR
 
   handler -- "reads rows" --> postgres
   handler -- "rebuilds keys" --> readmodel
+  handler -- "product.upserted" --> queue
   ingestion -- "reads its chunk" --> uploads
   ingestion -- "upserts products" --> postgres
   ingestion -- "product.upserted" --> queue
   reconciler -- "boundaries, drift" --> postgres
   reconciler -- "repairs" --> readmodel
-  reconciler -- "readmodel.rebuild" --> queue
+  reconciler -- "promotion.changed, reconciler.run" --> queue
 
   prometheus -- "scrapes /metrics" --> application
   grafana --> prometheus
@@ -68,9 +70,9 @@ flowchart LR
 
 The four queues are one per urgency class, so a 500 000-row import cannot delay a flash sale
 ([ADR-0003](./ADR.md)). `event-handler` and `reconciler` both write the read model: the first on
-the events a write produces, the second on a five-minute sweep that repairs what the queue lost
-([ADR-0006](./ADR.md)). Prometheus scrapes all four containers - the API on `3100`, each worker on
-its own `3101` ([docs/operations.md](./docs/operations.md)).
+the events a write produces ([ADR-0006](./ADR.md)), the second on a five-minute sweep that
+repairs what the queue lost ([ADR-0007](./ADR.md)). Prometheus scrapes all four containers - the
+API on `3100`, each worker on its own `3101` ([docs/operations.md](./docs/operations.md)).
 
 ## What the case study asks to be submitted
 
