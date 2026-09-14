@@ -635,6 +635,21 @@ on every publish — a reconciler that repaired nothing and never advanced its
 watermark — and the only test of that path used a hand-written queue that
 validated nothing.
 
+7.12 **A double that always accepts proves nothing about a dependency that
+refuses.** A queue, store or client written as `{ send: vi.fn().mockResolvedValue(undefined) }`
+answers the same way to the call the real one silently drops, so the test asserts
+the arguments and not the outcome. Where a library deduplicates, rejects or
+rate-limits on a value the code composes, the test that proves the code right is
+one against the real library — and it is worth breaking the code once to watch
+that test fail, because a test that has never failed is a claim, not evidence.
+
+Evidence: the orphan-chunk sweep published each chunk with a fixed BullMQ job
+id. BullMQ keeps completed keys and every failed one, and an add whose id
+already exists returns the old job and queues nothing, so the sweep would have
+repaired a chunk once and silently never again — in the pull request whose whole
+purpose was recovering a chunk nothing had retried. The unit test passed
+throughout: its queue accepted everything.
+
 ---
 
 ## 8. Boundaries, errors and API shape
@@ -1206,22 +1221,55 @@ had one, "the one payload whose module does not exist", and "the monitoring
 profile is not built yet" written above the dashboard the evidence was read off.
 Every one was found by a person reading, not by a check.
 
-13.16 **A file committed because a tool produced it is checked by regenerating
-it and comparing, and the comparison ignores only the tool's own
-nondeterminism.** A generated artefact has no reader to notice it has gone stale:
-it is correct on the day it lands and silently wrong at the next change to its
-input. Normalising anything beyond what the tool randomises per run buys a green
-check by deleting the difference it exists to see, and a check that fails when
-nothing is wrong is switched off within a week — so the narrow normalisation and
-the check are one decision, not two.
+13.16 **A test that derives both sides of an equality from the same source
+proves consistency, not correctness.** A generated artefact checked against the
+thing that generated it passes while both are wrong in the same direction, and
+its trigger is not unreachable — it fires every run and goes green, which is
+worse, because a green check is read as evidence. When a generated artefact
+makes a claim about a contract — an envelope, a prefix, a status, a content type
+— one assertion must come from the contract rather than from the generator.
 
-Evidence: `docs/schema.sql` is the first row of the README's submission table and
-nothing in the repository read it. `pg_dump` 16.14 writes `
-estrict` with a fresh
-token per run, so a text diff of an unchanged schema already fails on two lines.
-The check compares what PostgreSQL's catalog reports for a database built from
-the migrations against one built from the file, and it was proved by adding a
-column to a migration and watching it name that column.
+Evidence: the OpenAPI document published `GET /metrics` promising the shared
+error envelope, which that endpoint has never answered — it is mounted outside
+`/api` precisely because its failure is an empty `500`. The parity test
+comparing the document's paths against the route walk that produced them was
+green throughout. One assertion anchored outside the generator is the remedy,
+not a different generator test: the other parity assertions are still worth
+having.
+
+13.17 **A command whose failure output you discard cannot report a failure, and
+"no output" is not a pass.** Filtering a gate's output through `tail`, `grep` or
+`head` makes a failing run and a passing one look identical from the outside,
+and the run that looks identical is the one that gets reported. Read the exit
+status, and say what you read.
+
+Evidence: `npm run lint 2>&1 | tail -1` was used to check a branch and its last
+line is the same whether eslint found nothing or found four errors. The branch
+was described as lint-clean twice, in messages, before a pre-commit hook
+rejected four unused-variable errors in a file that had just been claimed clean.
+The hook caught the code; nothing caught the claim, and the claim is what
+reached the people deciding whether to merge.
+
+13.18 **A file committed because a tool produced it is checked by regenerating
+it and comparing, and the comparison ignores only the tool's own
+nondeterminism.** A generated artefact has no reader to notice it has gone
+stale: it is correct on the day it lands and silently wrong at the next change
+to its input. The two ways to get it wrong are symmetrical — normalising more
+than the tool randomises deletes the difference the check exists to see, and
+comparing a projection of the artefact rather than the artefact does the same
+thing from the other side. A check that fails when nothing is wrong is switched
+off within a week; one that cannot fail is worse, because it is read as
+evidence (13.16).
+
+Evidence: `docs/schema.sql` is the first row of the README's submission table
+and nothing in the repository read it. `pg_dump` 16.14 writes `\restrict` with a
+fresh token per run, so a text diff of an unchanged schema already fails on two
+lines; the check therefore compares what PostgreSQL's catalog reports for a
+database built from the migrations against one built by executing the file. Its
+first version compared `data_type` alone, which made `timestamp(3)` and
+`timestamp(6)` equal — the whole effect of migration `0005`, invisible to the
+test written to catch that class of change. Proved by mutating a migration and
+watching the test name the column, three times.
 
 ## 13b. The rulebook learns
 

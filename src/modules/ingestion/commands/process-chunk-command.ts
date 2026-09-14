@@ -36,6 +36,9 @@ export class ProcessChunkCommand {
    * measured against: 1 000 rows held at once, one statement, one announcement.
    */
   static readonly DEFAULT_BATCH_SIZE = 1000;
+  /** Matches `INGESTION_MAX_FAILURES`, which the worker passes in. */
+  static readonly DEFAULT_MAX_FAILURES = 3;
+
   static readonly DEFAULT_LEASE_MS = 90_000;
 
   private readonly db: Db;
@@ -48,6 +51,8 @@ export class ProcessChunkCommand {
   private readonly log: Pick<Logger, 'error'>;
   private readonly batchSize: number;
   private readonly leaseMs: number;
+  /** Attempts a chunk gets before it gives up; the sweep stops offering it then. */
+  private readonly maxFailures: number;
   /** This process's view of where vendor files live; the stored ref is relative to it. */
   private readonly uploadDir: string;
   /** Every query this command makes against the ingestion tables. */
@@ -71,6 +76,7 @@ export class ProcessChunkCommand {
     reenqueue: (chunk: ChunkProcess) => Promise<unknown>;
     batchSize?: number;
     leaseMs?: number;
+    maxFailures?: number;
     uploadDir: string;
     budgetMs?: number;
     now?: () => number;
@@ -83,13 +89,36 @@ export class ProcessChunkCommand {
     this.reenqueue = options.reenqueue;
     this.batchSize = options.batchSize ?? ProcessChunkCommand.DEFAULT_BATCH_SIZE;
     this.leaseMs = options.leaseMs ?? ProcessChunkCommand.DEFAULT_LEASE_MS;
+    this.maxFailures = options.maxFailures ?? ProcessChunkCommand.DEFAULT_MAX_FAILURES;
     this.uploadDir = options.uploadDir;
     this.ingestion = new IngestionRepository(options.db);
     this.budgetMs = options.budgetMs ?? Number.POSITIVE_INFINITY;
     this.now = options.now ?? Date.now;
   }
 
-  async process({ jobId, chunkIndex }: ChunkProcess): Promise<ChunkOutcome> {
+  async process(chunk: ChunkProcess): Promise<ChunkOutcome> {
+    try {
+      return await this.run(chunk);
+    } catch (error) {
+      // A chunk that cannot succeed has to be able to give up: without this the
+      // reconciler re-enqueues it every five minutes for ever and its vendor
+      // never imports again, which is the lockout by another road.
+      const reason = error instanceof Error ? error.message : String(error);
+      const { failures, exhausted } = await this.ingestion.recordChunkFailure(
+        chunk.jobId,
+        chunk.chunkIndex,
+        reason,
+        this.maxFailures,
+      );
+
+      if (exhausted) await this.ingestion.failJobIfExhausted(chunk.jobId);
+      this.log.error({ ...chunk, failures, exhausted, err: error }, 'chunk failed');
+
+      throw error;
+    }
+  }
+
+  private async run({ jobId, chunkIndex }: ChunkProcess): Promise<ChunkOutcome> {
     const claimed = await this.ingestion.claimChunk(jobId, chunkIndex, this.leaseMs);
     // A duplicate delivery is the ordinary path, not an error.
     if (claimed === null) return { claimed: false, rowsProcessed: 0, rowsRejected: 0 };

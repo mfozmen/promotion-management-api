@@ -112,6 +112,10 @@ Acceptance criteria
 - No single unit of work runs longer than the plan's timeout.
 - Memory stays under the plan's cap for the whole file.
 - If the processor is killed at any moment, the import resumes and finishes with the same result as an uninterrupted run.
+- A run that is cut off midway recovers without anyone touching the database, so next week's
+  file from the same vendor is accepted on its own schedule (case study, Scenario A: the files
+  are weekly and the process must not be "cut off midway"; the owner states the consequence on
+  issue #134 - one interrupted run locked a vendor out of every later import).
 
 Test cases
 
@@ -138,3 +142,11 @@ Test cases
 - When: it is imported
 - Then: no unit of work exceeds the timeout budget
 - Measure: the longest unit across three runs, under the configured budget, with the budget stated in the report
+
+### vendor-11
+
+- Precondition: `POST /api/vendor/imports`, `GET /api/vendor/imports/:id`, the reconciler running, the ingestion worker
+- Given: last week's import from vendor `acme` abandoned mid-flight - its job still `running` with none of its six chunks finished and every chunk's lease long expired - and an ingestion worker available again
+- When: the vendor waits without anyone editing the database, then uploads this week's file
+- Then: last week's import reaches a settled status on its own, its rows are in the catalogue exactly once, and this week's file is accepted with an identifier of its own rather than refused as another import already running
+- Measure: the registration that was answering `409` answers `201` within two reconciler cycles, the cycle period stated in the report. Provisional: the abandoned job on the live stack sat `running` for six hours and forty minutes before this case existed, and no recovery time has been measured yet.

@@ -114,9 +114,9 @@ It does **not** catch a changed `POSTGRES_PASSWORD`, and nothing in the containe
 - **A delayed boundary job fires on the producer's clock, not PostgreSQL's.** `PromotionScheduler.schedule` computes its delay from the two timestamps it is given, which its caller must take from PostgreSQL, but BullMQ counts that delay from the producer's own `Date.now()`. An API process running ahead of the database fires `expire` early, the handler reads `active_promotions` on the database clock, still finds the promotion live, and republishes the discounted price; nothing re-fires. The reconciler's boundary sweep is what closes it, which is why the sweep is the mechanism of record rather than the job.
 - **A name says whether it is a fact or a piece of work.** A fact is `<entity>.<past participle>` and describes something that already happened, so a consumer may ignore it: `promotion.changed`, `product.upserted`. A job is `<thing>.<verb>` and asks for work, so someone has to do it: `chunk.process`, `readmodel.rebuild`, `reconciler.run`. One queue carries both and BullMQ does not distinguish them, which is exactly why the name has to — a handler that treats a job as a notification drops work, and nothing fails. The delayed boundary work is not a sixth name: `PromotionScheduler` publishes it as `promotion.changed` with a job id per boundary (`promo:<id>:activate`), so `activate` and `expire` are job ids rather than event names.
 
-- **Queues are partitioned by urgency, and nothing is prioritised inside a queue.** Four of them: `promotions` (`promotion.changed` and the delayed boundary jobs), `products` (`product.upserted`), `ingestion` (`chunk.process`) and `maintenance` (`readmodel.rebuild`, `reconciler.run`). Routing stays a name-keyed map, `eventRouting`, so a producer cannot choose a queue and an event's urgency is a property of the event rather than of the caller. The partition was two queues until an architecture round showed the split did not isolate what it claimed: `product.upserted` shared the `events` queue with `promotion.changed`, so a 500 000-row import's ~500 announcements queued in front of a flash sale on a `concurrency: 1` consumer — an estimated backlog of minutes before the sale's own rescan started — from the announcement count against a single consumer's throughput, not from a run, and each scenario passed alone, so no test saw it. A per-publish queue argument and a job priority were both rejected: the first makes urgency the caller's to remember, the second leaves the two workloads sharing one consumer's throughput. One BullMQ `Worker` per queue, in the same process where that is convenient; separate workers, not separate containers, is the requirement. A queue carrying two names needs a dispatcher, and the `maintenance` one **throws on a name it has no handler for**: `readmodel.rebuild` shares the queue with `reconciler.run` and has no handler yet, so it burns its attempts and lands in the dead-letter set rather than being acknowledged by a process that did nothing with it. That is deliberate, not an oversight — a silent acknowledgement would lose a rebuild an operator asked for — and the read-model story adds the arm that handles it.
+- **Queues are partitioned by urgency, and nothing is prioritised inside a queue.** Four of them: `promotions` (`promotion.changed` and the delayed boundary jobs), `products` (`product.upserted`), `ingestion` (`chunk.process`) and `maintenance` (`readmodel.rebuild`, `reconciler.run`). Routing stays a name-keyed map, `eventRouting`, so a producer cannot choose a queue and an event's urgency is a property of the event rather than of the caller. The partition was two queues until an architecture round showed the split did not isolate what it claimed: `product.upserted` shared the `events` queue with `promotion.changed`, so a 500 000-row import's ~500 announcements queued in front of a flash sale on a `concurrency: 1` consumer — an estimated backlog of minutes before the sale's own rescan started — from the announcement count against a single consumer's throughput, not from a run, and each scenario passed alone, so no test saw it. A per-publish queue argument and a job priority were both rejected: the first makes urgency the caller's to remember, the second leaves the two workloads sharing one consumer's throughput. One BullMQ `Worker` per queue, in the same process where that is convenient; separate workers, not separate containers, is the requirement. A queue carrying two names needs a dispatcher, and the `maintenance` one **throws on a name it has no handler for**: `MaintenanceDispatcher` routes `reconciler.run` and `readmodel.rebuild`, the two names the queue carries, and throws on any other, so an unroutable job burns its attempts and lands in the dead-letter set rather than being acknowledged by a process that did nothing with it. That is deliberate: a silent acknowledgement would lose a rebuild an operator asked for.
 - **It is an event queue, not pub/sub.** A job is taken by one consumer and survives until it is; delivery is at-least-once, so every handler recomputes from PostgreSQL rather than applying a delta it was handed. The class is `EventQueue` for that reason: "bus" would promise fan-out this does not do.
-- **The partition isolates admission, not consumers, and two workloads still share one.** A category-target `promotion.changed` keyset-scans 50 000 products inline, so `promotions` — the urgent queue — holds the system's longest job, and a cancel racing a mistaken sale waits behind that sale's full rescan. The resolver's answer is to enqueue per-batch `product.upserted` rather than scan inline, which moves the work to `products` where it queues behind an import instead; that is the trade, and it belongs to the read-model story. Separately, `readmodel.rebuild` (a 500 000-product recompute, with `SCAN`+`UNLINK` only for the ids PostgreSQL no longer has) shares `maintenance` with `reconciler.run` at one Worker per queue, so the reconciler does not run for the length of a full rebuild — no boundary sweep and no orphan-chunk sweep, precisely when the system is least healthy. The missed ticks are **not** replayed afterwards: BullMQ's scheduler keeps one delayed iteration outstanding, so they are dropped rather than queued. Of the three sweeps, only the boundary sweep **needs** a watermark, and it has one: `reconciler_state.last_boundary_sweep_at` lets the runs after the rebuild cover the gap an hour at a time (ADR-0007), and without it those re-emissions would be lost outright. The other two re-derive from state — the orphan sweep from every `running` job's `pending` or expired-lease chunks, the drift check from a count comparison — so a missed run costs latency, not work. What an operator sees during a long rebuild is a file stopped at a chunk with no error and no progress, recovering on the first sweep after the rebuild ends, rather than something needing a manual re-enqueue. That consumer now exists and states no concurrency, so BullMQ's default of 1 is what holds and the interleaving above is the behaviour a rebuild would meet today; `readmodel.rebuild` has no handler in it yet, so the case is not reachable. A fifth queue for `reconciler.run` is still the alternative, and the choice falls to the story that writes the rebuild handler, since it is the one that can measure the cost.
+- **The partition isolates admission, not consumers, and two workloads still share one.** A category-target `promotion.changed` keyset-scans 50 000 products inline, so `promotions` — the urgent queue — holds the system's longest job, and a cancel racing a mistaken sale waits behind that sale's full rescan. The resolver's answer is to enqueue per-batch `product.upserted` rather than scan inline, which moves the work to `products` where it queues behind an import instead; that is the trade, and it belongs to the read-model story. Separately, `readmodel.rebuild` (a 500 000-product recompute, with `SCAN`+`UNLINK` only for the ids PostgreSQL no longer has) shares `maintenance` with `reconciler.run` at one Worker per queue, so the reconciler does not run for the length of a full rebuild — no boundary sweep and no orphan-chunk sweep, precisely when the system is least healthy. The missed ticks are **not** replayed afterwards: BullMQ's scheduler keeps one delayed iteration outstanding, so they are dropped rather than queued. Of the three sweeps, only the boundary sweep **needs** a watermark, and it has one: `reconciler_state.last_boundary_sweep_at` lets the runs after the rebuild cover the gap an hour at a time (ADR-0007), and without it those re-emissions would be lost outright. The other two re-derive from state — the orphan sweep from every `running` job's `pending` or expired-lease chunks, the drift check from a count comparison — so a missed run costs latency, not work. What an operator sees during a long rebuild is a file stopped at a chunk with no error and no progress, recovering on the first sweep after the rebuild ends, rather than something needing a manual re-enqueue. That consumer exists, states no concurrency, and now dispatches `readmodel.rebuild` as well, so BullMQ's default of 1 holds and the interleaving above is the behaviour a long rebuild meets today rather than a hypothetical one. A fifth queue for `reconciler.run` is still the alternative and is still undecided: both consumers now exist, so the cost is measurable, and nothing has measured it.
 - `EventQueue.inspect` returns a queue narrowed to four reads. Anything that writes stays off it: `add` would skip both the payload parse and the 2 s bound, which are the two guarantees `publish` exists to give.
 
 ### Trade-offs
@@ -262,7 +262,7 @@ Weekly vendor files of 500 000+ rows must pass through application-layer pricing
 - Multi-byte text and CRLF: offsets are byte counts; a newline cannot occur inside a UTF-8 sequence, so lines decode safely.
 - Memory: only one batch and the stream buffers are resident; no per-row events, no whole-file parse.
 - Same file twice: the hash rejects it; a re-run after a crash converges to the same rows through the SKU upsert.
-- Stuck job: an expired lease is visible as "stuck" and any worker can re-claim; a hand-off at budget end releases the lease before re-enqueueing, and the reconciler re-enqueues orphaned chunks; operators can pause, resume or abort.
+- Stuck job: an expired lease is what makes a chunk re-claimable, and any worker can take it; a hand-off at budget end releases the lease before re-enqueueing, and the reconciler's five-minute run re-enqueues orphaned chunks, after a grace window of one lease so a chunk still queued from registration is not mistaken for an abandoned one, and settles a job whose chunks all finished. Both halves are needed and only the second is obvious: the re-claim was built and tested from the start, and for as long as nothing asked a worker to try, a vendor whose import died could never import again — `ingestion_jobs_one_running_per_vendor` refused every new file while that row stayed `running`. A capability nothing invokes looks exactly like one that works. Two things this bullet used to promise are still not built and are named here rather than implied: nothing renders a job as "stuck" — `GET /api/vendor/imports/:id` returns the raw status, so a six-hour-dead import and one started three seconds ago read identically — and there is no pause, resume or abort, so an operator watching a sweep retry a chunk it can never complete has no lever but the database. `paused` and `aborted` are enum values with no writer. What is now built is the giving up: a chunk records each failed attempt with its reason, gives up at `INGESTION_MAX_FAILURES`, and a job whose every remaining chunk has given up becomes `failed` — the terminal status that releases the vendor. Without it the sweep is a retry loop with no exit, and an import whose file was deleted locks its vendor out exactly as an abandoned one did, by a different road.
 
 ### Trade-offs
 
@@ -300,6 +300,33 @@ ships; neither is "the memory". The **time** differs for another reason entirely
 consuming the announcements on that run, so 29 s is the importer alone, where the 128 s a
 containerised run takes is the whole system keeping its read model current while it ingests.
 Neither figure means anything without saying which.
+
+**The interrupted run, 2026-09-14.** The same 500 000-row file, with the worker killed with
+`SIGKILL` while chunk 2 was mid-flight — what a serverless invocation running out of budget
+looks like. At the kill, chunk 2 had committed **537 360 bytes and 12 000 rows**; chunks 3, 4 and
+5 had not started. On restart the worker resumed chunk 2 **from its checkpoint rather than from
+its start**, reaching 71 000 rows on the second attempt, while 3, 4 and 5 ran to completion
+untouched. The clean run the same day: **6 of 6 chunks, 500 000 rows, none rejected, peak
+55.7 MiB of 256**, and the catalogue holds **500 000 distinct SKUs** afterwards — no row lost and
+none written twice.
+
+That run took **about 85 s with the read-model consumer draining its announcements**, so it is
+the same quantity as the 128 s below and not the 29 s: the `event-handler` was up and consuming
+`products` throughout, and its queue was empty afterwards. It is faster than the 128 s because
+the catalogue was already warm — most rows upserted to values they already held, which the
+writer skips — so the two are comparable in kind and not in workload. The three peaks now in
+this record are all container accounting on this machine: **49.9 MiB** (the branch run),
+**54.9 MiB** (through the HTTP route with the consumer draining) and **55.7 MiB** (this run).
+Nothing here is a host RSS figure except the one below that says so.
+
+What that run also found is that **the resume has a hole this record must not paper over**: a
+chunk whose worker dies twice is moved to BullMQ's failed set as stalled, and nothing re-enqueues
+it, so the import stops at 5 of 6 for ever and its vendor stays locked out by the
+one-running-import index. `DeadLetterGrowing` fired on it within two minutes and
+`npm run retry-failed -- ingestion` returned the job to waiting, so the alert and the bulk retry
+both work; what does not exist yet is the sweep that notices without a human. That is issue #134,
+and until it merges the sentence to believe about Scenario A is "an interrupted chunk resumes
+from its checkpoint", not "an interrupted import always finishes".
 
 Scenario B is measured too, in `docs/e2e-evidence/`: 34 400 storefront reads moved PostgreSQL by
 ten transactions, and a 50 % sale on 100 000 products cost a quarter of the throughput and
@@ -374,6 +401,34 @@ A category promotion must affect tens of thousands of products the moment it is 
 - A bounded offset bounds one request rather than one client, and there is no rate limiter on these unauthenticated routes.
 - An empty promotion name in the database arrives as half a pair and is refused with its page; the column has no non-empty check, and that check belongs to the story that writes promotions.
 - A caller's bytes are never concatenated into a message an operator reads, so a wrong-typed index key is named only when this module composed it.
+
+### Measured
+
+One run each, 2026-09-14, on one machine over loopback, `autocannon -c 100`; the catalogue holds
+**100 000 products in `Accessories`, twice the 50 000 the case study names**.
+
+- **The measurement that could falsify the design, reported first.** The claim is that storefront
+  reads are served from Redis and do not reach PostgreSQL. Under load, a 20-second window moved
+  `pg_stat_database` by **ten transactions** — and those ten are the readiness probe and the
+  workers, not the reads. An idle stack commits about one a second on its own, so the read load
+  adds nothing above its own floor. `pg_stat_statements` is not installed on this stack and was
+  not installed for the run, because installing it changes the system being measured.
+- **Sustained read load:** 390 000 requests over 240 s, **1 625 req/s mean**, p50 **50 ms**,
+  p97.5 **147 ms**, **zero non-2xx and zero errors**, while promotions and products were being
+  written.
+- **A category-wide sale reaching 100 000 products:** the watched product was discounted **2.97 s**
+  after the `201`, and five sampled pages spread across the category were all discounted within
+  **~5 s**. The propagation is visible mid-flight — at three seconds some pages were discounted
+  and others were not — because the recompute walks the category rather than blocking the write.
+- **A product created while the sale ran** was discounted **2.03 s** later, with the sale named,
+  and with no second step from staff.
+- **Under the same load, writes still answered:** a product `201` in 269 ms, a promotion `201` in
+  109 ms, and a second promotion on an already-covered category `409` in 0.86 s — the exclusion
+  constraint refusing under load rather than only when idle.
+
+Ceilings for this hardware, not service levels. The tail figure is the one to distrust first:
+`express-prom-bundle`'s default buckets have no resolution between 0.1 s and 0.3 s, which is
+where every number above lives (ADR-0012).
 
 ### Rejected alternatives
 
@@ -642,3 +697,49 @@ Three of the five triggers also had no series to fire on. Queue depth and the fa
 - A gauge for drift instead of a counter: a repair count that falls back to zero hides the repair that already happened.
 - Alerting on the reconciler's log line through a log pipeline: a second collector and a parser for a number the process can register directly.
 - Alertmanager with a receiver: a destination nobody reads, configured for a demo.
+
+---
+
+## ADR-0013: The OpenAPI document is generated from the schemas that validate
+
+**Status:** Accepted
+
+### Context
+
+Until now the only description of this API's surface was the README's table, written by hand: it agrees with the code on the day it is written and afterwards only if someone remembers. Every request the API accepts is already described precisely, and in one place, by the zod schemas `validate()` enforces at the boundary (ADR-0009). A second description of the same thing is the thing that drifts, so the question is not whether to write a document but where to read it from.
+
+### Decision
+
+- **Generated from the schemas, never from a list.** `validate()` stamps the schemas it was handed onto the handler it returns, under a global symbol. `route-inventory.ts` walks Express's own router stack and reads them back, so the document's routes are the routes the application answers rather than a list kept beside them. A route added later appears without anyone editing anything; a route added without schemas appears with no inputs.
+- **The mount path is the only thing written by hand.** Express 5 keeps no readable mount path on a mounted router — `layer.path` is filled during a match and the matchers are closures over a regexp — so `mountAt(parent, path, router)` stamps the path as it mounts it. The string exists once, in the call that uses it, and the inventory reads it back out of the global symbol registry rather than importing it.
+- **Zod's own JSON Schema export.** zod 4 emits JSON Schema directly, so there is no registry, no `.openapi()` call on every schema and no second schema library. Conversion asks for the input side: a query schema that parses `"7"` into `7` must publish the string, because a string is what goes in the URL.
+- **Requests, plus the one response every route shares.** Each operation publishes its path, query and body parameters and a `default` response referencing `components.schemas.Error` — the `{ error: { message } }` envelope of ADR-0009. Success bodies are not published; the README's table is where they are, and the document's own description says so.
+- **Scope is what this API serves**, so the walk covers the whole application and the document is filtered to the routes under `/api`, less `/api/docs`. The operator surfaces ADR-0009 deliberately mounts outside the prefix — Bull Board's HTML at `/admin/queues` and `GET /metrics`'s Prometheus text — answer neither this API's envelope nor its content type, and the documentation page itself serves HTML, so none of the three is in the document. Publishing `/metrics` would have promised the envelope for an endpoint whose failure is an empty `500`.
+- **Served by the API it describes.** `GET /api/openapi.json` builds the document per request from the application read back, because the docs router is mounted while the application is still being built and a document taken at mount time would describe only what preceded it. `GET /api/docs` is swagger-ui-express pointed at that URL rather than handed a copy, so the page renders what a caller gets.
+- **The fence is three tests, and they do not all hold the same thing.** The first asserts that the documented paths are exactly the routes the application answers within the scope above — under `/api`, less `/api/docs` — so a route added inside the prefix is documented or the build fails. The second asserts that the only routes validating nothing are the ones that take nothing, each named, so a route added without a schema fails a test that says which route it is rather than producing a document that quietly says less. The third asserts that nothing outside the prefix is published, and it is the only one of the three that holds the document to something other than the walk it came from.
+
+### Consequences
+
+- The request half of the API's documentation cannot drift from the code, because it is the code.
+- The boundary and the inventory are joined by two global symbols rather than by an import in either direction: the validator does not know the document exists.
+- `POST /api/vendor/imports` is multipart and bounded by multer rather than by a schema, so it appears with no inputs and sits in the parity test's named exemption set. It is documented less than it is validated, and the exemption is where that is written down.
+- The walk reads Express's router internals — `app.router.stack`, `layer.route.methods`, a nested `handle.stack`. An Express upgrade can break it, and the parity test is what reports that.
+- Swagger UI is unauthenticated, like every other route here; the case study puts authentication out of scope (ADR-0009).
+
+### Trade-offs
+
+- **Success responses are not published.** One of them is a zod transform and the rest are TypeScript interfaces; neither converts, so publishing them means writing them by hand — the exact drift this record exists to prevent, in the one half of the document where it would look identical to the half that cannot drift. What is given up is that a caller cannot generate a typed client from this document, and reads the README table for what comes back. Acceptable for ModaCo: the document's readers are a reviewer exploring the API and a caller building a request, and both are served by the request side being exact.
+- **One `default` response instead of a response per status.** A per-status list would have to be kept true per route by hand, which is the second thing that drifts, and it would say no more: every status answers the same envelope. The cost is that the document does not say which statuses an endpoint can return — the README table's `Statuses` column does.
+- **The error schema is ADR-0009's envelope, not the richer `code`/`details` shape the case study's wording suggests.** The document follows the code; publishing a `code` field nothing sends would be drift in the other direction, and widening the envelope is the decision ADR-0009 already declined.
+- **Two global symbols are a contract nothing type-checks.** Renaming either string breaks the document silently at build time and loudly in the parity test, which is the only thing holding them together.
+- **The document agrees with the build by construction**, so it cannot tell a route that was never written from one that was dropped or never mounted. It is a diagnostic for an end-to-end run, never the scope of one.
+- **A parity test between a generated document and the walk that generated it proves consistency, not correctness.** Both sides are the same reading of the application, so both can be wrong in the same direction at once, and the test passes. That is how `GET /metrics` came to be published promising an envelope it has never answered: the first parity test compared the document to the routes, and the routes were where the mistake was. What caught it was building the document and reading its paths against ADR-0009. Every later claim of this kind — that the document says only what the API does — needs a check written against the contract rather than against the walk, and the third test is the only one here that is.
+
+### Rejected alternatives
+
+- `@asteasolutions/zod-to-openapi`, as the story suggested: a registry and an `.openapi()` call on every schema, for what zod 4 now does natively.
+- A hand-written `openapi.yaml`: the second description this record exists to avoid.
+- A constant listing the routes, read by the generator: a list to keep true, which is the same drift with an extra file.
+- Building the document once at startup: the routes mounted after the docs router would be missing from it.
+- Publishing response schemas by hand alongside the generated requests: the half that can drift, looking exactly like the half that cannot.
+- Serving the UI outside `/api` where Bull Board lives: the board describes a queue and is an operator surface, while this document describes this API and is part of it.

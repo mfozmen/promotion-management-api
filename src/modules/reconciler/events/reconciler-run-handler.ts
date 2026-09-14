@@ -14,9 +14,11 @@ interface Drift {
  * the queue and the commands rather than a place that decides anything (ADR-0008).
  */
 export class ReconcilerRunHandler {
+  /** Named rather than positional: the boundary sweep and the import sweep have
+   *  the same shape, so two positions could be transposed and every test would
+   *  still pass. */
   constructor(
-    private readonly sweep: Sweep,
-    private readonly drift: Drift,
+    private readonly sweeps: { boundaries: Sweep; imports: Sweep; drift: Drift },
     private readonly logger: Logger,
   ) {}
 
@@ -27,9 +29,12 @@ export class ReconcilerRunHandler {
    *  BullMQ keeps it, because a run that repaired nothing and returned looks
    *  exactly like one with nothing to repair. */
   async handle(): Promise<void> {
-    await this.sweep.execute();
+    await this.sweeps.boundaries.execute();
+    // An import whose worker died holds its vendor's next one out until a chunk
+    // is re-enqueued, and nothing else ever asks (issue #134).
+    await this.sweeps.imports.execute();
 
-    const repaired = await this.drift.execute();
+    const repaired = await this.sweeps.drift.execute();
     if (repaired > 0) this.logger.warn({ repaired }, 'categories repaired by the drift check');
   }
 }

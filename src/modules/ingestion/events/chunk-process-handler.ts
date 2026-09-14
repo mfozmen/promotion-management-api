@@ -37,6 +37,7 @@ export class ChunkProcessHandler {
     batchSize?: number;
     budgetMs?: number;
     leaseMs?: number;
+    maxFailures?: number;
     uploadDir: string;
   }) {
     this.processor = new ProcessChunkCommand(options);
