@@ -130,10 +130,11 @@ rewritten.
     quoted the rejected key back and a test asserted it. The first draft of
     the field-name exception then had no length bound, so a multi-kilobyte
     key would have come straight back in the error body; 8.3c capped it at 64
-    characters and truncated rather than omitting. Both rules were later
-    deleted with the field they governed: the owner removed `details` from the
-    response entirely, so a rejection names the part that failed and nothing
-    else, and the mirror the rules bounded no longer exists to bound.
+    characters and truncated rather than omitting. 8.3c was later deleted with
+    the field it governed: the owner removed `details` from the response
+    entirely, so a rejection names the part that failed and nothing else, and
+    the mirror that rule bounded no longer exists to bound. 8.3b survives, and
+    still permits naming which of the caller's own fields a problem concerns.
   - 13b (the rulebook learns, commit `2a2f479`): each of the findings above
     became a rule only because someone happened to notice; 13b makes turning
     a recurring finding into a rule (and fixing a rule that never fires) the
@@ -696,7 +697,7 @@ Recorded because it is the mirror of the failure class this project kept hitting
 
 ### 2026-09-13 — A threshold nobody checked was reachable, held by the thing that judges it
 
-Three files carried "p99 under 100 ms at 100 connections" for the storefront routes. Two were claims in documents; the third was `.claude/agents/e2e-tester.md`, the pass conditions of the agent that judges a run. The project's own ADR records `GET /api/health` — a route that serialises a constant and touches nothing — at 130-192 ms p99 at that same concurrency on this machine, so the bar sat below what an empty route clears. Any run would have been marked fail by an instruction nobody could satisfy, and the report would have read as a system problem rather than as a bad threshold.
+Three files carried "p99 under 100 ms at 100 connections" for the storefront routes. Two were claims in documents; the third was `.claude/agents/e2e-tester.md`, the pass conditions of the agent that judges a run. The same agent file records, two sections earlier, that one build on this machine produced a p99 of 106 ms and then 63 ms across two runs — so the bar sat inside the machine's own run-to-run variance, and whether a correct system passed depended on which run you took. A failing report would have read as a system problem rather than as a threshold nobody had checked was reachable.
 
 This is the week's recurring defect with its polarity flipped: not a gate that cannot fire, a gate that can only fire. The root is identical — nobody had asked whether the threshold was reachable, because a number in a document reads as a decision someone made. The fix derives the bar from the measured baseline, states in each copy which measurement it derives from, and tells the next machine to re-derive rather than inherit.
 
@@ -751,7 +752,7 @@ Each was written carefully, each was wrong, and none was caught by reading it ag
 
 - Challenge: a demo seed's upsert cleared `ingest_job_id` and `ingest_source_offset` when it overwrote an ingested row's price, and left `pricing_rules_version` set. The row would then claim a rule set had produced a price the seed had just replaced, and a "reprice everything below the current version" sweep would skip it as current.
 - Verification: reasoning over the column set — every column that explains a price must be cleared with the price — confirmed by an integration test asserting all three are null after a re-seed over an ingested row.
-- Blind spot: the model treated "provenance" as the two columns carrying the constraint's name rather than the three the ADR groups under that heading. The constraint's scope was mistaken for the concept's.
+- Blind spot: the model treated "provenance" as the two columns carrying the constraint's name rather than all three that explain a price. The ADR does not group them in one place either — its **Provenance** bullet names only `pricing_rules_version`, and `ingest_job_id` and `ingest_source_offset` are documented under the database structures and the chunk-ordering trade-off — so the concept was spread across three bullets and the constraint's scope was mistaken for it.
 
 ### 2026-09-13 — A documented failure mode that did not exist
 
