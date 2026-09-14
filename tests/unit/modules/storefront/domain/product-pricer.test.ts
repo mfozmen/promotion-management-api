@@ -160,8 +160,6 @@ describe('ProductPricer', () => {
       }),
     );
 
-    // An unpriceable candidate is absent to the rules rather than fatal: the
-    // product is priced and the defect is visible.
     expect(priced).toMatchObject({ effectivePriceCents: 5_000, promotionId: 11 });
     expect(lines.at(-1)).toMatchObject({ level: 40, promotionId: 12 });
   });

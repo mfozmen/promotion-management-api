@@ -15,6 +15,7 @@ export const TEST_DATABASE = {
   productReadRoutes: 9,
   productWriteRepository: 10,
   productUpsertedHandler: 11,
+  readModelRebuild: 12,
 } as const;
 
 export function useTestRedis(database: number): () => Redis {

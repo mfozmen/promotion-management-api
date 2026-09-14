@@ -10,10 +10,7 @@ interface Sweep {
 export class ReconcilerRunHandler {
   constructor(private readonly sweep: Sweep) {}
 
-  /** The `maintenance` dispatcher, here rather than in the entry point so a test can fail it
-   *  (ADR-0003). */
-  async handle(name: string): Promise<void> {
-    if (name !== 'reconciler.run') throw new Error(`no handler for ${name}`);
+  async handle(): Promise<void> {
     await this.sweep.execute();
   }
 }

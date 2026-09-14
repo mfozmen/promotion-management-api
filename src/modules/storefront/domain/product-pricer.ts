@@ -6,9 +6,6 @@ import type { ProductEntry } from './dto/product-entry.js';
 import type { PromotionCandidate } from './dto/promotion-candidate.js';
 import type { SourceRow } from './dto/source-row.js';
 
-/** A product row becomes the entry the storefront serves: every candidate is
- *  priced, the policy picks one, and the entry names it so any price a shopper
- *  sees can be explained. */
 export class ProductPricer {
   constructor(
     private readonly resolver: PromotionResolver,
@@ -46,8 +43,6 @@ export class ProductPricer {
     };
   }
 
-  /** A level the policy named but nothing priced leaves the product at base:
-   *  the alternative is publishing a price no candidate produced. */
   private static at<T>(
     level: CandidateLevel | undefined,
     product: T | undefined,
@@ -59,9 +54,8 @@ export class ProductPricer {
     return undefined;
   }
 
-  /** Undefined when the row the boundary should have rejected cannot be priced.
-   *  Such a candidate is absent to the rules rather than fatal, so a product
-   *  whose own promotion is defective still takes its category's sale price. */
+  /** An unpriceable candidate is absent to the rules rather than fatal, so a
+   *  product whose own promotion is defective still takes its category's sale. */
   private priced(
     row: SourceRow,
     promotion: PromotionCandidate | null,

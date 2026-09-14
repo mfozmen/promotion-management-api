@@ -45,8 +45,6 @@ describe('PromotionChangedHandler', () => {
 
     await handlerOf(c).handle({ promotionId: 3 });
 
-    // The work moves to the `products` queue: a cancel must not wait behind the
-    // sale's own rescan on the urgent queue (ADR-0003).
     expect(vi.mocked(c.queue.publish).mock.calls).toEqual([
       ['product.upserted', { productIds: [1, 2] }],
       ['product.upserted', { productIds: [5] }],
@@ -70,8 +68,6 @@ describe('PromotionChangedHandler', () => {
 
     await handlerOf(c).handle({ promotionId: 3 });
 
-    // A boundary job means re-read, never activate: the recompute publishes
-    // whatever the row now says, which for a cancel is the base price.
     expect(c.queue.publish).toHaveBeenCalledWith('product.upserted', { productIds: [7] });
   });
 
