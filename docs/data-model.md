@@ -4,7 +4,7 @@
 
 [`docs/schema.sql`](../docs/schema.sql) is the schema as a single file, for a reader who wants to
 open one rather than read six migrations. It is a copy, not an input: nothing reads it at
-runtime and no check compares it, and it is re-taken when a migration lands, from a throwaway
+runtime, and it is re-taken when a migration lands, from a throwaway
 database created empty and migrated forward — never from a store that has been developed
 against, where an object a regeneration dropped from the migrations can still be present:
 
@@ -29,6 +29,20 @@ the schema, and that state lives in the migration where a reader can find it. An
 of an unchanged schema differ on exactly two lines, the file's first and last statements — a diff
 of that size and shape is the token, not the schema, and it is left alone so that regenerating the
 file reproduces what the command emits.
+
+`tests/integration/docs/schema-dump.test.ts` is what notices a migration that landed without
+the file being re-taken. It does not diff the two files: it builds one database from the
+migrations and one by executing this file, then compares what PostgreSQL's own catalog reports
+for each — every column with its type and its type modifiers, its position, collation,
+nullability, default and identity kind, every enum label in order, and every index,
+constraint, trigger, function, view, sequence, extension and row-level-security setting. The
+modifiers are there because `timestamp(3)` and `timestamp(6)` are both
+`timestamp with time zone`: without them the comparison is equal across exactly the change
+migration `0005` makes, which is a lossy projection rather than a comparison. A text diff would fail on every
+unchanged run because of the token above, and a check that fails when nothing is wrong is
+switched off within a week. The only thing the test drops from the file is the `\restrict` and `\unrestrict` lines, which are psql meta-commands a server cannot execute; anything else dropped there would
+be a difference it stops seeing. It was proved by adding a column to `0000_write_store.sql` and
+watching it name that column, not by arguing that it would.
 
 The DDL is the migration set in [`src/shared/db/migrations/`](../src/shared/db/migrations): `0000_write_store.sql` creates the `btree_gist` extension, the five enums, the six tables with their own three indexes (`products_category_id_idx`, `pricing_rules_active_idx`, and the partial unique `ingestion_jobs_one_running_per_vendor`), the two GiST exclusion constraints that enforce one active promotion per product and per category, the `pricing_rules_set_updated_at` trigger with its function, and the single `reconciler_state` row; `0001_seed_pricing_rules.sql` seeds the three `type = 'ingestion'` pricing rules (the promotion-precedence rules are a separate set and arrive with the resolver, ADR-0004), `0002_active_promotions.sql` creates the `active_promotions` view, `0003_promotion_list_indexes.sql` adds the two `(product_id, id)` and `(category, id)` btree indexes the admin promotion list filters and orders on — the GiST exclusion indexes cannot serve it, being partial on `status = 'active'` — and `0004_promotion_boundary_indexes.sql` adds four partial btree indexes on `starts_at`, `ends_at`, `cancelled_at` and `created_at` for the reconciler's boundary sweep, each skipping the rows that sweep never reads (`status <> 'draft'`, and `cancelled_at is not null` for its own), and `0005_reconciler_watermark_milliseconds.sql` narrows `reconciler_state.last_boundary_sweep_at` to `timestamp (3) with time zone`, so the watermark holds only the milliseconds the sweep's compare-and-set can send back (ADR-0007). Each table's Drizzle mirror lives in the module that owns it, under `db/schema/`, one file per table and per enum; `reconciler_state` sits under `src/modules/reconciler/db/schema/`. There is no barrel re-exporting them. Four of the objects above have no expression in it — the extension, the two exclusion constraints, the trigger with its function, and the seed row — so `npm run db:generate` would drop them; CI's "No schema drift" step does not catch that direction — a committed regeneration leaves a clean tree — so the integration tests, which assert each of the four directly, are what notices (ADR-0003). The view is not a fifth: drizzle-kit generated `0002` and its snapshot from `promotion/db/schema/active-promotions.ts`, and `npm run db:generate` reports no changes on a clean tree.
 

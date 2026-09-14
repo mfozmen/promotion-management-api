@@ -2,21 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MIGRATIONS_FOLDER, migrationPool, runMigrations } from '@src/shared/db/migrate.js';
-import { adminUrl, cloneName, urlFor } from '../../env.js';
+import { cloneName, urlFor } from '../../env.js';
+import { onAdmin } from '../../db.js';
 
 // Not the cloned template every other file uses: this is the one test that needs an
 // unmigrated database, because what it asserts is what the api entrypoint does to one.
 const database = cloneName();
-
-async function onAdmin(statement: string): Promise<void> {
-  const admin = new Client({ connectionString: adminUrl });
-  await admin.connect();
-  try {
-    await admin.query(statement);
-  } finally {
-    await admin.end();
-  }
-}
 
 async function tableNames(): Promise<string[]> {
   const client = new Client({ connectionString: urlFor(database) });

@@ -1250,6 +1250,27 @@ rejected four unused-variable errors in a file that had just been claimed clean.
 The hook caught the code; nothing caught the claim, and the claim is what
 reached the people deciding whether to merge.
 
+13.18 **A file committed because a tool produced it is checked by regenerating
+it and comparing, and the comparison ignores only the tool's own
+nondeterminism.** A generated artefact has no reader to notice it has gone
+stale: it is correct on the day it lands and silently wrong at the next change
+to its input. The two ways to get it wrong are symmetrical — normalising more
+than the tool randomises deletes the difference the check exists to see, and
+comparing a projection of the artefact rather than the artefact does the same
+thing from the other side. A check that fails when nothing is wrong is switched
+off within a week; one that cannot fail is worse, because it is read as
+evidence (13.16).
+
+Evidence: `docs/schema.sql` is the first row of the README's submission table
+and nothing in the repository read it. `pg_dump` 16.14 writes `\restrict` with a
+fresh token per run, so a text diff of an unchanged schema already fails on two
+lines; the check therefore compares what PostgreSQL's catalog reports for a
+database built from the migrations against one built by executing the file. Its
+first version compared `data_type` alone, which made `timestamp(3)` and
+`timestamp(6)` equal — the whole effect of migration `0005`, invisible to the
+test written to catch that class of change. Proved by mutating a migration and
+watching the test name the column, three times.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
