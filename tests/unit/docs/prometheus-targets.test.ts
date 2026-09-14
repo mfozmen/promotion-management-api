@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { metricsRegistry } from '@src/shared/metrics/metrics-registry.js';
+import { queueDepth } from '@src/shared/metrics/queue-depth.js';
 
 const read = async (file: string): Promise<string> =>
   readFile(new URL(`../../../${file}`, import.meta.url), 'utf8');
@@ -67,20 +69,32 @@ describe('the alert rules', () => {
 
   it('alerts only on metrics something actually emits', async () => {
     // The gap this closes: a rule naming a metric no process exports is silent
-    // for ever and reads as a system that is never in trouble.
-    const emitted = [
-      'up',
-      'queue_failed_jobs',
-      'queue_waiting_jobs',
-      'readmodel_drift_repairs_total',
-      'http_request_duration_seconds_count',
-      'http_request_duration_seconds_bucket',
-    ];
+    // for ever and reads as a system that is never in trouble. The names come from
+    // the registry the processes register on, not from a list written here: a list
+    // written here stays true after the code that emits the metric is deleted.
+    await import('@src/app.js');
+    await import('@src/shared/metrics/drift-repairs.js');
+    queueDepth(
+      {
+        inspect: () => ({
+          getWaitingCount: () => Promise.resolve(0),
+          getFailedCount: () => Promise.resolve(0),
+        }),
+      },
+      ['promotions'],
+    );
+    const emitted = (await metricsRegistry.getMetricsAsJSON()).flatMap(({ name, type }) =>
+      // A histogram is scraped under its suffixes, never under its own name.
+      // Compared as a string because prom-client's own typings declare `type` a
+      // numeric enum while it returns the name at runtime.
+      String(type) === 'histogram' ? [`${name}_count`, `${name}_bucket`, `${name}_sum`] : [name],
+    );
 
     const parsed = await rules();
     // A loop over an empty list passes whatever the list should have contained;
-    // this is the assertion that makes the one below capable of failing.
+    // these are the assertions that make the one below capable of failing.
     expect(parsed.length).toBeGreaterThan(4);
+    expect(emitted.length).toBeGreaterThan(10);
 
     for (const { alert, expr } of parsed) {
       // Label selectors go first: `status_code` inside `{}` is a label, not a
@@ -88,14 +102,27 @@ describe('the alert rules', () => {
       const named = [...expr.replaceAll(/[{][^}]*[}]/g, '').matchAll(/([a-z_][a-z0-9_]*)/g)]
         .map((match) => match[1] ?? '')
         .filter((name) => name.includes('_') || name === 'up')
-        // PromQL's own functions and template variables are not series.
+        // PromQL's own functions and template variables are not series, and `up`
+        // is synthesized by Prometheus for every target rather than exported.
         .filter(
-          (name) => !['histogram_quantile', 'humanizePercentage', 'labels', 'value'].includes(name),
+          (name) =>
+            !['histogram_quantile', 'humanizePercentage', 'labels', 'value', 'up'].includes(name),
         );
       const unknown = named.filter((name) => !emitted.includes(name));
 
       expect({ alert, unknown }).toEqual({ alert, unknown: [] });
     }
+  });
+
+  it('keeps the reconciler the process that reports the depths', async () => {
+    // The only check there is: the wiring line lives in an entry point coverage
+    // excludes, so deleting it breaks no test and leaves the two queue rules
+    // reading a metric nobody exports.
+    const wiring = await read('src/workers/reconciler.ts');
+
+    expect(wiring).toContain(
+      "queueDepth(queue, ['promotions', 'products', 'ingestion', 'maintenance'])",
+    );
   });
 
   it('says what to do, not only what happened', async () => {
