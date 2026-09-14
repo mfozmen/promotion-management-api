@@ -1206,6 +1206,23 @@ had one, "the one payload whose module does not exist", and "the monitoring
 profile is not built yet" written above the dashboard the evidence was read off.
 Every one was found by a person reading, not by a check.
 
+13.16 **A file committed because a tool produced it is checked by regenerating
+it and comparing, and the comparison ignores only the tool's own
+nondeterminism.** A generated artefact has no reader to notice it has gone stale:
+it is correct on the day it lands and silently wrong at the next change to its
+input. Normalising anything beyond what the tool randomises per run buys a green
+check by deleting the difference it exists to see, and a check that fails when
+nothing is wrong is switched off within a week — so the narrow normalisation and
+the check are one decision, not two.
+
+Evidence: `docs/schema.sql` is the first row of the README's submission table and
+nothing in the repository read it. `pg_dump` 16.14 writes `
+estrict` with a fresh
+token per run, so a text diff of an unchanged schema already fails on two lines.
+The check compares what PostgreSQL's catalog reports for a database built from
+the migrations against one built from the file, and it was proved by adding a
+column to a migration and watching it name that column.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
