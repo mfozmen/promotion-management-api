@@ -35,7 +35,6 @@ const env = z
     INGESTION_BUDGET_MS: z.coerce.number().int().positive().default(60_000),
     INGESTION_LEASE_MS: z.coerce.number().int().positive().default(90_000),
     INGESTION_MAX_FAILURES: z.coerce.number().int().positive().default(3),
-    INGESTION_MAX_WAITING: z.coerce.number().int().positive().default(100),
   })
   .refine((e) => e.REDIS_READ_MODEL_DB !== e.REDIS_QUEUE_DB, {
     message: 'read model and queue must use different Redis databases',

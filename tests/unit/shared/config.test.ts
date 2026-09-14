@@ -34,7 +34,6 @@ describe('loadConfig', () => {
       INGESTION_BUDGET_MS: 60_000,
       INGESTION_LEASE_MS: 90_000,
       INGESTION_MAX_FAILURES: 3,
-      INGESTION_MAX_WAITING: 100,
     });
   });
 
