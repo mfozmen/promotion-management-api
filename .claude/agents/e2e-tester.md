@@ -108,7 +108,15 @@ a server you launched by hand.
    seconds. Every route is mounted under `/api`, including the liveness probe,
    and the container's own healthcheck calls the same path. If it never
    answers, print `docker compose -p pma-e2e logs --tail 40 api` and FAIL.
-6. **If something else holds port 3100, stop and say so; never kill it.** The
+6. Fetch `curl -sf localhost:3100/api/openapi.json` and read its `paths`. That
+   is the list of routes the running build actually serves, taken from the build
+   rather than from a document someone maintained, so use it to decide which
+   endpoints are in scope for this run. A route in the case files but absent
+   from `paths` is a route this build does not have; say so rather than probing
+   it and reporting a 404 as a defect. The page at `/api/docs` renders the same
+   document and is worth opening once in a browser, because a spec that parses
+   and a page that renders are two different claims.
+7. **If something else holds port 3100, stop and say so; never kill it.** The
    process you did not start may be another run mid-measurement or a server the
    owner is using, and you cannot tell an orphan from a live server. Reaping one
    is a person's decision, not yours.

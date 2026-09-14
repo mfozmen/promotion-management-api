@@ -324,7 +324,7 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 ## API
 
-All endpoints are mounted under the `/api` prefix (ADR-0009). JSON bodies are capped at 100 kB and validated strictly: an unknown field is a `400`, never a silently dropped one, and that `400` can answer any route. The vendor upload is the exception — it is multipart, so it never reaches the JSON parser and carries its own size cap and its own `415`.
+The live reference is `GET /api/docs`, a Swagger UI page over `GET /api/openapi.json`. That document is generated from the zod schemas that validate each request, so the request side of it cannot drift from the code; it describes requests only, and the table below is where the responses are. All endpoints are mounted under the `/api` prefix (ADR-0009). JSON bodies are capped at 100 kB and validated strictly: an unknown field is a `400`, never a silently dropped one, and that `400` can answer any route. The vendor upload is the exception — it is multipart, so it never reaches the JSON parser and carries its own size cap and its own `415`.
 
 | Method | Path                         | Description                                                                                                             | Statuses                          |
 | ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------- |

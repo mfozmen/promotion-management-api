@@ -27,6 +27,8 @@ import { promotionRoutes } from './modules/promotion/http/promotion-routes.js';
 import { DependencyReadiness } from './shared/dependency-readiness.js';
 import { errorHandler } from './shared/http/error-handler.js';
 import { httpLogger } from './shared/http/http-logger.js';
+import { mountAt } from './shared/http/mount-at.js';
+import { openapiRoutes } from './shared/http/openapi-routes.js';
 
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
@@ -76,8 +78,10 @@ export function createApp({
       .catch(next);
   });
   // Both mount on /products: the read side answers GET, the write side POST.
-  api.use(
+  mountAt(
+    api,
     '/products',
+
     productReadRoutes({
       readiness: new ReadModelReadinessQuery(products),
       find: new FindProductQuery(products),
@@ -90,9 +94,11 @@ export function createApp({
   const promotions = new PromotionRepository(db);
   const announcer = new PromotionAnnouncer(queue, scheduler, logger);
 
-  api.use('/products', productRoutes(new CreateProductCommand(catalogue, queue, logger)));
-  api.use(
+  mountAt(api, '/products', productRoutes(new CreateProductCommand(catalogue, queue, logger)));
+  mountAt(
+    api,
     '/vendor/imports',
+
     vendorImportRoutes({
       register: new RegisterImportCommand({
         db,
@@ -105,8 +111,10 @@ export function createApp({
       maxBytes: uploads.maxBytes,
     }),
   );
-  api.use(
+  mountAt(
+    api,
     '/promotions',
+
     promotionRoutes({
       create: new CreatePromotionCommand(promotions, announcer),
       assign: new AssignPromotionCommand(promotions, announcer),
@@ -115,7 +123,14 @@ export function createApp({
       list: new ListPromotionsQuery(promotions),
     }),
   );
-  app.use('/api', api);
+  // Inside the prefix, as issue #2 asks: the document describes this API and
+  // is served by it, unlike the board and the scrape, which describe neither.
+  mountAt(
+    api,
+    '/',
+    openapiRoutes(() => app),
+  );
+  mountAt(app, '/api', api);
 
   // Outside `/api` for the same reason the board is: a scrape is not part of this API's
   // contract and must not be wrapped in its error envelope (ADR-0009).
