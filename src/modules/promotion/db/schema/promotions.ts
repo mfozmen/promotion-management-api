@@ -27,6 +27,20 @@ export const promotions = pgTable(
     // foreign key, which PostgreSQL does not index for you.
     index('promotions_product_id_idx').on(table.productId, table.id),
     index('promotions_category_id_idx').on(table.category, table.id),
+    // The reconciler's boundary sweep filters on these four and `promotions` never
+    // shrinks, since cancelling is the cure for the all-time exclusion constraints.
+    index('promotions_starts_at_idx')
+      .on(table.startsAt)
+      .where(sql`${table.status} <> 'draft'`),
+    index('promotions_ends_at_idx')
+      .on(table.endsAt)
+      .where(sql`${table.status} <> 'draft'`),
+    index('promotions_cancelled_at_idx')
+      .on(table.cancelledAt)
+      .where(sql`${table.cancelledAt} is not null`),
+    index('promotions_created_at_idx')
+      .on(table.createdAt)
+      .where(sql`${table.status} <> 'draft'`),
     check('promotions_window_check', sql`${table.endsAt} > ${table.startsAt}`),
     check('promotions_value_check', sql`${table.value} > 0`),
     check(

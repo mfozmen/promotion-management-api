@@ -1,25 +1,17 @@
 import { Worker } from 'bullmq';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { eventRegistry } from '../events/event-registry.js';
-import { eventRouting } from '../events/event-routing.js';
 import { ChunkJobHandler } from '../modules/ingestion/jobs/chunk-job-handler.js';
 import { pricingRules } from '../modules/pricing/db/schema/pricing-rules.js';
 import { BasePriceCalculatorCache } from '../modules/pricing/domain/base-price-calculator-cache.js';
 import { ProductRepository } from '../modules/product/db/product-repository.js';
-import { loadConfig } from '../shared/config.js';
 import { createDb, createPool } from '../shared/db/client.js';
 import { logger } from '../shared/logger.js';
-import { EventQueue } from '../shared/queue/event-queue.js';
+import { startWorker } from './start-worker.js';
 
-const config = loadConfig();
+const { config, queue, closeOnSigterm } = startWorker('ingestion-worker', ['ingestion']);
+
 const pool = createPool(config.DATABASE_URL);
 const db = createDb(pool);
-const queue = EventQueue.connect(
-  config.REDIS_URL,
-  config.REDIS_QUEUE_DB,
-  eventRegistry,
-  eventRouting,
-);
 
 // Both predicates, so the partial index `pricing_rules_active_idx` serves the query.
 const calculators = new BasePriceCalculatorCache({
@@ -57,11 +49,7 @@ const worker = new Worker(
     // different number and the cgroup is where it is read.
     const { heapUsed, rss } = process.memoryUsage();
     logger.info(
-      {
-        ...outcome,
-        heapUsedMb: Math.round(heapUsed / 1048576),
-        rssMb: Math.round(rss / 1048576),
-      },
+      { ...outcome, heapUsedMb: Math.round(heapUsed / 1048576), rssMb: Math.round(rss / 1048576) },
       'chunk finished',
     );
     return outcome;
@@ -84,24 +72,10 @@ worker.on('error', (error) => {
   logger.error({ err: error }, 'ingestion worker error');
 });
 
-logger.info(
-  { queue: 'ingestion', concurrency: ChunkJobHandler.CONCURRENCY },
-  'ingestion worker listening',
+// The worker closes before the queue and the pool: `close()` waits for the job in
+// flight, which the budget bounds, and the chunk's own checkpoint is what makes a
+// harder stop survivable anyway.
+closeOnSigterm(
+  () => worker.close(),
+  () => pool.end(),
 );
-
-// `close()` waits for the job in flight, which is bounded by the budget; the
-// chunk's own checkpoint is what makes a harder stop survivable anyway.
-process.on('SIGTERM', () => {
-  void worker
-    .close()
-    .then(() => queue.close())
-    .then(() => pool.end())
-    .then(() => {
-      logger.info('ingestion worker stopped');
-      process.exit(0);
-    })
-    .catch((error: unknown) => {
-      logger.error({ err: error }, 'ingestion worker shutdown failed');
-      process.exit(1);
-    });
-});

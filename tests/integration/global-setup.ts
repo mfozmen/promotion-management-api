@@ -46,7 +46,7 @@ export default async function setup(): Promise<void> {
     // nothing is wrong. Say what happened, then what usually causes it.
     const cause = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `cannot use PostgreSQL at ${adminUrl}: ${cause}. The server, the port and the database are three separate failures; start the stores with the command in README.md, or point TEST_DATABASE_URL at a database that exists.`,
+      `cannot use PostgreSQL at ${adminUrl}: ${cause}. The server, the port and the database are three separate failures; start the test stores with 'npm run up', or point TEST_DATABASE_URL at a database that exists.`,
       { cause: error },
     );
   }

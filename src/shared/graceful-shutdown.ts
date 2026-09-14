@@ -1,8 +1,17 @@
 import type { EventQueue } from './queue/event-queue.js';
 
+type Close = () => Promise<unknown>;
+
+interface Server {
+  close: (onClosed: () => void) => void;
+}
+
 /**
- * Stops the HTTP server, then the queues, in that order: closing the queues does
- * not drain them, so the producers have to be gone first.
+ * The shutdown contract for every process in this image. The order is the mechanism —
+ * closing the queues does not drain them, so the producers go first — and the budget is one
+ * deadline over the whole sequence: a bound on the server alone left the queue and the pool
+ * free to hang past Docker's grace period, which spends the exit code on a `SIGKILL` and
+ * writes no line saying why.
  */
 export class GracefulShutdown {
   constructor(
@@ -10,16 +19,43 @@ export class GracefulShutdown {
     private readonly timeoutMs: number,
   ) {}
 
-  async run(server: { close: (onClosed: () => void) => void }): Promise<'drained' | 'forced'> {
-    let timer: NodeJS.Timeout | undefined;
-    const drained = await Promise.race([
-      new Promise<boolean>((resolve) => server.close(() => resolve(true))),
-      new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(false), this.timeoutMs);
-      }),
+  /** An HTTP process: the listener stops taking requests first. */
+  async run(server: Server, ...also: Close[]): Promise<'drained' | 'forced'> {
+    return this.within([
+      () => new Promise<void>((resolve) => server.close(() => resolve())),
+      ...also,
     ]);
-    clearTimeout(timer);
-    await this.queue.close();
-    return drained ? 'drained' : 'forced';
+  }
+
+  /** A worker: whatever it consumes with stops first, and an idle one passes nothing. */
+  async close(...also: Close[]): Promise<'drained' | 'forced'> {
+    return this.within(also);
+  }
+
+  /** The queue closes last, so nothing can still be mid-publish when the handle goes. */
+  private async within(steps: Close[]): Promise<'drained' | 'forced'> {
+    return this.race([...steps, () => this.queue.close()]);
+  }
+
+  private async race(steps: Close[]): Promise<'drained' | 'forced'> {
+    let timer: NodeJS.Timeout | undefined;
+    const sequence = (async () => {
+      for (const step of steps) await step();
+
+      return 'drained' as const;
+    })();
+    try {
+      return await Promise.race([
+        sequence,
+        new Promise<'forced'>((resolve) => {
+          timer = setTimeout(() => resolve('forced'), this.timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      // The race has already delivered a failure that arrived in time; this is only so that
+      // one landing after the deadline is not an unhandled rejection.
+      sequence.catch(() => undefined);
+    }
   }
 }

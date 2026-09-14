@@ -14,11 +14,21 @@ export default defineConfig({
       reporter: ['text', 'lcov'],
       reportsDirectory: 'coverage',
       include: ['src/**'],
-      // Entry points: wiring, and nothing a test can hold. Everything they decide
-      // lives in a class they call — `ChunkJobHandler` carries the worker's
-      // concurrency and lock duration for exactly that reason, because the last
-      // thing excluded here shipped a 404 for every route in production.
-      exclude: ['src/server.ts', 'src/workers/ingestion-worker.ts', '**/*.d.ts'],
+      // Process entry points, per the design spec's section 12: they wire collaborators and
+      // install signal handlers, and exercising them means starting a process.
+      // `sonar-project.properties` repeats the list because SonarCloud reads its own.
+      //
+      // Everything an excluded file decides lives in a class it calls, so coverage
+      // still sees it: `ChunkJobHandler` carries the ingestion worker's concurrency
+      // and its lock duration for that reason. The last thing excluded here shipped
+      // a 404 for every route in production with a green suite.
+      exclude: [
+        'src/server.ts',
+        'src/workers/event-handler.ts',
+        'src/workers/ingestion-worker.ts',
+        'src/workers/reconciler.ts',
+        '**/*.d.ts',
+      ],
       thresholds: { lines: 100, branches: 100, functions: 100, statements: 100 },
     },
   },
