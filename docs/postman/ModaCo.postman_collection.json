@@ -1,0 +1,858 @@
+{
+  "info": {
+    "name": "ModaCo Promotion Management API",
+    "description": "Every request here runs against a stack brought up with `npm run up`.\n\nRun the folders in order: **1 Health** proves the stack is reachable, **2 Storefront** is the case study's read side, **3 Promotions** its write side, **4 Vendor import** is Scenario A, and **5 Refusals** is the validation surface — every request in that folder is expected to fail, and a 2xx there is the finding.\n\n`baseUrl` defaults to `http://127.0.0.1:3100/api`. The storefront answers 503 until the read model has been built, which the event handler does on boot.\n\nPropagation is asynchronous: a promotion reaches the storefront through a queue, not inside the request that created it. On a live stack the first product was discounted 915 ms after the 201. If a storefront assertion fails immediately after a write, run it again before believing it.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:3100/api" },
+    { "key": "category", "value": "PostmanCat" },
+    { "key": "productId", "value": "" },
+    { "key": "promotionId", "value": "" },
+    { "key": "draftId", "value": "" },
+    { "key": "jobId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1 Health",
+      "item": [
+        {
+          "name": "GET /health — liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Answers 200 even when a store is unreachable, deliberately: the compose healthcheck calls this and every worker gates on `api` being healthy, so a store-dependent health route would stop the workers that repair the system from ever starting.",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('flat ok', () => pm.expect(pm.response.json()).to.eql({ status: 'ok' }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /ready — readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Asks both stores rather than reading a flag: a pool that was built holds no connection, so nothing on this side knows a store is gone until a query fails.",
+            "url": { "raw": "{{baseUrl}}/ready", "host": ["{{baseUrl}}"], "path": ["ready"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 ready, or 503 naming what is down', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 503]);",
+                  "});",
+                  "pm.test('names both stores either way', () => {",
+                  "  const d = pm.response.json().dependencies;",
+                  "  pm.expect(d).to.have.property('postgres');",
+                  "  pm.expect(d).to.have.property('redis');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /metrics — note the missing /api",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Mounted at the root, outside the /api prefix and outside the error envelope, like /admin/queues.",
+            "url": {
+              "raw": "http://127.0.0.1:3100/metrics",
+              "protocol": "http",
+              "host": ["127", "0", "0", "1"],
+              "port": "3100",
+              "path": ["metrics"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('prom-client default metrics', () => {",
+                  "  pm.expect(pm.response.text()).to.include('nodejs_heap_size_used_bytes');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 Storefront",
+      "item": [
+        {
+          "name": "GET /products — first page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products?pageSize=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["products"],
+              "query": [{ "key": "pageSize", "value": "5" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('the listing shape', () => {",
+                  "  pm.expect(body).to.have.all.keys('items', 'page', 'pageSize', 'total');",
+                  "});",
+                  "pm.test('every row carries an effective price, not only a base one', () => {",
+                  "  body.items.forEach((p) => pm.expect(p).to.have.property('effectivePriceCents'));",
+                  "});",
+                  "if (body.items.length) pm.collectionVariables.set('productId', body.items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /products — sorted by effective price",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "The case study asks for sorting by the effective price. A 60 %-discounted 200.00 product sorts ahead of a 100.00 one, because the shopper pays less for it.",
+            "url": {
+              "raw": "{{baseUrl}}/products?sort=effectivePrice&order=asc&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["products"],
+              "query": [
+                { "key": "sort", "value": "effectivePrice" },
+                { "key": "order", "value": "asc" },
+                { "key": "pageSize", "value": "10" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const prices = pm.response.json().items.map((p) => p.effectivePriceCents);",
+                  "pm.test('ascending by what the shopper pays', () => {",
+                  "  pm.expect(prices).to.eql([...prices].sort((a, b) => a - b));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /products — filtered by category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products?category=Accessories&pageSize=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["products"],
+              "query": [
+                { "key": "category", "value": "Accessories" },
+                { "key": "pageSize", "value": "5" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('every row is in the category asked for', () => {",
+                  "  pm.response.json().items.forEach((p) => pm.expect(p.category).to.eql('Accessories'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /products/:id — the busiest endpoint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "The case study calls this the most highly trafficked endpoint. It is one Redis hash read, where the listing is a sorted-set range plus a multi-get — measured at 4 375 req/s against the listing's 1 728.",
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["products", "{{productId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('one product with its applied promotion', () => {",
+                  "  const p = pm.response.json();",
+                  "  pm.expect(p).to.have.property('effectivePriceCents');",
+                  "  pm.expect(p).to.have.property('promotion');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 Promotions",
+      "item": [
+        {
+          "name": "POST /products — a product of our own",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"PM-{{$timestamp}}\",\n  \"name\": \"Postman product\",\n  \"category\": \"{{category}}\",\n  \"basePriceCents\": 10000,\n  \"stockQuantity\": 5\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/products", "host": ["{{baseUrl}}"], "path": ["products"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('productId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /promotions — 50 % on the category",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman sale {{$timestamp}}\",\n  \"discountType\": \"percentage\",\n  \"value\": 5000,\n  \"startsAt\": \"2026-09-14T00:00:00.000Z\",\n  \"endsAt\": \"2026-12-31T00:00:00.000Z\",\n  \"category\": \"{{category}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/promotions",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const p = pm.response.json();",
+                  "pm.collectionVariables.set('promotionId', p.id);",
+                  "pm.test('born active, because it was given a target', () => {",
+                  "  pm.expect(p.status).to.eql('active');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /products/:id — the sale has reached the storefront",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Asynchronous by design. If this still shows the base price, run it again — the write is applied by a worker, not by the request that created the promotion.",
+            "url": {
+              "raw": "{{baseUrl}}/products/{{productId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["products", "{{productId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json();",
+                  "pm.test('half the base price, naming the promotion', () => {",
+                  "  pm.expect(p.effectivePriceCents).to.eql(Math.round(p.basePriceCents / 2));",
+                  "  pm.expect(p.promotion).to.not.eql(null);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /promotions — a second one on the same target is refused",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "'A product can have at most one active promotion at a time', enforced by a GiST exclusion constraint inside PostgreSQL — which is why eight concurrent writers produce one 201 and seven 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman clash {{$timestamp}}\",\n  \"discountType\": \"fixed\",\n  \"value\": 100,\n  \"startsAt\": \"2026-09-15T00:00:00.000Z\",\n  \"endsAt\": \"2026-10-01T00:00:00.000Z\",\n  \"category\": \"{{category}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/promotions",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));",
+                  "pm.test('the error envelope, not a stack trace', () => {",
+                  "  pm.expect(pm.response.json().error).to.have.property('message');",
+                  "});",
+                  "pm.test('names the target and the window, never the row it collided with', () => {",
+                  "  pm.expect(pm.response.json().error.message).to.not.match(/id \\d+/);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /promotions — a draft has no target",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman draft {{$timestamp}}\",\n  \"discountType\": \"percentage\",\n  \"value\": 1000,\n  \"startsAt\": \"2026-09-14T00:00:00.000Z\",\n  \"endsAt\": \"2026-12-31T00:00:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/promotions",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', () => pm.response.to.have.status(201));",
+                  "const p = pm.response.json();",
+                  "pm.collectionVariables.set('draftId', p.id);",
+                  "pm.test('draft until it is assigned', () => pm.expect(p.status).to.eql('draft'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /promotions/:id/assign — give the draft its target",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"productId\": {{productId}}\n}" },
+            "url": {
+              "raw": "{{baseUrl}}/promotions/{{draftId}}/assign",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions", "{{draftId}}", "assign"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('active once it has one target', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('active');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /promotions — list, filtered",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/promotions?status=active&limit=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions"],
+              "query": [
+                { "key": "status", "value": "active" },
+                { "key": "limit", "value": "5" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('every row matches the filter', () => {",
+                  "  pm.response.json().items.forEach((p) => pm.expect(p.status).to.eql('active'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /promotions/:id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/promotions/{{promotionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions", "{{promotionId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /promotions/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/promotions/{{promotionId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions", "{{promotionId}}", "cancel"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('cancelled', () => pm.expect(pm.response.json().status).to.eql('cancelled'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /promotions/:id/cancel — again, and still 200",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Idempotent on purpose: an operator retrying a cancel should not have to tell 'already done' from 'failed'.",
+            "url": {
+              "raw": "{{baseUrl}}/promotions/{{promotionId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions", "{{promotionId}}", "cancel"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 Vendor import (Scenario A)",
+      "item": [
+        {
+          "name": "POST /vendor/imports — upload a CSV",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Pick `fixtures/vendor-sample.csv` from this repository for the `file` field, or any CSV with the header `sku,name,category,vendor_price,stock_quantity`.\n\nThe response returns before the rows are processed: the request hashes the file and computes chunk boundaries (50-59 ms on a 22 MB file) and the workers do the rest. A 500 000-row file answered 202 in 834 ms and completed six chunks afterwards.\n\nThe same bytes can only be registered once, ever, and the uniqueness is global rather than per vendor — so a repeat gives 409.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "vendor", "value": "postman", "type": "text" },
+                { "key": "file", "type": "file", "src": [] }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/vendor/imports",
+              "host": ["{{baseUrl}}"],
+              "path": ["vendor", "imports"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202, or 409 if these exact bytes were registered before', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([202, 409]);",
+                  "});",
+                  "if (pm.response.code === 202) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('jobId', body.jobId);",
+                  "  pm.test('names the job and how many chunks it will take', () => {",
+                  "    pm.expect(body).to.have.all.keys('jobId', 'chunksTotal');",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /vendor/imports/:id — follow it",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Run this repeatedly. A killed worker resumes its chunk from the last checkpoint, so `rowsProcessed` never double-counts: on a 500 000-row file killed mid-import, the six chunks still summed to exactly 500 000.",
+            "url": {
+              "raw": "{{baseUrl}}/vendor/imports/{{jobId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["vendor", "imports", "{{jobId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const job = pm.response.json();",
+                  "pm.test('the counters an operator follows', () => {",
+                  "  pm.expect(job).to.include.keys('status', 'chunksTotal', 'chunksDone', 'rowsProcessed', 'rowsRejected');",
+                  "});",
+                  "pm.test('a status from the state machine, never something else', () => {",
+                  "  pm.expect(job.status).to.be.oneOf(['pending', 'running', 'completed', 'failed']);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 Refusals — every one of these should fail",
+      "item": [
+        {
+          "name": "GET /products?unknown=1 — an unknown field is refused, not dropped",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products?unknown=1",
+              "host": ["{{baseUrl}}"],
+              "path": ["products"],
+              "query": [{ "key": "unknown", "value": "1" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));",
+                  "pm.test('the error envelope', () => {",
+                  "  pm.expect(pm.response.json().error).to.have.property('message');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /products?pageSize=101 — over the cap",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products?pageSize=101",
+              "host": ["{{baseUrl}}"],
+              "path": ["products"],
+              "query": [{ "key": "pageSize", "value": "101" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /products?sort=basePrice — the only sort is effectivePrice",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products?sort=basePrice",
+              "host": ["{{baseUrl}}"],
+              "path": ["products"],
+              "query": [{ "key": "sort", "value": "basePrice" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /products?page=502&pageSize=20 — past the 10 000 offset cap",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "page=501 at pageSize=20 is offset 10 000 and answers 200; 502 is the first refusal. A deep offset makes one unauthenticated request expensive.",
+            "url": {
+              "raw": "{{baseUrl}}/products?page=502&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["products"],
+              "query": [
+                { "key": "page", "value": "502" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /products/abc — a malformed id never reaches the column",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products/abc",
+              "host": ["{{baseUrl}}"],
+              "path": ["products", "abc"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /products/99999999 — well formed, absent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/products/99999999",
+              "host": ["{{baseUrl}}"],
+              "path": ["products", "99999999"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('404', () => pm.response.to.have.status(404));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /promotions — percentage above 100",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Too much\",\n  \"discountType\": \"percentage\",\n  \"value\": 20000,\n  \"startsAt\": \"2026-09-14T00:00:00.000Z\",\n  \"endsAt\": \"2026-12-31T00:00:00.000Z\",\n  \"productId\": {{productId}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/promotions",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /promotions — endsAt before startsAt",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Inverted\",\n  \"discountType\": \"percentage\",\n  \"value\": 1000,\n  \"startsAt\": \"2026-10-02T00:00:00.000Z\",\n  \"endsAt\": \"2026-10-01T00:00:00.000Z\",\n  \"productId\": {{productId}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/promotions",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /promotions — a product that does not exist",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "A foreign-key violation reaches the caller as a sentence rather than as a 500 or a driver message.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ghost\",\n  \"discountType\": \"fixed\",\n  \"value\": 100,\n  \"startsAt\": \"2026-09-14T00:00:00.000Z\",\n  \"endsAt\": \"2026-12-31T00:00:00.000Z\",\n  \"productId\": 99999999\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/promotions",
+              "host": ["{{baseUrl}}"],
+              "path": ["promotions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));",
+                  "pm.test('says which thing is missing', () => {",
+                  "  pm.expect(pm.response.json().error.message).to.match(/product/i);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /products — a duplicate SKU",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Run this twice: 201, then 409.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"PM-DUPLICATE\",\n  \"name\": \"First\",\n  \"category\": \"{{category}}\",\n  \"basePriceCents\": 100,\n  \"stockQuantity\": 1\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/products", "host": ["{{baseUrl}}"], "path": ["products"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 the first time, 409 every time after', () => {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /vendor/imports — no file",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [{ "key": "vendor", "value": "postman", "type": "text" }]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/vendor/imports",
+              "host": ["{{baseUrl}}"],
+              "path": ["vendor", "imports"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('400', () => pm.response.to.have.status(400));"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
