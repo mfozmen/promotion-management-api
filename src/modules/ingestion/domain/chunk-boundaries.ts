@@ -17,10 +17,7 @@ const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
  * `targetBytes` is a target, not a maximum: a row longer than it produces a
  * chunk longer than it, because the alternative is splitting the row.
  */
-export async function chunkBoundaries(
-  path: string,
-  targetBytes: number,
-): Promise<ChunkBoundary[]> {
+export async function chunkBoundaries(path: string, targetBytes: number): Promise<ChunkBoundary[]> {
   const size = (await stat(path)).size;
   const start = await firstRowOffset(path);
   if (start >= size) return [];

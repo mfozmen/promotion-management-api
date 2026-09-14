@@ -109,10 +109,7 @@ describe('a worker killed mid-chunk', () => {
     const { jobId, startOffset, endOffset } = await sixRowFile();
     const announced: number[] = [];
 
-    // The kill lands inside the second batch's write transaction — after the
-    // first batch committed, before the second could. That is the window the
-    // guarantee is about: a kill between batches proves nothing, because every
-    // ordering survives that one.
+    // Inside the second batch's transaction: a kill between batches proves nothing.
     const dying = new ProcessChunkCommand({
       db: db(),
       products: new ProductRepository(db()),
@@ -131,9 +128,7 @@ describe('a worker killed mid-chunk', () => {
 
     await expect(dying.process({ jobId, chunkIndex: 0 })).rejects.toThrow('killed mid-batch');
 
-    // Batch one committed, rows and checkpoint together. Batch two took neither:
-    // the transaction that would have written its rows is the one that moved the
-    // checkpoint, so the replay redoes exactly the work that was lost.
+    // Batch one committed rows and checkpoint together; batch two took neither.
     expect(await db().select().from(products)).toHaveLength(BATCH);
     expect((await chunkRow(jobId))?.nextOffset).toBe(
       startOffset + Buffer.byteLength('SKU-0,name 0,Electronics,800.00,150\n') * BATCH,
@@ -177,8 +172,7 @@ describe('a worker killed mid-chunk', () => {
     expect(stored).toHaveLength(ROWS);
     expect(new Set(stored.map((p) => p.sku)).size).toBe(ROWS);
 
-    // Every stored product was announced at least once. This is the assertion the
-    // ordering exists for: at-least-once is recoverable, at-most-once is not.
+    // At-least-once is recoverable; at-most-once is not.
     expect(new Set(announced)).toEqual(new Set(stored.map((p) => p.id)));
 
     const chunk = await chunkRow(jobId);

@@ -36,24 +36,13 @@ export class ProductRepository {
   }
 
   /**
-   * Stores a batch of priced rows and returns their ids, for the `product.upserted`
-   * announcement the ingestion path sends per batch.
-   *
-   * One statement per batch, not one per row: an import is 500 000 rows and a
-   * round trip each would be the whole cost of the job (ADR-0005).
-   *
-   * `sku` is the vendor's identity for a product and ours is the surrogate id, so
-   * a re-import updates rather than inserts — which is what makes replaying a
-   * chunk after a kill harmless.
-   *
-   * `db` is a parameter rather than the field, because the caller commits this
-   * write and its checkpoint in one transaction and the boundary is the caller's
-   * to draw.
+   * Stores a batch of priced rows and returns their ids. One statement per batch,
+   * keyed on the vendor's `sku`, so replaying a chunk after a kill is harmless.
+   * `db` is a parameter because the caller owns the transaction.
    */
   async upsertMany(db: Queryable, batch: readonly ProductUpsert[]): Promise<readonly number[]> {
-    // PostgreSQL refuses to let one ON CONFLICT statement touch a row twice, and a
-    // vendor file repeating a SKU inside one batch is a vendor's mistake rather
-    // than a reason to fail the rows around it. The last occurrence wins.
+    // PostgreSQL refuses to let one ON CONFLICT statement touch a row twice, so a
+    // SKU repeated inside a batch is deduped rather than failing the rows around it.
     const rows = [...new Map(batch.map((row) => [row.sku, row])).values()];
     if (rows.length === 0) return [];
 
@@ -73,21 +62,15 @@ export class ProductRepository {
           updatedAt: sql`now()`,
         },
         // Resolution is by where the row came from, not by which write committed
-        // last: chunks are claimed independently, so the order rows are written
-        // is not the order of their offsets (design spec §"not commit order").
+        // last: chunks are claimed independently, so write order is not offset order.
         //
-        // The null branch is named rather than implied. A row-value comparison
-        // against NULL is NULL, not true, so `(a, b) > (c, d)` alone would
-        // silently never update a product created through the API, which has
-        // both provenance columns null. The schema checks the two columns are
-        // null together, so one branch covers both (REVIEW.md 2.6).
+        // The null branch is named rather than implied — a row comparison against
+        // NULL is NULL, not true, so the guard alone would silently never update a
+        // product created through the API, which has both columns null.
         //
-        // And only when something actually changed. A weekly vendor file is mostly
-        // the same catalogue, so without this a re-import rewrites every row it
-        // touches: 500 000 dead tuples, 500 000 `updated_at` values moved, and an
-        // announcement per batch for products nobody edited. `IS DISTINCT FROM`
-        // over the row handles nulls the way `<>` does not — a column going to or
-        // from null is a change, and `null <> null` is null rather than true.
+        // The value comparison is what stops a weekly re-import rewriting a
+        // catalogue that did not change. `IS DISTINCT FROM` because a column going
+        // to or from null is a change and `null <> null` is null.
         setWhere: sql`(${products.ingestJobId} is null
             or (excluded.ingest_job_id, excluded.ingest_source_offset)
                > (${products.ingestJobId}, ${products.ingestSourceOffset}))
@@ -99,15 +82,11 @@ export class ProductRepository {
       })
       .returning({ sku: products.sku, id: products.id });
 
-    // `RETURNING` follows the order the rows were written, which is not promised to
-    // be the order they were given; the caller's order is what the announcement uses.
+    // `RETURNING` follows write order, not the order the rows were given.
     const byTheirSku = new Map(stored.map((row) => [row.sku, row.id]));
 
-    // A row the guard skipped returns nothing, and the caller still has to be able
-    // to announce it: the product exists and the read model may not have seen it.
-    // Returning fewer ids than rows would put `undefined` in the announcement,
-    // which the event schema rejects after the batch has already committed. The
-    // extra read happens only when something was skipped, which is the rare path.
+    // A skipped row returns nothing and the caller still has to announce it:
+    // fewer ids than rows puts `undefined` into an already-committed batch's event.
     const skipped = rows.filter((row) => !byTheirSku.has(row.sku)).map((row) => row.sku);
     if (skipped.length > 0) {
       const found = await db

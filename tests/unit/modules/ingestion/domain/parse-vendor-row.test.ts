@@ -77,7 +77,11 @@ describe('parseVendorRow', () => {
   });
 
   it.each([
-    ['a stock quantity past the safe integer range', `SKU-1,n,c,10.00,${'9'.repeat(20)}`, 'stock_quantity'],
+    [
+      'a stock quantity past the safe integer range',
+      `SKU-1,n,c,10.00,${'9'.repeat(20)}`,
+      'stock_quantity',
+    ],
     ['a price past the safe integer range', `SKU-1,n,c,${'9'.repeat(20)}.99,1`, 'vendor_price'],
   ])('rejects %s', (_case, line, field) => {
     // Both pass their pattern — they are digits — and fail on magnitude, which is

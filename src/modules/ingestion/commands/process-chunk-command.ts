@@ -27,14 +27,8 @@ interface Batch {
 }
 
 /**
- * Runs one chunk of a vendor import: claim it, read its rows from where it left
- * off, price them, store them, announce them and checkpoint — a batch at a time.
- *
- * The order inside a batch is store, announce, checkpoint, and it is deliberate.
- * Checkpointing first and then failing to announce loses the batch in silence: the
- * rows are stored, the read model never hears about them, and nothing replays them.
- * Announcing first costs a duplicate announcement after a kill, which recomputes the
- * same prices — the read model is idempotent and silence is not.
+ * Runs one chunk of a vendor import, a batch at a time: claim, read from the
+ * checkpoint, price, store, announce, checkpoint.
  */
 export class ProcessChunkCommand {
   /**
@@ -97,12 +91,10 @@ export class ProcessChunkCommand {
 
   async process({ jobId, chunkIndex }: ChunkProcess): Promise<ChunkOutcome> {
     const claimed = await this.ingestion.claimChunk(jobId, chunkIndex, this.leaseMs);
-    // A duplicate delivery is the ordinary path, not an error: the registration step
-    // enqueues one job per chunk and a redelivery costs nothing.
+    // A duplicate delivery is the ordinary path, not an error.
     if (claimed === null) return { claimed: false, rowsProcessed: 0, rowsRejected: 0 };
 
-    // A claimed chunk proves the job: `ingestion_chunks.job_id` carries a foreign key
-    // to it and nothing cascades, so the row cannot outlive what it points at.
+    // A claimed chunk proves the job: the foreign key does not cascade.
     const job = (await this.ingestion.findIngestionJob(jobId))!;
 
     const calculator = await this.calculators.current();
@@ -144,23 +136,15 @@ export class ProcessChunkCommand {
       totals = committed;
     }
 
-    // The checkpoint reached the end of the range, so this chunk is done. Its
-    // counters go up to the job before the status does, or a `completed` job is
-    // readable for an instant reporting that it processed nothing.
+    // Counters before status, or a `completed` job is briefly readable reporting
+    // that it processed nothing.
     await this.ingestion.refreshJobProgress(jobId);
-    // The job is completed by whichever chunk was last, and only one call wins.
     await this.ingestion.completeJobIfDone(jobId);
 
     return { claimed: true, ...totals };
   }
 
-  /**
-   * Commits a batch and adds what it stored to the running totals, or returns null
-   * because the compare-and-set was refused and this invocation no longer holds
-   * the chunk. Both commit sites do exactly this — the batch that fills inside the
-   * loop and the partial one left at the end — and the second is the one most
-   * chunks take, since a file rarely divides evenly.
-   */
+  /** Null when the compare-and-set was refused: this invocation has lost the chunk. */
   private async commitInto(
     totals: Totals,
     jobId: number,
@@ -186,15 +170,9 @@ export class ProcessChunkCommand {
   }
 
   /**
-   * Prices one row, or returns undefined because the row was the problem.
-   *
-   * Sequential over the batch rather than concurrent: the rules engine is one
-   * compiled rule set and a batch is bounded, so the parallelism would buy nothing
-   * and cost the order the offsets depend on (ADR-0005).
-   *
-   * A `rules` fault throws instead. A broken rule set is not a bad row — every row
-   * after it would be rejected too, and a chunk that quietly stored none of its
-   * rows is worse than a chunk that failed.
+   * Prices one row, or returns undefined because the row was the problem. A
+   * `rules` fault throws instead: every row after it would be rejected too, and a
+   * chunk that quietly stored none of its rows is worse than one that failed.
    */
   private async price(
     calculator: Awaited<ReturnType<BasePriceCalculatorCache['current']>>,
@@ -225,22 +203,10 @@ export class ProcessChunkCommand {
   }
 
   /**
-   * How many products the batch stored, or null because the compare-and-set was
-   * refused and this invocation no longer holds the chunk.
-   *
    * The write and the checkpoint are one transaction, so an invocation that has
-   * lost the chunk stores nothing: its CAS fails and its rows roll back with it.
-   * Without that, a batch already in flight when the lease expired still landed —
-   * the loop stopped, the batch did not — and its rows would overwrite the
-   * winner's, permanently, if it had been pricing against an older rule set.
-   *
-   * The announcement follows the commit and its failure is not fatal, which is
-   * what every other write path here does. The cost is real and stated in the
-   * pull request: a batch that commits and then fails to publish leaves a stale
-   * read-model entry with nothing to repair it until the rebuild or the
-   * reconciler exists. That is a delay in a derivable projection; the ordering it
-   * replaces risked the store the projection derives from, which replaying
-   * cannot fix.
+   * lost the chunk stores nothing. The announcement follows the commit and its
+   * failure is logged rather than thrown: a lost announcement delays a derivable
+   * projection, while a superseded write corrupts the store it derives from.
    */
   private async commit(jobId: number, chunkIndex: number, batch: Batch): Promise<number | null> {
     let ids: readonly number[] = [];
@@ -265,10 +231,8 @@ export class ProcessChunkCommand {
       throw error;
     }
 
-    // Swallowed on purpose. The rows are committed; throwing here would fail the
-    // job after the data was safe, and the retry resumes past this batch anyway,
-    // so the announcement is lost either way and the failure is spurious. The log
-    // line is what an operator has to find a stale read-model entry by.
+    // Throwing here would fail the job after the data was safe, and the retry
+    // resumes past this batch anyway. The log line is how a stale entry is found.
     if (ids.length > 0) {
       await this.publish(ids).catch((error: unknown) => {
         this.log.error(

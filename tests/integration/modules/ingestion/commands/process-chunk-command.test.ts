@@ -193,11 +193,7 @@ describe('ProcessChunkCommand', () => {
   });
 
   it('commits the batch when the announcement fails, and logs what went stale', async () => {
-    // The announcement follows the commit and its failure is swallowed. Throwing
-    // here would fail the job after the rows were already safe, and the retry
-    // resumes past this batch anyway — so the announcement is lost either way and
-    // the failure would be spurious. The cost is a stale read-model entry with
-    // nothing to repair it until a rebuild, and the log line is how it is found.
+    // A failed announcement is logged, not thrown: the rows are already committed.
     const { jobId, endOffset } = await jobWithChunk(row(1));
     const logged: unknown[] = [];
 
@@ -218,9 +214,7 @@ describe('ProcessChunkCommand', () => {
   });
 
   it('stores nothing when the batch fails inside its transaction', async () => {
-    // The write and the checkpoint are one transaction, so a failure between them
-    // takes both. This is the kill the resumability guarantee is about: the batch
-    // is replayed whole because none of it landed.
+    // Write and checkpoint are one transaction, so the batch replays whole.
     const { jobId, startOffset } = await jobWithChunk(row(1) + row(2));
 
     await expect(
@@ -296,12 +290,7 @@ describe('ProcessChunkCommand', () => {
   });
 
   it('stops when its checkpoint is refused, because another invocation holds the chunk', async () => {
-    // The lease expired while this invocation was still working, so a second one
-    // claimed the chunk and is committing its own batches. The compare-and-set is
-    // what stops the loser corrupting the checkpoint — but only if somebody reads
-    // its answer. `checkpointBatch` returns whether it won and the processor used
-    // to discard it, so a superseded worker went on pricing rows, storing them and
-    // announcing them, with every checkpoint silently refused.
+    // A superseded invocation must stop, not go on pricing a chunk it has lost.
     const { jobId, startOffset } = await jobWithChunk(row(1) + row(2) + row(3) + row(4));
     let batches = 0;
 
@@ -336,9 +325,7 @@ describe('ProcessChunkCommand', () => {
   });
 
   it('stops on a refused checkpoint for the last partial batch too', async () => {
-    // The trailing batch commits on a different line from the ones inside the
-    // loop, and a chunk whose rows do not fill a batch takes only that line —
-    // which is most chunks, since a file rarely divides evenly.
+    // The trailing batch commits on a different line, and most chunks take it.
     const { jobId, startOffset } = await jobWithChunk(row(1));
 
     const result = await new ProcessChunkCommand({
@@ -365,11 +352,8 @@ describe('ProcessChunkCommand', () => {
   });
 
   it('hands the chunk back and re-enqueues when the time budget is spent', async () => {
-    // The serverless criterion: an invocation that runs out of time stops between
-    // batches rather than being killed mid-one. It must also RELEASE the chunk —
-    // holding the lease it no longer needs means the job it just enqueued finds
-    // the chunk busy and returns having done nothing, so the import stalls for a
-    // lease duration on every budget window.
+    // Out of time stops between batches and releases the chunk, or the job it
+    // enqueues finds the chunk busy and the import stalls for a lease duration.
     const { jobId, startOffset } = await jobWithChunk(row(1) + row(2) + row(3) + row(4));
     const enqueued: { jobId: number; chunkIndex: number }[] = [];
     let clock = 0;
@@ -402,8 +386,7 @@ describe('ProcessChunkCommand', () => {
   });
 
   it('does not re-enqueue a chunk the spent budget happened to finish', async () => {
-    // Budget exhausted and no bytes left is a completed chunk, not a hand-off.
-    // Re-enqueueing here costs a redelivery that claims nothing and returns.
+    // No bytes left is a finished chunk, not a hand-off.
     const { jobId } = await jobWithChunk(row(1) + row(2));
     const enqueued: unknown[] = [];
     let clock = 0;
@@ -440,10 +423,7 @@ describe('ProcessChunkCommand', () => {
   });
 
   it('counts the products it stored, not the lines it read, when a batch repeats a sku', async () => {
-    // The announcement and the checkpoint have to agree with the upsert, which
-    // dedupes within a batch because PostgreSQL refuses to touch a row twice in
-    // one statement. Three lines, two products: the count that reaches
-    // `rows_processed` is the one the batch actually wrote.
+    // Three lines, two products: the count stored, not the count read.
     sequence += 1;
     const repeated = `SKU-DUP-${sequence},name,Electronics,800.00,150
 `;
@@ -459,10 +439,8 @@ describe('ProcessChunkCommand', () => {
   });
 
   it('fails the batch when the write itself is rejected, storing nothing', async () => {
-    // A NUL byte in a vendor field: the parser accepts it as text and PostgreSQL
-    // refuses it, so the failure lands inside the transaction rather than before
-    // it. The batch is not a rejected row — the write was refused, not the row —
-    // so it fails the chunk and the rows roll back with the checkpoint.
+    // A NUL byte: the parser accepts it and PostgreSQL refuses it, so the failure
+    // lands inside the transaction and takes the batch with it.
     sequence += 1;
     const withNul = `SKU-NUL-${sequence},na me,Electronics,800.00,150
 `;

@@ -101,9 +101,12 @@ describe('readRangeLines', () => {
     // no cap makes peak memory the upload size rather than the batch size, which
     // is the one thing Scenario A promises it is not.
     const wide = 'x'.repeat(3 * 1024 * 1024);
-    const path = file('unterminated.csv', `${wide}
+    const path = file(
+      'unterminated.csv',
+      `${wide}
 SKU-2,name,shoes,1000,5
-`);
+`,
+    );
 
     const lines = await collect(path, 0, Buffer.byteLength(wide) + 1 + 26);
 

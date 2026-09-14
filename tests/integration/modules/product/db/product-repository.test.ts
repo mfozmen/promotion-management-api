@@ -111,10 +111,7 @@ describe('ProductRepository.upsertMany', () => {
   });
 
   it('keeps the later row when an earlier chunk arrives after a later one', async () => {
-    // Resolution is by where the row came from, not by which write committed
-    // last: chunks are claimed independently and six were in flight at once on a
-    // real 500 000-row run, so the order rows are written is not the order of
-    // their offsets. The design spec says "not commit order" in those words.
+    // Resolution is by where the row came from, not by which write committed last.
     const existing = product({ ingestJobId: 5, ingestSourceOffset: 900, name: 'later' });
     await new ProductRepository(db()).upsertMany(db(), [existing]);
 
@@ -161,10 +158,7 @@ describe('ProductRepository.upsertMany', () => {
   });
 
   it('returns an id for every row it was given, including one it did not write', async () => {
-    // The caller announces what it hands back, and a skipped row is still a
-    // product the read model may not have seen. Returning fewer ids than rows
-    // would put `undefined` in the announcement, which the event schema rejects
-    // after the batch has already committed.
+    // A skipped row is still a product the read model may not have seen.
     const existing = product({ ingestJobId: 9, ingestSourceOffset: 900 });
     await new ProductRepository(db()).upsertMany(db(), [existing]);
 
@@ -192,9 +186,7 @@ describe('ProductRepository.upsertMany', () => {
 
     const after = await rowFor(existing.sku);
     expect(after?.updatedAt?.getTime()).toBe(before?.getTime());
-    // Still announced: the caller hands back an id for every row it was given,
-    // because a product the read model has not seen is not the same as one that
-    // did not change here.
+    // Still announced: unchanged here is not the same as seen by the read model.
     expect(ids).toEqual([after?.id]);
   });
 

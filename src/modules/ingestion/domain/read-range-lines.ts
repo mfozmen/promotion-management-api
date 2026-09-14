@@ -11,20 +11,10 @@ export interface RangeLine {
 const NEWLINE = 0x0a;
 
 /**
- * The longest row this will hold in memory. A row longer than this is cut here
- * and rejected downstream on its column count.
- *
- * Without a cap the accumulator grows to the next newline, and a file with no
- * newline in its body has none: a vendor export whose header is LF-terminated
- * and whose rows end in CR alone — Excel for Mac, and several ERP exports —
- * arrives as one row the size of the upload. Peak memory then tracks the file
- * rather than the batch, which is the one thing chunking exists to prevent.
- *
- * Characters rather than bytes, because that is what the accumulator holds and
- * what bounds the heap; a JavaScript string is UTF-16, so the memory is up to
- * twice this. A megabyte is far past any real row (the widest seen is a few
- * hundred bytes) and far under the smallest chunk, so a legitimate row is never
- * cut.
+ * The longest row held in memory; a longer one is cut and rejected downstream on
+ * its column count. Without a cap a file with no newline in its body — a header
+ * ending LF and rows ending CR alone — arrives as one row the size of the upload,
+ * and peak memory tracks the file rather than the batch.
  */
 export const MAX_ROW_CHARS = 1024 * 1024;
 
@@ -35,19 +25,13 @@ function keep(pending: string, next: string): string {
 }
 
 /**
- * Reads one chunk's rows back, from the byte it resumes at to the byte its range ends.
+ * Reads one chunk's rows back, from the byte it resumes at to the byte its range
+ * ends. One read window is live at a time.
  *
- * A generator rather than an array because a chunk is megabytes and the point of
- * chunking is that no step holds the file (ADR-0005). One read window is live at a
- * time; a row longer than the window still arrives whole.
- *
- * `endOffset` is what makes a kill cost one batch instead of a chunk: it is the byte
- * a resume starts at, so it is past the terminator, never on it.
- *
- * Offsets are bytes throughout, which is why the decoder is separate from the scan —
- * `é` is two bytes and one character, and the two counts diverge on the first accented
- * product name. The `StringDecoder` holds a partial sequence across windows rather
- * than emitting the replacement character twice.
+ * `endOffset` is the byte a resume starts at — past the terminator, never on it.
+ * Offsets are bytes and text is characters, which is why the decoder is separate
+ * from the scan: `é` is two bytes and one character, and a window that splits it
+ * would otherwise yield two replacement characters.
  */
 export async function* readRangeLines(
   path: string,
