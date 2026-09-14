@@ -21,6 +21,11 @@ export function httpLogger(instance: Logger): HttpLogger {
     genReqId: correlationId,
     // Binds the id as `reqId` on `req.log`, so a handler's own lines carry it.
     quietReqLogger: true,
+    autoLogging: {
+      // The dashboard polls and loads its own assets: 64 lines a minute with nobody
+      // looking at it, which buries the request lines an operator came for.
+      ignore: (req: IncomingMessage) => String(req.url).startsWith('/admin/queues'),
+    },
     // Headers, body and query string never reach a line (ADR-0010).
     serializers: {
       req: (req: IncomingMessage) => ({

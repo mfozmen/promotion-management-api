@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { chunkProcess } from '@src/modules/ingestion/events/chunk-process.js';
-import { productUpserted } from '@src/modules/catalog/events/product-upserted.js';
+import { productUpserted } from '@src/modules/product/events/product-upserted.js';
 import { promotionChanged } from '@src/modules/promotion/events/promotion-changed.js';
 import { eventRegistry } from '@src/events/event-registry.js';
 import { readModelRebuild } from '@src/modules/storefront/events/readmodel-rebuild.js';
-import { reconcilerRun } from '@src/events/reconciler-run.js';
+import { reconcilerRun } from '@src/modules/reconciler/events/reconciler-run.js';
 
 // The eventRegistry only maps names to schemas; each schema is tested beside its source.
 describe('eventRegistry', () => {

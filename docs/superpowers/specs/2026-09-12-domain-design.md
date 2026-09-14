@@ -368,8 +368,8 @@ create table ingestion_chunks (
   applied, so an admin can always tell which of the two won and why.
 - Same-level overlap (two active product promotions on one product, or two on
   one category, overlapping in time) is still rejected with `409` by the
-  exclusion constraints (SQLSTATE 23P01), and the handler selects the
-  overlapping promotion to report `{ conflictingPromotionId }`. The engine
+  exclusion constraints (SQLSTATE 23P01), and the refusal names no promotion:
+  the envelope carries a message and nothing read from a row. The engine
   would pick a winner either way, so this is no longer about correctness: it
   keeps an admin from quietly shadowing a colleague's campaign, and it keeps
   the candidate set small enough that resolution stays a two-row decision.
@@ -402,9 +402,8 @@ create table ingestion_chunks (
   (case-sensitive), because a categories table is out of scope. A category
   promotion is not rejected when no product carries that category yet:
   Scenario B requires products ingested later to inherit it. Instead the
-  create and assign responses include `productCount` (a `count(*)` on the
-  category at that instant) so a typo shows up as `0` in the admin's face, and
-  the API logs a warning at `productCount = 0`.
+  a mistyped category is accepted and invisible at the API; `productCount` was
+  designed for this and not built (ADR-0004).
 - Storefront responses carry `basePriceCents`, `effectivePriceCents` and
   `promotion: { id, name } | null` so any price can be explained.
 - Promotion responses carry a derived `state`: `draft`, `scheduled` (before
@@ -465,7 +464,7 @@ dead-letter queue, visible in Bull Board and the admin endpoints).
 
 | Queue         | Job name            | Payload                              | Producer                                                                    | Handler effect                                                                                                                                                                                      |
 | ------------- | ------------------- | ------------------------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog`     | `product.upserted`  | `{ productIds: number[] }` (≤ 5 000) | `POST /api/products` (one id); ingestion batch                              | recompute those products, write read model                                                                                                                                                          |
+| `products`    | `product.upserted`  | `{ productIds: number[] }` (≤ 5 000) | `POST /api/products` (one id); ingestion batch                              | recompute those products, write read model                                                                                                                                                          |
 | `promotions`  | `promotion.changed` | `{ promotionId }`                    | create (with a target), assign, cancel, delayed activate/expire, reconciler | product target: recompute 1; category target: keyset-scan the category by id in batches of 1 000, recompute, pipeline                                                                               |
 | `maintenance` | `readmodel.rebuild` | `{ category?: string }`              | cold start, admin, reconciler                                               | stream the scope's products from PostgreSQL and recompute each (the delete is part of that write, ADR-0003); `SCAN`+`UNLINK` only ids PostgreSQL no longer has; full rebuild sets `readmodel:ready` |
 | `maintenance` | `reconciler.run`    | `{}` (repeatable, every 5 min)       | reconciler worker schedule                                                  | see section 9                                                                                                                                                                                       |
@@ -633,7 +632,7 @@ Automatic:
 - **Product entry write**: the recompute writes `HSET product:{id}` and `HDEL product:{id} promotionId promotionName` when it finds no promotion, in the same `MULTI` as the `ZADD`s and in that order. `HSET` does not remove a field, so a cancelled promotion otherwise keeps a well-formed pair beside a restored base price and the storefront names a finished sale; and a reader that sees the price restored before the pair is cleared gets a discounted price with no promotion, which the storefront refuses for the whole page (ADR-0006).
 - **Cold start**: the storefront routes answer `503` while `readmodel:ready` is missing. Enqueuing `readmodel.rebuild {}` on that condition is **not built yet** — the read-model worker story owns it, along with unlinking the key before its sweep and setting it last, which is what stops a Redis restart reloading the flag and the stale hashes it certified together. Until then a cold start waits for something to start the rebuild, and nothing does.
 - **Category-scoped reconciler** (`reconciler.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`, `ends_at` or `cancelled_at` fell between the previous successful sweep and now (`cancelled_at` because a cancel whose `promotion.changed` was lost need have no boundary of its own in the window, ADR-0003; the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `chunk.process` job (idempotent thanks to the claim).
-- **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: always` brings it back.
+- **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: unless-stopped` brings it back: an exit is not a manual stop, so it restarts identically, and `docker compose stop` keeps meaning what an operator expects (ADR-0003).
 - **Handler isolation**: every handler catches, logs with the job id and rethrows so BullMQ records the failure; nothing crashes the process.
 
 Manual (all under `/api/admin`, plus Bull Board at `/admin/queues`):
@@ -697,8 +696,10 @@ src/
     promotion/
       domain/    effective-price-calculator.ts (EffectivePriceCalculator: discounts injected, the lookup inline in calculate, the input guard a private method), percentage-discount.ts and fixed-discount.ts (one Discount class each, formula and value check together), candidate-selection.ts (runs the engine over already-loaded rules, pure)
         dto/     promotion.ts (the Promotion row as a type), discount-type.ts, promotion-status.ts (its two closed sets), pricing-outcome.ts (PricingOutcome), discount.ts (the Discount interface: valueError + discountCents) — REVIEW.md 8c.8
-      db/        promotion.repository.ts, selection-rules.repository.ts (loads the type='promotion' rules, holds their cache)
-      http/      promotion.routes.ts, promotion.service.ts, promotion.schemas.ts
+      db/        promotion-repository.ts (PromotionRepository: the writes, the reads and the one `state` fragment), selection-rules-repository.ts (loads the type='promotion' rules, holds their cache)
+      commands/  one class per write use case: create-promotion-command.ts, assign-promotion-command.ts, cancel-promotion-command.ts, plus promotion-write-error.ts (an outcome becomes a status here)
+      queries/   one class per read use case: find-promotion-query.ts, list-promotions-query.ts
+      http/      promotion-routes.ts and the input schemas under domain/dto/*-input.ts; the route calls one use case and decides nothing (ADR-0008)
     pricing/
       domain/    base-price-calculator.ts (compiles the rules, owns the engine, serialises its runs, prices a row), base-price-calculator-cache.ts (caches a compiled calculator; the query that feeds it is the caller's)
         dto/     pricing-rule-row.ts, pricing-outcome.ts, vendor-row-facts.ts, adjustment-event.ts (a zod schema is a shape too) — REVIEW.md 8c.8
@@ -724,7 +725,7 @@ Dockerfile           one image, command per service
   both or neither target (`400`), a vendor row with a negative price or stock
   rejected without aborting its batch, an ingested row updating a manually
   created product (null ingest columns), a category promotion whose category matches
-  no product (`201` with `productCount: 0` and a warning log), assigning a draft whose `endsAt` has passed
+  no product (`201`, and the miss is invisible until the storefront is read), assigning a draft whose `endsAt` has passed
   (`409`), two concurrent assigns of one draft (one `200`, one `409`), a
   product created in a category with an active promotion is discounted on its
   first read, a budget release leaving `failures` untouched while an
@@ -770,8 +771,9 @@ Dockerfile           one image, command per service
 - Flash sale: create a category promotion over 50 000 seeded products, assert
   listing order and detail prices after the handler completes, then add a
   product to the category and assert the discount on first read.
-- Coverage 100 %; exclusions are `src/server.ts` and `src/workers/*.ts`
-  only.
+- Coverage 100 %; the exclusions are the process entry points named one by one
+  — `src/server.ts` and the three worker mains — so a new file under
+  `src/workers/` is covered rather than excluded by a glob.
 
 ## 13. Out of scope
 

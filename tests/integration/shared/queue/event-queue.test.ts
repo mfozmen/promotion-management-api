@@ -4,10 +4,12 @@ import { Redis } from 'ioredis';
 import { eventRegistry } from '@src/events/event-registry.js';
 import { eventRouting } from '@src/events/event-routing.js';
 import { EventQueue } from '@src/shared/queue/event-queue.js';
+import { SweepBoundariesCommand } from '@src/modules/reconciler/commands/sweep-boundaries-command.js';
+import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-scheduler.js';
 import { logger } from '@src/shared/logger.js';
 import { randomUUID } from 'node:crypto';
 
-// These tests need a real Redis: docker run -d --rm -p 6399:6379 redis:7-alpine
+// These tests need a real Redis: `npm run up` starts one on 6399 (the `test` profile).
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
 
 const READ_MODEL_DB = 0;
@@ -15,7 +17,7 @@ const QUEUE_DB = 1;
 // Every key this file writes sits under a prefix unique to the run, so a count
 // over a queue means this run's jobs and not a sibling worktree's (REVIEW.md 7.6).
 const PREFIX = `bulltest-${randomUUID().slice(0, 8)}`;
-const QUEUE_NAMES = ['promotions', 'catalog', 'ingestion', 'maintenance'] as const;
+const QUEUE_NAMES = ['promotions', 'products', 'ingestion', 'maintenance'] as const;
 
 /** Obliterating a queue is not something a running process should be able to do. */
 async function clearOwnQueues(): Promise<void> {
@@ -61,7 +63,7 @@ describe('EventQueue', () => {
     const received: unknown[] = [];
     workers.push(
       new Worker(
-        'catalog',
+        'products',
         async (job: Job) => {
           received.push({ name: job.name, data: job.data });
         },
@@ -121,6 +123,43 @@ describe('EventQueue', () => {
     expect(first.id).toBe('promo:5:activate');
     expect(second.id).toBe(first.id);
     expect(await bus.inspect('promotions').getDelayedCount()).toBe(1);
+  });
+
+  it('stores the boundary jobs the scheduler schedules, under the ids it removes them by', async () => {
+    // ADR-0007 promises this test catches a BullMQ that tightens the colon rule.
+    // `promo:{id}:{boundary}` splits in three by luck rather than by method, and
+    // every other test of the scheduler uses a double that validates no id at all.
+    const scheduler = new PromotionScheduler(bus);
+    const now = new Date();
+    const at = new Date(now.getTime() + 86_400_000);
+
+    const activate = await scheduler.schedule(11, 'activate', at, now);
+    const expire = await scheduler.schedule(11, 'expire', at, now);
+
+    expect([activate.id, expire.id]).toEqual(['promo:11:activate', 'promo:11:expire']);
+
+    await scheduler.cancel(11);
+
+    // Not the removal count: BullMQ's script returns `1` for a key that was not
+    // there, so a count cannot tell a removal from a miss — which is what a
+    // `cancel` building a different id from `schedule` would look like.
+    expect(await bus.inspect('promotions').getJob('promo:11:activate')).toBeUndefined();
+    expect(await bus.inspect('promotions').getJob('promo:11:expire')).toBeUndefined();
+  });
+
+  it('accepts the id the boundary sweep builds, which BullMQ parses rather than stores', async () => {
+    // A custom id containing colons must split in exactly three, so an ISO timestamp
+    // in the third part throws on every publish — a sweep that repairs nothing and
+    // never advances its watermark. The rule is BullMQ's; the shape is ours.
+    const since = new Date('2026-09-14T02:50:00.000Z');
+
+    const job = await bus.publish(
+      'promotion.changed',
+      { promotionId: 5 },
+      { jobId: SweepBoundariesCommand.jobId(5, since) },
+    );
+
+    expect(job.id).toBe(`sweep:5:${String(since.getTime())}`);
   });
 
   it.each([
@@ -205,6 +244,9 @@ describe('EventQueue', () => {
     const failed = await bus.inspect('ingestion').getJob(job.id!);
     expect(failed?.attemptsMade).toBe(3);
     expect(failed?.failedReason).toBe('poisoned job');
+    // The count, not just the job: `removeOnFail: false` is only a dead-letter queue if
+    // something can see the set growing.
+    expect(await bus.inspect('ingestion').getFailedCount()).toBe(1);
   }, 40_000);
 
   it('keeps every queue on the queue database and never writes to the read-model database', async () => {
@@ -217,7 +259,7 @@ describe('EventQueue', () => {
       await bus.publish('chunk.process', { jobId: 1, chunkIndex: 0 });
 
       expect(await readModel.dbsize()).toBe(0);
-      expect(await queueDb.exists(`${PREFIX}:catalog:meta`)).toBe(1);
+      expect(await queueDb.exists(`${PREFIX}:products:meta`)).toBe(1);
       expect(await queueDb.exists(`${PREFIX}:ingestion:meta`)).toBe(1);
     } finally {
       await Promise.all([readModel.quit(), queueDb.quit()]);
@@ -265,6 +307,34 @@ describe('EventQueue', () => {
     } finally {
       errors.mockRestore();
       await unreachable.close().catch(() => undefined);
+    }
+  });
+
+  it('schedules a repeatable the real library accepts, and re-asserting it adds no second', async () => {
+    // REVIEW.md 7.11: BullMQ parses the scheduler id, so the only proof it accepts ours is
+    // BullMQ accepting it. A hand-written double would pass whatever we wrote.
+    const maintenance = new Queue('maintenance', {
+      connection: { url: redisUrl, db: QUEUE_DB },
+      prefix: PREFIX,
+    });
+    try {
+      await bus.schedule('reconciler.run', 60_000, {});
+      await bus.schedule('reconciler.run', 60_000, {});
+      const schedulers = await maintenance.getJobSchedulers();
+
+      expect(schedulers.map((scheduler) => scheduler.key)).toEqual(['reconciler.run']);
+      expect(schedulers[0]?.every).toBe(60_000);
+      // The job the schedule produces carries the event name a handler dispatches on. It is
+      // not necessarily delayed: BullMQ runs the first iteration straight away, so waiting
+      // and delayed are both where it can legitimately be.
+      await waitFor(
+        async () => (await maintenance.getJobs(['waiting', 'delayed'])).length === 1,
+        4_000,
+      );
+      expect((await maintenance.getJobs(['waiting', 'delayed']))[0]?.name).toBe('reconciler.run');
+    } finally {
+      await maintenance.removeJobScheduler('reconciler.run');
+      await maintenance.close();
     }
   });
 

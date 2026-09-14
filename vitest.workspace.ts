@@ -1,9 +1,14 @@
 import { fileURLToPath } from 'node:url';
 import { configDefaults, defineWorkspace } from 'vitest/config';
 
-// A workspace project does not inherit the root config's resolve block, so the
-// @src alias has to be repeated per project or every aliased import fails to load.
-const resolve = { alias: { '@src': fileURLToPath(new URL('./src', import.meta.url)) } };
+// A workspace project does not inherit the root config's `resolve`, so the alias
+// is declared here and spread into both projects (REVIEW.md 7.8).
+const resolve = {
+  alias: {
+    '@src': fileURLToPath(new URL('./src', import.meta.url)),
+    '@tests': fileURLToPath(new URL('./tests', import.meta.url)),
+  },
+};
 
 // Two layers, so a machine with no PostgreSQL can still run `npm test` and commit.
 export default defineWorkspace([

@@ -41,7 +41,7 @@ export class EventQueue<R extends Registry> {
     };
     const queues = {
       promotions: new Queue('promotions', options),
-      catalog: new Queue('catalog', options),
+      products: new Queue('products', options),
       ingestion: new Queue('ingestion', options),
       maintenance: new Queue('maintenance', options),
     };
@@ -67,13 +67,48 @@ export class EventQueue<R extends Registry> {
     );
   }
 
+  /**
+   * A repeatable job, keyed by the event name alone: one schedule per event, so a restart
+   * re-asserts it instead of adding a second. The id is built here and nowhere else, and the
+   * name is what BullMQ parses — no colons, which is the character that makes it reject a
+   * custom id (REVIEW.md 7.11 has the failure).
+   */
+  async schedule<N extends keyof R & string>(
+    name: N,
+    everyMs: number,
+    payload: z.infer<R[N]>,
+  ): Promise<void> {
+    const schema = this.registry[name] as ZodType;
+    await this.bounded(
+      `schedule("${name}")`,
+      this.queues[this.routing[name]].upsertJobScheduler(
+        name,
+        { every: everyMs },
+        { name, data: schema.parse(payload) },
+      ),
+    );
+  }
+
   /** `1` also means there was no such job, so a code is not proof of a removal. */
   async remove<N extends keyof R & string>(name: N, jobId: string): Promise<number> {
     return this.bounded(`remove("${jobId}")`, this.queues[this.routing[name]].remove(jobId));
   }
 
-  inspect(name: QueueName): Pick<Queue, 'getJob' | 'getWaitingCount' | 'getDelayedCount'> {
+  /**
+   * Read methods. `getFailedCount` is here because `removeOnFail: false` makes the failed
+   * set the dead-letter queue, and a dead-letter queue nothing can count is not one. Not a
+   * read-only seam: `getJob` hands back a live `Job` carrying `remove`, `retry` and
+   * `promote`, so a caller narrows to the fields it needs rather than passing a handle on.
+   */
+  inspect(
+    name: QueueName,
+  ): Pick<Queue, 'getJob' | 'getWaitingCount' | 'getDelayedCount' | 'getFailedCount'> {
     return this.queues[name];
+  }
+
+  /** The queues this bus holds, so a reader iterates what exists rather than a second list. */
+  all(): Queue[] {
+    return Object.values(this.queues);
   }
 
   /** Closing does not drain, so `SIGTERM` stops the producers first; it frees the socket. */
@@ -100,7 +135,8 @@ export class EventQueue<R extends Registry> {
       ]);
     } finally {
       clearTimeout(timer);
-      // The loser still settles, and an unhandled rejection would take the process down.
+      // `Promise.race` has already handled the loser, so this is not a crash guard: it is
+      // the only place a failure arriving after the bound is recorded.
       work.catch((error: unknown) => {
         logger.error({ operation, err: error }, 'queue operation failed');
       });

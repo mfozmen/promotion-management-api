@@ -20,6 +20,7 @@ COPY --from=build /app/dist ./dist
 # only the code that applies them. Same path as on the host: the entrypoint resolves the
 # folder relative to /app.
 COPY src/shared/db/migrations ./src/shared/db/migrations
+RUN mkdir -p /app/uploads && chown node:node /app/uploads
 USER node
 EXPOSE 3100
 CMD ["node", "dist/server.js"]

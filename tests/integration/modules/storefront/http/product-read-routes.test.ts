@@ -1,6 +1,7 @@
 import { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
+import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
 import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import pino from 'pino';
@@ -15,7 +16,8 @@ import {
 const redis = useTestRedis();
 // The 500 and 503 cases log by design; silent keeps that out of the report.
 const testLogger = pino({ level: 'silent' });
-const app = () => createApp(testLogger, new ProductReadRepository(redis()));
+const app = () =>
+  createApp(appDeps({ logger: testLogger, products: new ProductReadRepository(redis()) }));
 
 /** A product the reader would accept. The base price follows the effective one
  *  unless a case sets it, because a price below its base with no promotion is a
@@ -342,9 +344,9 @@ describe('a rebuild that has removed a product the index still lists', () => {
     });
     unreachable.connect().catch(() => undefined);
 
-    const res = await request(createApp(testLogger, new ProductReadRepository(unreachable))).get(
-      '/api/products',
-    );
+    const res = await request(
+      createApp(appDeps({ logger: testLogger, products: new ProductReadRepository(unreachable) })),
+    ).get('/api/products');
     unreachable.disconnect();
 
     expect(res.status).toBe(503);

@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { products } from '@src/modules/catalog/db/schema/products.js';
+import { products } from '@src/modules/product/db/schema/products.js';
 import { chunkStatus } from '@src/modules/ingestion/db/schema/chunk-status.js';
 import { ingestionStatus } from '@src/modules/ingestion/db/schema/ingestion-status.js';
 import { pricingRuleType } from '@src/modules/pricing/db/schema/pricing-rule-type.js';
@@ -11,7 +11,7 @@ import { promotionStatus } from '@src/modules/promotion/db/schema/promotion-stat
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
-import { reconcilerState } from '@src/workers/reconciler/db/schema/reconciler-state.js';
+import { reconcilerState } from '@src/modules/reconciler/db/schema/reconciler-state.js';
 import { sqlStateOf, useTestDatabase } from '../../db.js';
 
 const EXCLUSION_VIOLATION = '23P01';

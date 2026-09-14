@@ -1,6 +1,7 @@
 import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
+import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
 import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import { logger as rootLogger } from '@src/shared/logger.js';
@@ -22,7 +23,12 @@ describe('productReadRoutes', () => {
   describe('when Redis answers a pipeline with nothing at all', () => {
     it('serves an empty page rather than failing', async () => {
       const res = await request(
-        createApp(rootLogger, new ProductReadRepository(redisAnsweringNoReplies)),
+        createApp(
+          appDeps({
+            logger: rootLogger,
+            products: new ProductReadRepository(redisAnsweringNoReplies),
+          }),
+        ),
       ).get('/api/products');
 
       expect(res.status).toBe(200);

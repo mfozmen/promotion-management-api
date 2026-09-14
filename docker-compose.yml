@@ -1,5 +1,18 @@
 name: promotion-management-api
 
+x-app-environment: &app-environment
+  DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
+  REDIS_URL: redis://redis:6379
+  REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
+  REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
+  SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
+
+x-stores-healthy: &stores-healthy
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -19,7 +32,7 @@ services:
       test:
         [
           'CMD-SHELL',
-          'psql --quiet --no-align --tuples-only -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
+          'psql --quiet --no-align --tuples-only -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
         ]
       interval: 5s
       timeout: 5s
@@ -46,19 +59,16 @@ services:
   api:
     build: .
     restart: unless-stopped
+    stop_grace_period: 15s
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-promo}:${POSTGRES_PASSWORD:-promo}@postgres:5432/${POSTGRES_DB:-promotion}
-      REDIS_URL: redis://redis:6379
-      REDIS_QUEUE_DB: ${REDIS_QUEUE_DB:-1}
-      REDIS_READ_MODEL_DB: ${REDIS_READ_MODEL_DB:-0}
-      SHUTDOWN_DRAIN_TIMEOUT_MS: ${SHUTDOWN_DRAIN_TIMEOUT_MS:-10000}
+      <<: *app-environment
+      UPLOAD_DIR: /app/uploads
     ports:
       - '127.0.0.1:3100:3100'
+    volumes:
+      - uploads:/app/uploads
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      <<: *stores-healthy
     networks:
       - promotion
     healthcheck:
@@ -73,6 +83,57 @@ services:
       timeout: 5s
       retries: 12
       start_period: 180s
+
+  event-handler:
+    build: .
+    restart: unless-stopped
+    stop_grace_period: 15s
+    command: ['node', 'dist/workers/event-handler.js']
+    environment:
+      <<: *app-environment
+    depends_on:
+      <<: *stores-healthy
+      api:
+        condition: service_healthy
+    networks:
+      - promotion
+
+  ingestion-worker:
+    build: .
+    restart: unless-stopped
+    stop_grace_period: 15s
+    command: ['node', 'dist/workers/ingestion-worker.js']
+    environment:
+      <<: *app-environment
+      UPLOAD_DIR: /app/uploads
+      NODE_OPTIONS: --max-old-space-size=192
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      <<: *stores-healthy
+      api:
+        condition: service_healthy
+    networks:
+      - promotion
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+  reconciler:
+    build: .
+    restart: unless-stopped
+    stop_grace_period: 15s
+    command: ['node', 'dist/workers/reconciler.js']
+    environment:
+      <<: *app-environment
+    depends_on:
+      <<: *stores-healthy
+      api:
+        condition: service_healthy
+    networks:
+      - promotion
 
   adminer:
     image: adminer:4
@@ -98,9 +159,45 @@ services:
     networks:
       - promotion
 
+  postgres-test:
+    image: postgres:16-alpine
+    profiles: [test]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: promotion
+    ports:
+      - '127.0.0.1:55432:5432'
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'psql --quiet --no-align --tuples-only -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -c "select 1" > /dev/null',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - promotion
+
+  redis-test:
+    image: redis:7-alpine
+    profiles: [test]
+    ports:
+      - '127.0.0.1:6399:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - promotion
+
 networks:
   promotion:
 
 volumes:
   postgres-data:
   redis-data:
+  uploads:
