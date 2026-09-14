@@ -63,6 +63,15 @@ export class ProductSourceRepository {
     };
   }
 
+  /** One row per category, so drift is one query rather than one per category. */
+  async categoryCounts(): Promise<Map<string, number>> {
+    const { rows } = await this.db.execute<Record<string, unknown>>(sql`
+      select category, count(*)::int as products from products group by category
+    `);
+
+    return new Map(rows.map((row) => [String(row.category), Number(row.products)]));
+  }
+
   /** Keyset, never OFFSET: an OFFSET scan re-reads every row it skipped. */
   async idsInCategory(category: string, afterId: number): Promise<number[]> {
     const { rows } = await this.db.execute<Record<string, unknown> & { id: number }>(sql`

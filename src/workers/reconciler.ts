@@ -1,4 +1,5 @@
 import { Worker } from 'bullmq';
+import { RepairDriftCommand } from '../modules/reconciler/commands/repair-drift-command.js';
 import { SweepBoundariesCommand } from '../modules/reconciler/commands/sweep-boundaries-command.js';
 import { BoundaryRepository } from '../modules/reconciler/db/boundary-repository.js';
 import { ReconcilerRunHandler } from '../modules/reconciler/events/reconciler-run-handler.js';
@@ -21,9 +22,18 @@ const db = createDb(pool);
 // a command out in a second, which is right for a request and wrong for a
 // rebuild's pipelines.
 const readModel = createReadModelWriterClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB);
-const { rebuild } = await readModelConsumer(db, readModel, queue, logger);
+const {
+  rebuild,
+  source,
+  readModel: listing,
+  rebuildCategory,
+} = await readModelConsumer(db, readModel, queue, logger);
 const handler = new MaintenanceDispatcher(
-  new ReconcilerRunHandler(new SweepBoundariesCommand(new BoundaryRepository(db), queue, logger)),
+  new ReconcilerRunHandler(
+    new SweepBoundariesCommand(new BoundaryRepository(db), queue, logger),
+    new RepairDriftCommand(source, listing, rebuildCategory, logger),
+    logger,
+  ),
   rebuild,
 );
 

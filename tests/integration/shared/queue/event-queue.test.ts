@@ -147,6 +147,32 @@ describe('EventQueue', () => {
     expect(await bus.inspect('promotions').getJob('promo:11:expire')).toBeUndefined();
   });
 
+  it('returns a whole failed set to waiting, in pages, and answers with the count', async () => {
+    // The dashboard retries one job at a time, which is right for one poisoned
+    // job and wrong for the hundred a bad deploy leaves behind. Paged because a
+    // failed set is unbounded by design: nothing trims it.
+    const failing = new Worker('promotions', () => Promise.reject(new Error('poisoned')), {
+      connection: { url: redisUrl, db: QUEUE_DB },
+      prefix: PREFIX,
+    });
+    workers.push(failing);
+    for (const promotionId of [1, 2, 3]) {
+      await bus.publish('promotion.changed', { promotionId }, { attempts: 1 });
+    }
+    await waitFor(async () => (await bus.inspect('promotions').getFailedCount()) === 3, 10_000);
+
+    // With the consumer still rejecting, each job re-enters the set as it is
+    // retried. Returning at all is the assertion: an earlier version walked the
+    // set until it emptied and retried these three 157 times.
+    expect(await bus.retryFailed('promotions')).toBe(3);
+
+    await failing.close();
+    await bus.retryFailed('promotions');
+
+    await waitFor(async () => (await bus.inspect('promotions').getFailedCount()) === 0, 10_000);
+    expect(await bus.inspect('promotions').getWaitingCount()).toBe(3);
+  });
+
   it('accepts the id the boundary sweep builds, which BullMQ parses rather than stores', async () => {
     // A custom id containing colons must split in exactly three, so an ISO timestamp
     // in the third part throws on every publish — a sweep that repairs nothing and

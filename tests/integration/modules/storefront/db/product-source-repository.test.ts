@@ -173,6 +173,19 @@ describe('ProductSourceRepository', () => {
     expect(Number(sourceReadAt)).toBeGreaterThan(Number(matched.sourceReadAt));
   });
 
+  it('counts every category in one statement, which is what the drift check compares', async () => {
+    // One row per category rather than a count per category: the reconciler asks
+    // this on every run, and a query per category would scale with the catalogue.
+    await insert([{ sku: 'SKU-CC1' }, { sku: 'SKU-CC2' }], 'drift-one');
+    await insert([{ sku: 'SKU-CC3' }], 'drift-two');
+
+    const counts = await new ProductSourceRepository(db()).categoryCounts();
+
+    expect(counts.get('drift-one')).toBe(2);
+    expect(counts.get('drift-two')).toBe(1);
+    expect(counts.get('no-such-category')).toBeUndefined();
+  });
+
   it('carries the pricing rules version when the row has one, and null when not', async () => {
     const [withVersion, without] = await insert([
       { sku: 'SKU-G', pricingRulesVersion: 1_789_238_046 },
