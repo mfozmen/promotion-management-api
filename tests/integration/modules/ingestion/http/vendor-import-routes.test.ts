@@ -155,6 +155,14 @@ describe('POST /api/vendor/imports', () => {
 
     expect(res.status).toBe(500);
     expect(readdirSync(uploads)).toHaveLength(before + 1);
+    // The title says "after the job is committed", so the row is read rather
+    // than inferred from where the publish sits in the command.
+    const [job] = await db()
+      .select()
+      .from(ingestionJobs)
+      .where(eq(ingestionJobs.vendor, 'announce-fails'));
+    expect(job?.status).toBe('running');
+    expect(readdirSync(uploads)).toContain(job?.fileRef);
   });
 
   it('rejects a file sent with no vendor named', async () => {
