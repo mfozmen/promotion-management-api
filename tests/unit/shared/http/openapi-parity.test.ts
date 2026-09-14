@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import request from 'supertest';
 import { createApp } from '@src/app.js';
+import { isDocumented } from '@src/shared/http/documented-scope.js';
 import { openapiDocument } from '@src/shared/http/openapi-document.js';
 import { routeInventory } from '@src/shared/http/route-inventory.js';
 import { appDeps } from '@tests/app-deps.js';
@@ -25,9 +27,7 @@ describe('the document and the application', () => {
   it('describes exactly the routes the application answers', () => {
     const served = routeInventory(app())
       .map((route) => route.path.replace(/:([A-Za-z0-9_]+)/g, '{$1}'))
-      // What this API serves. `/metrics` and the board answer neither its
-      // envelope nor its content type, and the page itself serves HTML.
-      .filter((path) => path.startsWith('/api') && !path.startsWith('/api/docs'));
+      .filter(isDocumented);
 
     const documented = Object.keys(openapiDocument(app()).paths);
 
@@ -40,18 +40,28 @@ describe('the document and the application', () => {
     const unvalidated = routeInventory(app())
       .filter((route) => Object.keys(route.schemas).length === 0)
       .map((route) => `${route.method} ${route.path}`)
-      .filter((route) => route.includes(' /api/') && !route.startsWith('get /api/docs'))
+      .filter((route) => isDocumented(route.slice(route.indexOf(' ') + 1)))
       .filter((route) => !TAKES_NO_INPUT.has(route));
 
     expect(unvalidated).toEqual([]);
   });
 
-  it('documents the paths the README API table lists', () => {
-    const documented = new Set(Object.keys(openapiDocument(app()).paths));
+  it('documents every path the README table lists, and lists every path it documents', () => {
+    // The one assertion here whose expectation does not come from the generator.
+    // Both sides of every other check are the same reading of the application,
+    // so they agree even when both are wrong; the table is written by a person
+    // and can disagree (REVIEW.md 13.12, 13.16).
+    const table = readFileSync(new URL('../../../../README.md', import.meta.url), 'utf8')
+      .split('\n')
+      .filter((line) => line.startsWith('| '))
+      .map((line) => /`(\/api\/[^`]*)`/.exec(line)?.[1])
+      .filter((path): path is string => path !== undefined)
+      .map((path) => path.replace(/:([A-Za-z0-9_]+)/g, '{$1}'))
+      .filter(isDocumented);
 
-    for (const path of ['/api/products', '/api/promotions', '/api/vendor/imports/{id}']) {
-      expect(documented.has(path)).toBe(true);
-    }
+    const documented = Object.keys(openapiDocument(app()).paths);
+
+    expect([...new Set(table)].sort()).toEqual([...new Set(documented)].sort());
   });
 
   it('publishes nothing mounted outside the prefix', () => {
