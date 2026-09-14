@@ -225,6 +225,15 @@ mechanism.
 or checkpoints the current batch, and exits. A handler that can be killed
 mid-write without a durable checkpoint is a finding.
 
+3.12 **One rendering per ordering token.** A token that decides which write wins
+has exactly one textual form, produced in exactly one place, and every path that
+needs one — including the batch that matched no rows — takes it from there. Two
+formats of the same instant do not compare: an ISO `T` sorts above a
+space-separated `clock_timestamp()::text` of the same day, so one fallback token
+beat every real one and a tombstone written on an empty batch froze that product
+out for good. Digits compare as a number under every locale, `DateStyle` and
+`TimeZone`; a comparison on a rendered timestamp is a finding.
+
 ---
 
 ## 4. Serverless constraints on the ingestion path
