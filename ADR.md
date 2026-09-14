@@ -303,11 +303,10 @@ Neither figure means anything without saying which.
 
 Scenario B is measured too, in `docs/e2e-evidence/`: 34 400 storefront reads moved PostgreSQL by
 ten transactions, and a 50 % sale on 100 000 products cost a quarter of the throughput and
-doubled the tail while it ran, with no failed request. What is still not measured: no figure in
-this record or in `README.md`
-describes flash-sale read latency or throughput under load, and the storefront's own pass
-conditions in `.claude/agents/e2e-tester.md` are provisional for the same reason. Stated here so
-the absence is a recorded gap rather than something a reader has to notice.
+doubled the tail while it ran, with no failed request. Those are one run each on one machine over
+loopback, so they are a ceiling for this hardware rather than a service level, and the
+storefront's pass conditions in `.claude/agents/e2e-tester.md` stay provisional until a figure
+comes from somewhere that is not this laptop.
 
 ### Rejected alternatives
 
