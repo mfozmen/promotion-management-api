@@ -11,6 +11,12 @@ import type { ChunkProcess } from '../events/chunk-process.js';
 import { parseVendorRow } from '../domain/parse-vendor-row.js';
 import { readRangeLines } from '../domain/read-range-lines.js';
 
+/** What a chunk has stored and rejected so far, carried through its batches. */
+interface Totals {
+  rowsProcessed: number;
+  rowsRejected: number;
+}
+
 /** A batch, and the offset the checkpoint moves to when it commits. */
 interface Batch {
   rows: ProductUpsert[];
@@ -103,8 +109,7 @@ export class ProcessChunkCommand {
     const startedAt = this.now();
     let batch: Batch = this.emptyBatch(claimed.nextOffset);
     let rowStart = claimed.nextOffset;
-    let rowsProcessed = 0;
-    let rowsRejected = 0;
+    let totals: Totals = { rowsProcessed: 0, rowsRejected: 0 };
 
     for await (const { line, endOffset } of readRangeLines(
       join(this.uploadDir, job.fileRef),
@@ -117,32 +122,26 @@ export class ProcessChunkCommand {
       if (priced === undefined) batch.rejected += 1;
       else batch.rows.push(priced);
 
-      if (batch.rows.length + batch.rejected >= this.batchSize) {
-        const stored = await this.commit(jobId, chunkIndex, batch);
-        if (stored === null) {
-          return { claimed: true, superseded: true, rowsProcessed, rowsRejected };
-        }
-        rowsProcessed += stored;
-        rowsRejected += batch.rejected;
-        batch = this.emptyBatch(endOffset);
+      if (batch.rows.length + batch.rejected < this.batchSize) continue;
 
-        // Between batches is the only safe place to stop: the checkpoint is
-        // committed, so the next invocation resumes from it having lost nothing.
-        if (this.now() - startedAt >= this.budgetMs && endOffset < claimed.endOffset) {
-          await this.ingestion.releaseChunk(jobId, chunkIndex, claimed.leaseUntil);
-          await this.reenqueue({ jobId, chunkIndex });
-          return { claimed: true, exhausted: true, rowsProcessed, rowsRejected };
-        }
+      const committed = await this.commitInto(totals, jobId, chunkIndex, batch);
+      if (committed === null) return { claimed: true, superseded: true, ...totals };
+      totals = committed;
+      batch = this.emptyBatch(endOffset);
+
+      // Between batches is the only safe place to stop: the checkpoint is
+      // committed, so the next invocation resumes from it having lost nothing.
+      if (this.outOfTime(startedAt, endOffset, claimed.endOffset)) {
+        await this.ingestion.releaseChunk(jobId, chunkIndex, claimed.leaseUntil);
+        await this.reenqueue({ jobId, chunkIndex });
+        return { claimed: true, exhausted: true, ...totals };
       }
     }
 
     if (batch.rows.length + batch.rejected > 0) {
-      const stored = await this.commit(jobId, chunkIndex, batch);
-      if (stored === null) {
-        return { claimed: true, superseded: true, rowsProcessed, rowsRejected };
-      }
-      rowsProcessed += stored;
-      rowsRejected += batch.rejected;
+      const committed = await this.commitInto(totals, jobId, chunkIndex, batch);
+      if (committed === null) return { claimed: true, superseded: true, ...totals };
+      totals = committed;
     }
 
     // The checkpoint reached the end of the range, so this chunk is done. Its
@@ -152,7 +151,34 @@ export class ProcessChunkCommand {
     // The job is completed by whichever chunk was last, and only one call wins.
     await this.ingestion.completeJobIfDone(jobId);
 
-    return { claimed: true, rowsProcessed, rowsRejected };
+    return { claimed: true, ...totals };
+  }
+
+  /**
+   * Commits a batch and adds what it stored to the running totals, or returns null
+   * because the compare-and-set was refused and this invocation no longer holds
+   * the chunk. Both commit sites do exactly this — the batch that fills inside the
+   * loop and the partial one left at the end — and the second is the one most
+   * chunks take, since a file rarely divides evenly.
+   */
+  private async commitInto(
+    totals: Totals,
+    jobId: number,
+    chunkIndex: number,
+    batch: Batch,
+  ): Promise<Totals | null> {
+    const stored = await this.commit(jobId, chunkIndex, batch);
+    if (stored === null) return null;
+
+    return {
+      rowsProcessed: totals.rowsProcessed + stored,
+      rowsRejected: totals.rowsRejected + batch.rejected,
+    };
+  }
+
+  /** Out of budget with bytes left: a hand-off, rather than a chunk that finished. */
+  private outOfTime(startedAt: number, endOffset: number, chunkEnd: number): boolean {
+    return this.now() - startedAt >= this.budgetMs && endOffset < chunkEnd;
   }
 
   private emptyBatch(at: number): Batch {
