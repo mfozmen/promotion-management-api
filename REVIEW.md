@@ -569,6 +569,16 @@ Evidence: one Redis logical database served every integration file and was
 flushed in `beforeEach`. One file made that safe; the day a second and third
 arrived, four tests failed per run and never the same four.
 
+7.6a **A green check that depended on the runner is not evidence.** When a
+suite's outcome turns on how many workers the runner happened to allocate, the
+required check passes or fails by luck and cannot gate what it exists to gate.
+Before trusting green on a change that touches a shared fixture, run the layer
+more than once; a single pass proves one allocation.
+
+Evidence: the pull request that turned one shared Redis database into three
+files' shared Redis database went green on CI and was merged on that green. The
+same suite failed four tests locally, and a different four each run.
+
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
 the tree mirrors `src/`, one test file per source file, with the same name
 (`x.ts` → `x.test.ts`) and the export's name as the top-level `describe`.
