@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ChunkJobHandler } from '@src/modules/ingestion/jobs/chunk-job-handler.js';
+import { ChunkProcessHandler } from '@src/modules/ingestion/events/chunk-process-handler.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { ProductRepository } from '@src/modules/product/db/product-repository.js';
@@ -73,7 +73,7 @@ async function jobWithChunk(rows: number): Promise<number> {
 }
 
 const handlerWith = (publish: (ids: readonly number[]) => Promise<void>, budgetMs = 60_000) =>
-  new ChunkJobHandler({
+  new ChunkProcessHandler({
     db: db(),
     products: new ProductRepository(db()),
     calculators: calculators(),
@@ -85,7 +85,7 @@ const handlerWith = (publish: (ids: readonly number[]) => Promise<void>, budgetM
     leaseMs: 90_000,
   });
 
-describe('ChunkJobHandler', () => {
+describe('ChunkProcessHandler', () => {
   it('runs the chunk a job names', async () => {
     const jobId = await jobWithChunk(3);
 
@@ -114,11 +114,11 @@ describe('ChunkJobHandler', () => {
     // the budget does, the queue hands the same chunk to a second worker while
     // the first is still inside a batch — the lease race, arriving from the queue
     // rather than from the database.
-    expect(ChunkJobHandler.lockDurationFor(60_000)).toBeGreaterThan(60_000);
-    expect(ChunkJobHandler.lockDurationFor(1_000)).toBeGreaterThan(1_000);
+    expect(ChunkProcessHandler.lockDurationFor(60_000)).toBeGreaterThan(60_000);
+    expect(ChunkProcessHandler.lockDurationFor(1_000)).toBeGreaterThan(1_000);
   });
 
   it('processes one chunk at a time, because a chunk is already the unit of parallelism', () => {
-    expect(ChunkJobHandler.CONCURRENCY).toBe(1);
+    expect(ChunkProcessHandler.CONCURRENCY).toBe(1);
   });
 });

@@ -34,7 +34,7 @@ interface Batch {
  * Announcing first costs a duplicate announcement after a kill, which recomputes the
  * same prices — the read model is idempotent and silence is not.
  */
-export class ChunkProcessor {
+export class ProcessChunkCommand {
   /**
    * The batch the acceptance criteria name, and the number the memory budget was
    * measured against: 1 000 rows held at once, one statement, one announcement.
@@ -80,8 +80,8 @@ export class ChunkProcessor {
     this.publish = options.publish;
     this.log = options.log;
     this.reenqueue = options.reenqueue;
-    this.batchSize = options.batchSize ?? ChunkProcessor.DEFAULT_BATCH_SIZE;
-    this.leaseMs = options.leaseMs ?? ChunkProcessor.DEFAULT_LEASE_MS;
+    this.batchSize = options.batchSize ?? ProcessChunkCommand.DEFAULT_BATCH_SIZE;
+    this.leaseMs = options.leaseMs ?? ProcessChunkCommand.DEFAULT_LEASE_MS;
     this.budgetMs = options.budgetMs ?? Number.POSITIVE_INFINITY;
     this.now = options.now ?? Date.now;
   }

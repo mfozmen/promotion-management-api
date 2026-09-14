@@ -3,9 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ImportRegistrar } from '@src/modules/ingestion/jobs/import-registrar.js';
+import { RegisterImportCommand } from '@src/modules/ingestion/commands/register-import-command.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
-import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { useTestDatabase } from '../../../db.js';
 
 const db = useTestDatabase();
@@ -52,7 +51,7 @@ const vendor = () => `vendor-${sequence}`;
 const registrarWith = (
   enqueue: (chunk: { jobId: number; chunkIndex: number }) => Promise<unknown>,
   chunkBytes = 1024,
-) => new ImportRegistrar({ db: db(), enqueue, chunkBytes });
+) => new RegisterImportCommand({ db: db(), enqueue, chunkBytes });
 
 const chunksOf = (jobId: number) =>
   db()
@@ -61,7 +60,7 @@ const chunksOf = (jobId: number) =>
     .where(eq(ingestionChunks.jobId, jobId))
     .orderBy(asc(ingestionChunks.chunkIndex));
 
-describe('ImportRegistrar', () => {
+describe('RegisterImportCommand', () => {
   it('stores the job, its chunks and one queued job per chunk', async () => {
     const path = vendorFile(200);
     const sink = recorder();
@@ -113,21 +112,21 @@ describe('ImportRegistrar', () => {
     expect(sink.enqueued).toEqual([]);
   });
 
-  it('writes the job and its chunks together, or neither', async () => {
-    // A job row with no chunk rows is an import nothing will ever run, and it
-    // holds the one-running-job-per-vendor index against the next attempt.
+  it('enqueues only after the rows are committed, so no worker claims a chunk that is not there', async () => {
+    // A queued job is visible to a worker the instant it is written. Enqueueing
+    // inside the transaction let a worker claim a chunk before its row existed:
+    // `claimChunk` matches nothing, returns `claimed: false` exactly as it does
+    // for a duplicate delivery, and nothing re-enqueues it — one chunk of the
+    // import silently never runs (REVIEW.md 3.4).
     const path = vendorFile(50);
+    const seen: number[] = [];
 
-    const mine = vendor();
-    await expect(
-      registrarWith(() => Promise.reject(new Error('redis is down'))).register(mine, path),
-    ).rejects.toThrow('redis is down');
+    await registrarWith(async ({ jobId }) => {
+      // What a worker would see the moment the job reaches the queue.
+      seen.push((await chunksOf(jobId)).length);
+    }).register(vendor(), path);
 
-    const jobs = await db().select().from(ingestionJobs).where(eq(ingestionJobs.vendor, mine));
-    const orphans = [];
-    for (const job of jobs) {
-      if ((await chunksOf(job.id)).length === 0) orphans.push(job.id);
-    }
-    expect(orphans).toEqual([]);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const count of seen) expect(count).toBeGreaterThan(0);
   });
 });

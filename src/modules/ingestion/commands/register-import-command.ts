@@ -20,7 +20,7 @@ interface Registration {
  * There is no upload endpoint — issue #15 was not planned — so this is reached
  * from `npm run ingest -- <file>` and the file is already on disk.
  */
-export class ImportRegistrar {
+export class RegisterImportCommand {
   private readonly db: Db;
   private readonly enqueue: (chunk: ChunkProcess) => Promise<unknown>;
   private readonly chunkBytes: number;
@@ -38,11 +38,11 @@ export class ImportRegistrar {
   async register(vendor: string, path: string): Promise<Registration> {
     const [size, fileSha256, boundaries] = await Promise.all([
       stat(path).then((file) => file.size),
-      ImportRegistrar.sha256(path),
+      RegisterImportCommand.sha256(path),
       chunkBoundaries(path, this.chunkBytes),
     ]);
 
-    return this.db.transaction(async (tx) => {
+    const registered = await this.db.transaction(async (tx) => {
       // `file_sha256` is unique, so the same bytes twice fail here rather than in
       // a check-then-insert that two concurrent registrations both pass.
       const [job] = await tx
@@ -69,19 +69,25 @@ export class ImportRegistrar {
         );
       }
 
-      // Inside the transaction, so a queue that refuses takes the job rows with
-      // it. A job row with no runnable chunks is an import nothing will ever
-      // finish, and it holds the one-running-job-per-vendor index against the
-      // next attempt. The cost is the other direction: jobs already enqueued when
-      // a later one fails are left behind, and they are harmless — a
-      // `chunk.process` naming a chunk that no longer exists claims nothing and
-      // returns, which is the same path a duplicate delivery takes.
-      for (const boundary of boundaries) {
-        await this.enqueue({ jobId, chunkIndex: boundary.chunkIndex });
-      }
-
-      return { jobId, chunksTotal: boundaries.length };
+      return { jobId, boundaries };
     });
+
+    // After the commit, never inside it. A queued job is visible to a worker the
+    // instant it is written, so enqueueing before the rows commit lets a worker
+    // claim a chunk that does not exist yet: `claimChunk` matches no row, returns
+    // `claimed: false` as it does for an ordinary duplicate delivery, and nothing
+    // re-enqueues it — one chunk of the import silently never runs.
+    //
+    // The trade this replaces was the wrong way round. Enqueueing inside the
+    // transaction bought atomicity against an orphan job row, which is visible and
+    // recoverable: the chunks exist and can be re-enqueued. A chunk nobody ever
+    // claims is neither. Commit first and publish after, as every other write path
+    // here does (REVIEW.md 3.4).
+    for (const boundary of registered.boundaries) {
+      await this.enqueue({ jobId: registered.jobId, chunkIndex: boundary.chunkIndex });
+    }
+
+    return { jobId: registered.jobId, chunksTotal: registered.boundaries.length };
   }
 
   /**

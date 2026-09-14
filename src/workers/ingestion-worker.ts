@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { ChunkJobHandler } from '../modules/ingestion/jobs/chunk-job-handler.js';
+import { ChunkProcessHandler } from '../modules/ingestion/events/chunk-process-handler.js';
 import { pricingRules } from '../modules/pricing/db/schema/pricing-rules.js';
 import { BasePriceCalculatorCache } from '../modules/pricing/domain/base-price-calculator-cache.js';
 import { ProductRepository } from '../modules/product/db/product-repository.js';
@@ -24,7 +24,7 @@ const calculators = new BasePriceCalculatorCache({
       .orderBy(desc(pricingRules.priority), asc(pricingRules.id)),
 });
 
-const handler = new ChunkJobHandler({
+const handler = new ChunkProcessHandler({
   db,
   products: new ProductRepository(db),
   calculators,
@@ -56,10 +56,10 @@ const worker = new Worker(
   },
   {
     connection: { url: config.REDIS_URL, db: config.REDIS_QUEUE_DB },
-    concurrency: ChunkJobHandler.CONCURRENCY,
+    concurrency: ChunkProcessHandler.CONCURRENCY,
     // Longer than the budget the handler gives itself, or the queue hands the
     // same chunk to a second worker while this one is still inside a batch.
-    lockDuration: ChunkJobHandler.lockDurationFor(config.INGESTION_BUDGET_MS),
+    lockDuration: ChunkProcessHandler.lockDurationFor(config.INGESTION_BUDGET_MS),
   },
 );
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ChunkProcessor } from '@src/modules/ingestion/jobs/chunk-processor.js';
+import { ProcessChunkCommand } from '@src/modules/ingestion/commands/process-chunk-command.js';
 import { productUpserted } from '@src/modules/product/events/product-upserted.js';
 
 describe('the ingestion batch size and the announcement cap', () => {
@@ -9,7 +9,7 @@ describe('the ingestion batch size and the announcement cap', () => {
     // the cap turns every full batch into a schema failure at publish time — which
     // is after the rows are committed, where a lost announcement is already
     // unrecoverable (REVIEW.md 13.12).
-    const full = Array.from({ length: ChunkProcessor.DEFAULT_BATCH_SIZE }, (_, i) => i + 1);
+    const full = Array.from({ length: ProcessChunkCommand.DEFAULT_BATCH_SIZE }, (_, i) => i + 1);
 
     expect(productUpserted.safeParse({ productIds: full }).success).toBe(true);
   });

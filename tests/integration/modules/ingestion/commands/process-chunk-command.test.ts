@@ -7,7 +7,7 @@ import { products } from '@src/modules/product/db/schema/products.js';
 import { claimChunk } from '@src/modules/ingestion/db/claim-chunk.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
-import { ChunkProcessor } from '@src/modules/ingestion/jobs/chunk-processor.js';
+import { ProcessChunkCommand } from '@src/modules/ingestion/commands/process-chunk-command.js';
 import { ProductRepository } from '@src/modules/product/db/product-repository.js';
 import { BasePriceCalculator } from '@src/modules/pricing/domain/base-price-calculator.js';
 import { BasePriceCalculatorCache } from '@src/modules/pricing/domain/base-price-calculator-cache.js';
@@ -131,7 +131,7 @@ function recorder() {
 }
 
 const processorWith = (publish: (ids: readonly number[]) => Promise<void>, batchSize = 100) =>
-  new ChunkProcessor({
+  new ProcessChunkCommand({
     db: db(),
     products: new ProductRepository(db()),
     calculators: calculators(),
@@ -141,7 +141,7 @@ const processorWith = (publish: (ids: readonly number[]) => Promise<void>, batch
     log: silentLog,
   });
 
-describe('ChunkProcessor', () => {
+describe('ProcessChunkCommand', () => {
   it('prices the rows, stores them, announces them and checkpoints the chunk', async () => {
     const { jobId, endOffset } = await jobWithChunk(row(1) + row(2));
     const sink = recorder();
@@ -200,7 +200,7 @@ describe('ChunkProcessor', () => {
     const { jobId, endOffset } = await jobWithChunk(row(1));
     const logged: unknown[] = [];
 
-    const result = await new ChunkProcessor({
+    const result = await new ProcessChunkCommand({
       db: db(),
       products: new ProductRepository(db()),
       calculators: calculators(),
@@ -222,7 +222,7 @@ describe('ChunkProcessor', () => {
     const { jobId, startOffset } = await jobWithChunk(row(1) + row(2));
 
     await expect(
-      new ChunkProcessor({
+      new ProcessChunkCommand({
         db: db(),
         products: new ProductRepository(db()),
         calculators: calculatorsThatOnRow((n) =>
@@ -277,7 +277,7 @@ describe('ChunkProcessor', () => {
     };
 
     await expect(
-      new ChunkProcessor({
+      new ProcessChunkCommand({
         db: db(),
         products: new ProductRepository(db()),
         calculators: broken,
@@ -301,7 +301,7 @@ describe('ChunkProcessor', () => {
     const { jobId, startOffset } = await jobWithChunk(row(1) + row(2) + row(3) + row(4));
     let batches = 0;
 
-    const superseded = new ChunkProcessor({
+    const superseded = new ProcessChunkCommand({
       db: db(),
       products: new ProductRepository(db()),
       calculators: calculators(),
@@ -336,7 +336,7 @@ describe('ChunkProcessor', () => {
     // which is most chunks, since a file rarely divides evenly.
     const { jobId, startOffset } = await jobWithChunk(row(1));
 
-    const result = await new ChunkProcessor({
+    const result = await new ProcessChunkCommand({
       db: db(),
       products: new ProductRepository(db()),
       calculators: calculatorsThatOnRow(async () => {
@@ -368,7 +368,7 @@ describe('ChunkProcessor', () => {
     const enqueued: { jobId: number; chunkIndex: number }[] = [];
     let clock = 0;
 
-    const result = await new ChunkProcessor({
+    const result = await new ProcessChunkCommand({
       db: db(),
       products: new ProductRepository(db()),
       calculators: calculators(),
@@ -401,7 +401,7 @@ describe('ChunkProcessor', () => {
     const enqueued: unknown[] = [];
     let clock = 0;
 
-    const result = await new ChunkProcessor({
+    const result = await new ProcessChunkCommand({
       db: db(),
       products: new ProductRepository(db()),
       calculators: calculators(),
@@ -491,7 +491,7 @@ describe('ChunkProcessor', () => {
     const { jobId, startOffset } = await jobWithChunk(body);
 
     await expect(
-      new ChunkProcessor({
+      new ProcessChunkCommand({
         db: db(),
         products: new ProductRepository(db()),
         // The kill lands on the third row, which is inside the second batch's

@@ -4,7 +4,7 @@ import type { ProductRepository } from '../../product/db/product-repository.js';
 import type { BasePriceCalculatorCache } from '../../pricing/domain/base-price-calculator-cache.js';
 import type { ChunkOutcome } from '../domain/dto/chunk-outcome.js';
 import { chunkProcess, type ChunkProcess } from '../events/chunk-process.js';
-import { ChunkProcessor } from './chunk-processor.js';
+import { ProcessChunkCommand } from '../commands/process-chunk-command.js';
 
 /**
  * One `chunk.process` job: parse what the queue delivered, then run the chunk.
@@ -14,7 +14,7 @@ import { ChunkProcessor } from './chunk-processor.js';
  * an older producer must fail here rather than reach `claimChunk` with an
  * undefined index and claim something nobody asked for.
  */
-export class ChunkJobHandler {
+export class ChunkProcessHandler {
   /**
    * One chunk at a time per worker. A chunk is already the unit of parallelism —
    * more workers take more chunks — so a second concurrent job inside one worker
@@ -25,7 +25,7 @@ export class ChunkJobHandler {
   /** The margin between the lock and the budget, for the hand-off to finish in. */
   static readonly LOCK_GRACE_MS = 30_000;
 
-  private readonly processor: ChunkProcessor;
+  private readonly processor: ProcessChunkCommand;
 
   constructor(options: {
     db: Db;
@@ -38,7 +38,7 @@ export class ChunkJobHandler {
     budgetMs?: number;
     leaseMs?: number;
   }) {
-    this.processor = new ChunkProcessor(options);
+    this.processor = new ProcessChunkCommand(options);
   }
 
   /**
@@ -48,7 +48,7 @@ export class ChunkJobHandler {
    * the lease race arriving from the queue instead of from the database.
    */
   static lockDurationFor(budgetMs: number): number {
-    return budgetMs + ChunkJobHandler.LOCK_GRACE_MS;
+    return budgetMs + ChunkProcessHandler.LOCK_GRACE_MS;
   }
 
   async handle(payload: unknown): Promise<ChunkOutcome> {
