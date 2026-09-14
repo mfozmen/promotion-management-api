@@ -2,18 +2,28 @@ import { Redis } from 'ioredis';
 import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import { afterAll, beforeAll, beforeEach } from 'vitest';
 
-/** A logical database of its own, so a run cannot disturb the read model or
- *  the queue a developer is using. */
 // The test store compose brings up, not the development one: sharing a server with
 // `npm run dev` works until someone runs both, and `localhost` resolves to `::1`
 // while the port is published on IPv4 only.
 const url = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6399/9';
 
-export function useTestRedis(): () => Redis {
+/** One logical database per file, because files run in parallel forks and the
+ *  flush below empties the whole of whichever it is pointed at. A second file on
+ *  a number already here would delete the first one's keys mid-test, which fails
+ *  a different test on every run. Redis serves 16. */
+export const TEST_DATABASE = {
+  productReadRoutes: 9,
+  productWriteRepository: 10,
+  productUpsertedHandler: 11,
+} as const;
+
+export function useTestRedis(database: number): () => Redis {
   let redis: Redis;
 
   beforeAll(() => {
-    redis = new Redis(url);
+    const target = new URL(url);
+    target.pathname = `/${String(database)}`;
+    redis = new Redis(target.toString());
   });
 
   beforeEach(async () => {
