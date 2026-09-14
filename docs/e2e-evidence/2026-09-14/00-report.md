@@ -20,7 +20,7 @@ the Markdown beside it, so it can be rebuilt rather than being a copy that drift
 | `06-edge-cases.md`          | a window shorter than the sweep, and the validation surface           |
 | `07-failure-injection.md`   | Redis and PostgreSQL restarted under load, the racing writers         |
 | `08-drift-and-retry.md`     | the read model's drift repaired from a real injection, and bulk retry |
-| `09-alerts.md`              | six alert rules, two of them fired on purpose against the stack       |
+| `09-alerts.md`              | seven alert rules, two of them fired on purpose against the stack     |
 
 ## The case study's questions, answered with measurements
 
