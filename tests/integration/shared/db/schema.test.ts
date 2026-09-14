@@ -11,7 +11,7 @@ import { promotionStatus } from '@src/modules/promotion/db/schema/promotion-stat
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { promotions } from '@src/modules/promotion/db/schema/promotions.js';
-import { reconcilerState } from '@src/workers/reconciler/db/schema/reconciler-state.js';
+import { reconcilerState } from '@src/modules/reconciler/db/schema/reconciler-state.js';
 import { sqlStateOf, useTestDatabase } from '../../db.js';
 
 const EXCLUSION_VIOLATION = '23P01';

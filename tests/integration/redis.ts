@@ -4,7 +4,10 @@ import { afterAll, beforeAll, beforeEach } from 'vitest';
 
 /** A logical database of its own, so a run cannot disturb the read model or
  *  the queue a developer is using. */
-const url = process.env.TEST_REDIS_URL ?? 'redis://localhost:6379/9';
+// The test store compose brings up, not the development one: sharing a server with
+// `npm run dev` works until someone runs both, and `localhost` resolves to `::1`
+// while the port is published on IPv4 only.
+const url = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6399/9';
 
 export function useTestRedis(): () => Redis {
   let redis: Redis;

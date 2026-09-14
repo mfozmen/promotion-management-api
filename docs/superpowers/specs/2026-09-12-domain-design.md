@@ -632,7 +632,7 @@ Automatic:
 - **Product entry write**: the recompute writes `HSET product:{id}` and `HDEL product:{id} promotionId promotionName` when it finds no promotion, in the same `MULTI` as the `ZADD`s and in that order. `HSET` does not remove a field, so a cancelled promotion otherwise keeps a well-formed pair beside a restored base price and the storefront names a finished sale; and a reader that sees the price restored before the pair is cleared gets a discounted price with no promotion, which the storefront refuses for the whole page (ADR-0006).
 - **Cold start**: the storefront routes answer `503` while `readmodel:ready` is missing. Enqueuing `readmodel.rebuild {}` on that condition is **not built yet** — the read-model worker story owns it, along with unlinking the key before its sweep and setting it last, which is what stops a Redis restart reloading the flag and the stale hashes it certified together. Until then a cold start waits for something to start the rebuild, and nothing does.
 - **Category-scoped reconciler** (`reconciler.run`, every 5 min): per category compare `ZCARD` with `count(*)`, recompute a random sample of `max(50, ceil(count / 100))` products (capped at 500) and compare with the hashes (the count comparison catches missing or extra entries exactly; the sample means a wrong price can survive one run, and every run resamples, so the exposure is bounded in minutes rather than guaranteed zero), and sweep promotions whose `starts_at`, `ends_at` or `cancelled_at` fell between the previous successful sweep and now (`cancelled_at` because a cancel whose `promotion.changed` was lost need have no boundary of its own in the window, ADR-0003; the watermark lives in `reconciler_state.last_boundary_sweep_at`, a one-row table, written only after the sweep succeeds, so a long outage is caught up on the first run back; re-emitting `promotion.changed` is idempotent). A mismatch enqueues `readmodel.rebuild { category }`, never a full rebuild. The same run performs the **ingestion orphan sweep**: for every job in `running`, chunks that are `pending`, or `running` with an expired lease, get a fresh `chunk.process` job (idempotent thanks to the claim).
-- **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: always` brings it back.
+- **Worker self-protection**: a worker that sees `process.memoryUsage().heapUsed` above `WORKER_HEAP_LIMIT` finishes its current batch (checkpointed), stops taking jobs and exits; Docker `restart: unless-stopped` brings it back: an exit is not a manual stop, so it restarts identically, and `docker compose stop` keeps meaning what an operator expects (ADR-0003).
 - **Handler isolation**: every handler catches, logs with the job id and rethrows so BullMQ records the failure; nothing crashes the process.
 
 Manual (all under `/api/admin`, plus Bull Board at `/admin/queues`):
@@ -771,8 +771,9 @@ Dockerfile           one image, command per service
 - Flash sale: create a category promotion over 50 000 seeded products, assert
   listing order and detail prices after the handler completes, then add a
   product to the category and assert the discount on first read.
-- Coverage 100 %; exclusions are `src/server.ts` and `src/workers/*.ts`
-  only.
+- Coverage 100 %; the exclusions are the process entry points named one by one
+  — `src/server.ts` and the three worker mains — so a new file under
+  `src/workers/` is covered rather than excluded by a glob.
 
 ## 13. Out of scope
 
