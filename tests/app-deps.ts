@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import type { AppDependencies } from '@src/app-dependencies.js';
 import { logger } from '@src/shared/logger.js';
 
@@ -9,6 +10,7 @@ export function appDeps(over: Partial<AppDependencies> = {}): AppDependencies {
     db: {},
     queue: { publish: () => Promise.resolve() },
     boardQueues: [],
+    uploads: { dir: tmpdir(), chunkBytes: 4 * 1024 * 1024, maxBytes: 256 * 1024 * 1024 },
     scheduler: {},
     products: {},
     ...over,
