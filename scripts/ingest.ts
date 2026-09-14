@@ -43,14 +43,23 @@ try {
   const fileRef = `${randomUUID()}${extname(path)}`;
   await copyFile(path, join(config.UPLOAD_DIR, fileRef));
 
-  const { jobId, chunksTotal } = await new RegisterImportCommand({
+  const outcome = await new RegisterImportCommand({
     db: createDb(pool),
     enqueue: (chunk) => queue.publish('chunk.process', chunk),
     chunkBytes: config.INGESTION_CHUNK_BYTES,
     uploadDir: config.UPLOAD_DIR,
-  }).register(vendor, fileRef);
+  }).execute(vendor, fileRef);
 
-  console.log(`job ${jobId}: ${chunksTotal} chunks queued from ${fileRef}`);
+  if (!outcome.ok) {
+    console.error(
+      outcome.reason === 'vendor-busy'
+        ? `${vendor} already has an import running; wait for it to finish`
+        : 'a file with these contents has already been registered',
+    );
+    process.exitCode = 1;
+  } else {
+    console.log(`job ${outcome.jobId}: ${outcome.chunksTotal} chunks queued from ${fileRef}`);
+  }
 } finally {
   await queue.close();
   await pool.end();

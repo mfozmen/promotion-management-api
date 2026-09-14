@@ -198,7 +198,11 @@ describe('GET /api/vendor/imports/:id', () => {
     expect((await request(appWith()).get('/api/vendor/imports/999999')).status).toBe(404);
   });
 
-  it('answers 404 for an id that is not one, rather than a 500 from the column', async () => {
-    expect((await request(appWith()).get('/api/vendor/imports/1e20')).status).toBe(404);
+  it('answers 400 for an id that is not one, rather than a 500 from the column', async () => {
+    // A malformed id is a malformed request, the same answer the promotion and
+    // storefront routes give. `1e20` would otherwise reach a `bigint` column,
+    // where PostgreSQL raises 22003 and the request ends a 500.
+    expect((await request(appWith()).get('/api/vendor/imports/1e20')).status).toBe(400);
+    expect((await request(appWith()).get('/api/vendor/imports/0x10')).status).toBe(400);
   });
 });

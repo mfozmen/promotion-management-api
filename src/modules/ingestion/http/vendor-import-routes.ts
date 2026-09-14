@@ -3,21 +3,18 @@ import { extname } from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import createError from 'http-errors';
 import multer from 'multer';
-import { hasSqlState } from '../../../shared/db/has-sql-state.js';
-import { SqlState } from '../../../shared/db/sql-state.js';
+import { validate } from '../../../shared/http/request-validator.js';
 import type { RegisterImportCommand } from '../commands/register-import-command.js';
+import { importIdInput, type ImportIdInput } from '../domain/dto/import-id-input.js';
 import type { ImportStatusQuery } from '../queries/import-status-query.js';
 
-/** Anything but one positive decimal integer names no import, which is a 404. */
-const ID_PATTERN = /^[1-9]\d*$/;
+/** The reason a registration was refused, as a status and a sentence. */
+const REFUSED = {
+  'duplicate-file': [409, 'A file with these contents has already been registered'],
+  'vendor-busy': [409, 'This vendor already has an import running; wait for it to finish'],
+} as const;
 
-/**
- * The vendor intake: a file arrives over HTTP and leaves as a registered import.
- *
- * The bytes go to disk as they arrive rather than through memory — a vendor file
- * is the 500 000-row one, and buffering it would put the whole upload in the heap
- * the worker is capped against.
- */
+/** Vendor intake: the bytes land on disk as they arrive, never in memory. */
 export function vendorImportRoutes(deps: {
   register: RegisterImportCommand;
   status: ImportStatusQuery;
@@ -29,14 +26,11 @@ export function vendorImportRoutes(deps: {
   const upload = multer({
     storage: multer.diskStorage({
       destination: deps.uploadDir,
-      // A name of ours, not the client's: a vendor-supplied filename is a path
-      // traversal and a collision waiting to happen, and what is stored is a
-      // name inside the upload directory that the worker resolves on its side.
+      // A name of ours: a vendor-supplied one is a traversal and a collision.
       filename: (_req, file, done) => done(null, `${randomUUID()}${extname(file.originalname)}`),
     }),
     limits: { files: 1, fileSize: deps.maxBytes },
-    // The parser reads one contract, so a file that is not a CSV is refused here
-    // rather than becoming 500 000 rejected rows and an import that stored nothing.
+    // Refused at the door rather than becoming 500 000 rejected rows.
     fileFilter: (_req, file, done) => {
       if (extname(file.originalname).toLowerCase() === '.csv') {
         done(null, true);
@@ -60,14 +54,13 @@ export function vendorImportRoutes(deps: {
         next(error);
         return;
       }
-      void registered(req, res, next, deps);
+      void registered(req, res, next, deps.register);
     });
   });
 
-  router.get('/:id', async (req: Request, res: Response) => {
-    const raw = typeof req.params.id === 'string' ? req.params.id : '';
-    const id = ID_PATTERN.test(raw) ? Number(raw) : Number.NaN;
-    const found = Number.isSafeInteger(id) ? await deps.status.byId(id) : undefined;
+  router.get('/:id', validate({ params: importIdInput }), async (req: Request, res: Response) => {
+    const { id } = req.params as unknown as ImportIdInput;
+    const found = await deps.status.byId(id);
     if (found === undefined) throw createError(404, 'No such import');
 
     res.status(200).json(found);
@@ -81,7 +74,7 @@ async function registered(
   req: Request,
   res: Response,
   next: (error?: unknown) => void,
-  deps: { register: RegisterImportCommand },
+  register: RegisterImportCommand,
 ): Promise<void> {
   try {
     if (req.file === undefined) throw createError(400, 'Attach the vendor file as `file`');
@@ -89,32 +82,14 @@ async function registered(
     const vendor = typeof req.body?.vendor === 'string' ? req.body.vendor.trim() : '';
     if (vendor === '') throw createError(400, 'Name the vendor in a `vendor` field');
 
-    res.status(202).json(await deps.register.register(vendor, req.file.filename));
+    const outcome = await register.execute(vendor, req.file.filename);
+    if (!outcome.ok) {
+      const [status, message] = REFUSED[outcome.reason];
+      throw createError(status, message);
+    }
+
+    res.status(202).json({ jobId: outcome.jobId, chunksTotal: outcome.chunksTotal });
   } catch (error) {
-    next(conflict(error) ?? error);
+    next(error);
   }
-}
-
-/**
- * Two different unique indexes answer `409` here and they mean different things:
- * the same bytes arriving twice, and a vendor who already has an import running.
- * Reporting either as the other sends the caller to the wrong fix.
- */
-function conflict(error: unknown): Error | undefined {
-  if (!hasSqlState(error, SqlState.uniqueViolation)) return undefined;
-
-  return alreadyImporting(error)
-    ? createError(409, 'This vendor already has an import running; wait for it to finish')
-    : createError(409, 'A file with these contents has already been registered');
-}
-
-/** Walked rather than read: the driver error arrives wrapped, so the constraint
- *  sits on a cause rather than on what was thrown. */
-function alreadyImporting(error: unknown): boolean {
-  for (let at: unknown = error; at instanceof Error; at = at.cause) {
-    if ('constraint' in at && at.constraint === 'ingestion_jobs_one_running_per_vendor')
-      return true;
-  }
-
-  return false;
 }

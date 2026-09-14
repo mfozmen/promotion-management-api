@@ -65,7 +65,9 @@ describe('RegisterImportCommand', () => {
     const path = vendorFile(200);
     const sink = recorder();
 
-    const { jobId, chunksTotal } = await registrarWith(sink.enqueue).register(vendor(), path);
+    const outcome = await registrarWith(sink.enqueue).execute(vendor(), path);
+    if (!outcome.ok) throw new Error('expected a registration');
+    const { jobId, chunksTotal } = outcome;
 
     const chunks = await chunksOf(jobId);
     expect(chunks).toHaveLength(chunksTotal);
@@ -76,9 +78,10 @@ describe('RegisterImportCommand', () => {
   it('starts every chunk at its own offset, so nothing is read twice or skipped', async () => {
     const path = vendorFile(200);
 
-    const { jobId } = await registrarWith(recorder().enqueue).register(vendor(), path);
+    const outcome = await registrarWith(recorder().enqueue).execute(vendor(), path);
+    if (!outcome.ok) throw new Error('expected a registration');
 
-    const chunks = await chunksOf(jobId);
+    const chunks = await chunksOf(outcome.jobId);
     expect(chunks[0]?.startOffset).toBe(Buffer.byteLength(header));
     for (const chunk of chunks) expect(chunk.nextOffset).toBe(chunk.startOffset);
     for (let i = 1; i < chunks.length; i += 1) {
@@ -91,13 +94,14 @@ describe('RegisterImportCommand', () => {
     // second import, and the constraint is what decides that rather than a
     // check-then-insert (REVIEW.md 2.1).
     const path = vendorFile(10);
-    await registrarWith(recorder().enqueue).register(`${vendor()}-first`, path);
+    await registrarWith(recorder().enqueue).execute(`${vendor()}-first`, path);
 
     // A different vendor, so the refusal is the file's hash and not the
     // one-running-job-per-vendor index answering for it.
-    await expect(
-      registrarWith(recorder().enqueue).register(`${vendor()}-second`, path),
-    ).rejects.toThrow(/file_sha256|duplicate key/);
+    expect(await registrarWith(recorder().enqueue).execute(`${vendor()}-second`, path)).toEqual({
+      ok: false,
+      reason: 'duplicate-file',
+    });
   });
 
   it('enqueues nothing when the file has no rows to process', async () => {
@@ -106,7 +110,9 @@ describe('RegisterImportCommand', () => {
     writeFileSync(join(dir, path), header);
     const sink = recorder();
 
-    const { chunksTotal } = await registrarWith(sink.enqueue).register(vendor(), path);
+    const outcome = await registrarWith(sink.enqueue).execute(vendor(), path);
+    if (!outcome.ok) throw new Error('expected a registration');
+    const { chunksTotal } = outcome;
 
     expect(chunksTotal).toBe(0);
     expect(sink.enqueued).toEqual([]);
@@ -124,7 +130,7 @@ describe('RegisterImportCommand', () => {
     await registrarWith(async ({ jobId }) => {
       // What a worker would see the moment the job reaches the queue.
       seen.push((await chunksOf(jobId)).length);
-    }).register(vendor(), path);
+    }).execute(vendor(), path);
 
     expect(seen.length).toBeGreaterThan(0);
     for (const count of seen) expect(count).toBeGreaterThan(0);

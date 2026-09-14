@@ -29,7 +29,6 @@
   "dependencies": {
     "@bull-board/api": "^9.10.1",
     "@bull-board/express": "^9.10.1",
-    "@types/multer": "^2.2.0",
     "bullmq": "^6.3.4",
     "drizzle-orm": "^0.45.2",
     "express": "^5",
@@ -48,6 +47,7 @@
     "@eslint/js": "^9",
     "@types/express": "^5",
     "@types/http-errors": "^2.0.5",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^6",

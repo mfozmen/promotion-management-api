@@ -293,20 +293,20 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are JSON, capped at 100 kB, and validated strictly: an unknown field is a `400`, never a silently dropped one. The Statuses column lists what a route decides for itself; `400`, `413` and `415` come from the shared boundary and can answer any of them.
 
-| Method | Path                         | Description                                                                                                             | Statuses                   |
-| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`                      |
-| GET    | `/api/ready`                 | Readiness probe: asks PostgreSQL and Redis and names which one is unreachable                                           | `200`, `503`               |
-| GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503`        |
-| GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503`        |
-| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`               |
-| POST   | `/api/vendor/imports`        | Register a vendor file (multipart `file`, field `vendor`); answers `{ jobId, chunksTotal }` and queues a job per chunk  | `202`, `400`, `409`, `413` |
-| GET    | `/api/vendor/imports/:id`    | Follow an import: `status`, `chunksTotal`, `chunksDone`, `rowsProcessed`, `rowsRejected`, `lastError`                   | `200`, `404`               |
-| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `201`, `404`, `409`        |
-| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `200`, `404`, `409`        |
-| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`               |
-| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`                      |
-| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`               |
+| Method | Path                         | Description                                                                                                             | Statuses            |
+| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`               |
+| GET    | `/api/ready`                 | Readiness probe: asks PostgreSQL and Redis and names which one is unreachable                                           | `200`, `503`        |
+| GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503` |
+| GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503` |
+| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`        |
+| POST   | `/api/vendor/imports`        | Register a vendor file (multipart `file`, field `vendor`); answers `{ jobId, chunksTotal }` and queues a job per chunk  | `202`, `409`, `415` |
+| GET    | `/api/vendor/imports/:id`    | Follow an import: `status`, `chunksTotal`, `chunksDone`, `rowsProcessed`, `rowsRejected`, `lastError`                   | `200`, `404`        |
+| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `201`, `404`, `409` |
+| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `200`, `404`, `409` |
+| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`        |
+| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`               |
+| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`        |
 
 **Operations.** After `npm run up`, BullMQ's own dashboard is at
 http://localhost:3100/admin/queues — the four queues with their counts, the dead-letter set
