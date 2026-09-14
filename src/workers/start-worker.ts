@@ -16,6 +16,16 @@ interface Connected {
 }
 
 /**
+ * BullMQ upserts the next iteration of a repeatable job when the worker picks one up, and on a
+ * failure it emits this and returns rather than throwing — so the chain stops for ever while the
+ * process stays up. Re-asserting per run is not the repair: the upsert enqueues its first
+ * iteration immediately, which would make that a hot loop.
+ */
+export function scheduleLost(error: Error): boolean {
+  return error.message.startsWith('Failed to add repeatable job');
+}
+
+/**
  * Every worker process, minus what it consumes: connect, say which queues it drains, and close
  * on `SIGTERM` under the budget and the class the api uses. `EventQueue.connect` opens a
  * producer handle on all four queues in every process, so the line names what this one drains
@@ -41,7 +51,9 @@ export function startWorker(name: WorkerName, consuming: string[] = []): Connect
           .close(...also)
           .then((path) => {
             logger.info({ worker: name, path }, 'shutdown complete');
-            process.exit(0);
+            // A forced path abandoned whatever was mid-flight, so it is not a clean exit: `0`
+            // tells the orchestrator the process finished what it was doing.
+            process.exit(path === 'drained' ? 0 : 1);
           })
           .catch((error: unknown) => {
             logger.error({ worker: name, err: error }, 'shutdown failed');

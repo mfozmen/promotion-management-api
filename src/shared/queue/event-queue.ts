@@ -70,8 +70,8 @@ export class EventQueue<R extends Registry> {
   /**
    * A repeatable job, keyed by the event name alone: one schedule per event, so a restart
    * re-asserts it instead of adding a second. The id is built here and nowhere else, and the
-   * name is what BullMQ parses — no colons, which is the character that makes it reject a
-   * custom id (REVIEW.md 7.11 has the failure).
+   * name is what BullMQ parses — no colons, the character it refuses
+   * in a custom id unless they split it in exactly three.
    */
   async schedule<N extends keyof R & string>(
     name: N,
