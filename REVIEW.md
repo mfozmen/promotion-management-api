@@ -1192,6 +1192,20 @@ host RSS was measured against a cgroup limit in four places in one day — an AD
 trade-off, an agent's pass condition, a case file's measure line and a run
 report — and each read as one quantity because both were spelled in megabytes.
 
+13.15 **A sentence saying something does not exist yet is a claim with an expiry
+date, and the pull request that builds the thing owns deleting it.** An absence
+note is written to be helpful and is true exactly once; every merge after it is a
+chance for it to become a lie that reads as a considered statement. 8b already
+covers a comment inside a diff, and nothing covered prose two hundred lines from
+the code that falsifies it, which is the gap these fell through.
+
+Evidence: in one night one file pair carried five — "Scenario B has no
+measurement" beside Scenario B's measurement, "nothing runs that handler yet"
+after the handler shipped, "one of the four queues has a consumer" when all four
+had one, "the one payload whose module does not exist", and "the monitoring
+profile is not built yet" written above the dashboard the evidence was read off.
+Every one was found by a person reading, not by a check.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
