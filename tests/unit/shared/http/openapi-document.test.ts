@@ -130,6 +130,25 @@ describe('openapiDocument', () => {
     expect(doc.paths['/api/health']?.get?.requestBody).toBeUndefined();
   });
 
+  it('says on the operation itself when no schema describes its inputs', () => {
+    // Swagger UI deep-links to an operation, so a reader can arrive below the
+    // document's own description. An operation showing nothing has to account
+    // for itself where it is read.
+    const app = appWith((a) => a.post('/api/vendor/imports', noop));
+
+    const operation = openapiDocument(app).paths['/api/vendor/imports']?.post;
+
+    expect(operation?.description).toMatch(/no schema/i);
+  });
+
+  it('says nothing extra on an operation whose inputs a schema does describe', () => {
+    const app = appWith((a) =>
+      a.post('/api/things', validate({ body: z.strictObject({ name: z.string() }) }), noop),
+    );
+
+    expect(openapiDocument(app).paths['/api/things']?.post?.description).toBeUndefined();
+  });
+
   it('keeps two methods on one path as two operations', () => {
     const app = appWith((a) => {
       a.get('/api/things', noop);

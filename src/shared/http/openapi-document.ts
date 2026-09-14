@@ -12,6 +12,7 @@ interface Parameter {
 
 interface Operation {
   summary: string;
+  description?: string;
   parameters?: Parameter[];
   requestBody?: { required: boolean; content: Record<string, { schema: unknown }> };
   responses: Record<string, unknown>;
@@ -41,10 +42,8 @@ and state distinction - are in docs/api.md. Success bodies are not published her
 zod transform and the rest are TypeScript interfaces: writing them out by hand would be the one part
 of this document that could drift while looking exactly like the parts that cannot.
 
-POST /api/vendor/imports is described less than it is validated, for the same reason in reverse: it
-takes a multipart file bounded by multer rather than by a schema, so this document has nothing to
-read and shows the operation with no request body. Send the file as the field "file" and the vendor
-as "vendor"; the README table's row describes that request.
+An operation showing no inputs says so on itself, because this page deep-links and a reader can
+arrive below this paragraph.
 
 Every error, whatever its status, is the envelope below (ADR-0009).`;
 
@@ -64,6 +63,10 @@ export function openapiDocument(app: Express): OpenapiDocument {
   };
 }
 
+const NO_SCHEMA = `No schema describes this operation's inputs, so none are published here. Either it
+takes none, or it is validated by something this document cannot read - the vendor upload's
+multipart file is bounded by multer. The README's endpoint table says which.`;
+
 function operation(route: InventoriedRoute): Operation {
   const parameters = [
     ...parametersFrom(route.schemas.params, 'path'),
@@ -73,6 +76,9 @@ function operation(route: InventoriedRoute): Operation {
 
   return {
     summary: `${route.method.toUpperCase()} ${route.path}`,
+    // Swagger UI deep-links to an operation, so the document's own description
+    // can sit a screen above where the reader lands.
+    ...(parameters.length === 0 && body === undefined ? { description: NO_SCHEMA } : {}),
     ...(parameters.length > 0 ? { parameters } : {}),
     ...(body
       ? {
