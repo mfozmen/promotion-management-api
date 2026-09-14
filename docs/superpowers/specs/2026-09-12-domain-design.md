@@ -639,6 +639,12 @@ Automatic:
 
 Manual (all under `/api/admin`, plus Bull Board at `/admin/queues`):
 
+> **None of the `/api/admin` endpoints below was built, and ADR-0007 now says so by name.** What
+> shipped is Bull Board at `/admin/queues`, which retries, promotes and discards one job at a time,
+> and `npm run retry-failed -- <queue>` for a whole failed set. This table is the design that was
+> considered, kept because the reasoning under it is still what the shipped surface answers; it is
+> not a description of the tree. A reader who wants what exists should read `docs/operations.md`.
+
 | Endpoint                                                  | Effect                                                              |
 | --------------------------------------------------------- | ------------------------------------------------------------------- |
 | `GET /api/admin/queues/stats`                             | per queue: waiting, active, delayed, failed, oldest waiting job age |
