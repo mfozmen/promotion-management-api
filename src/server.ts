@@ -35,6 +35,11 @@ const app = createApp({
   scheduler: new PromotionScheduler(queue),
   products,
   boardQueues: queue.all(),
+  uploads: {
+    dir: config.UPLOAD_DIR,
+    chunkBytes: config.INGESTION_CHUNK_BYTES,
+    maxBytes: config.UPLOAD_MAX_BYTES,
+  },
 });
 
 const server = app.listen(config.PORT, () => {

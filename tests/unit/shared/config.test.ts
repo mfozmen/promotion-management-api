@@ -26,6 +26,7 @@ describe('loadConfig', () => {
       PORT: 3100,
       WORKER_METRICS_PORT: 3101,
       UPLOAD_DIR: './uploads',
+      UPLOAD_MAX_BYTES: 256 * 1024 * 1024,
       REDIS_READ_MODEL_DB: 0,
       REDIS_QUEUE_DB: 1,
       SHUTDOWN_DRAIN_TIMEOUT_MS: 10_000,
@@ -34,7 +35,6 @@ describe('loadConfig', () => {
       INGESTION_BUDGET_MS: 60_000,
       INGESTION_LEASE_MS: 90_000,
       INGESTION_MAX_FAILURES: 3,
-      INGESTION_MAX_WAITING: 100,
     });
   });
 

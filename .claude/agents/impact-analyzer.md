@@ -113,8 +113,7 @@ could still fix stays raised until it is fixed.
      `REDIS_URL` with `REDIS_READ_MODEL_DB` (0, read model) and
      `REDIS_QUEUE_DB` (1, BullMQ) kept separate, `PORT`, `UPLOAD_DIR`, and the
      ingestion knobs `INGESTION_CHUNK_BYTES`, `INGESTION_BATCH_SIZE`,
-     `INGESTION_BUDGET_MS`, `INGESTION_LEASE_MS`, `INGESTION_MAX_FAILURES`,
-     `INGESTION_MAX_WAITING` and `SHUTDOWN_DRAIN_TIMEOUT_MS`.
+     `INGESTION_BUDGET_MS`, `INGESTION_LEASE_MS`, `INGESTION_MAX_FAILURES` and `SHUTDOWN_DRAIN_TIMEOUT_MS`.
      A new or renamed key must appear in
      `.env.example`, and in `docker-compose.yml` when a container reads it;
    - anything that recomputes effective prices or promotion state.

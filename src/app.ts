@@ -13,6 +13,9 @@ import { productReadRoutes } from './modules/storefront/http/product-read-routes
 import { ProductRepository } from './modules/product/db/product-repository.js';
 import { CreateProductCommand } from './modules/product/commands/create-product-command.js';
 import { productRoutes } from './modules/product/http/product-routes.js';
+import { RegisterImportCommand } from './modules/ingestion/commands/register-import-command.js';
+import { ImportStatusQuery } from './modules/ingestion/queries/import-status-query.js';
+import { vendorImportRoutes } from './modules/ingestion/http/vendor-import-routes.js';
 import { PromotionRepository } from './modules/promotion/db/promotion-repository.js';
 import { PromotionAnnouncer } from './modules/promotion/domain/promotion-announcer.js';
 import { CreatePromotionCommand } from './modules/promotion/commands/create-promotion-command.js';
@@ -46,6 +49,7 @@ export function createApp({
   scheduler,
   products,
   boardQueues,
+  uploads,
 }: AppDependencies): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
@@ -87,6 +91,20 @@ export function createApp({
   const announcer = new PromotionAnnouncer(queue, scheduler, logger);
 
   api.use('/products', productRoutes(new CreateProductCommand(catalogue, queue, logger)));
+  api.use(
+    '/vendor/imports',
+    vendorImportRoutes({
+      register: new RegisterImportCommand({
+        db,
+        enqueue: (chunk) => queue.publish('chunk.process', chunk),
+        chunkBytes: uploads.chunkBytes,
+        uploadDir: uploads.dir,
+      }),
+      status: new ImportStatusQuery(db),
+      uploadDir: uploads.dir,
+      maxBytes: uploads.maxBytes,
+    }),
+  );
   api.use(
     '/promotions',
     promotionRoutes({

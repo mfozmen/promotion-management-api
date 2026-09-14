@@ -64,6 +64,7 @@ services:
     environment:
       <<: *app-environment
       UPLOAD_DIR: /app/uploads
+      UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-268435456}
     ports:
       - '127.0.0.1:3100:3100'
     volumes:
