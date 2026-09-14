@@ -7,6 +7,8 @@ import { MaintenanceDispatcher } from '../events/maintenance-dispatcher.js';
 import { readModelConsumer } from '../modules/storefront/read-model-consumer.js';
 import { createDb, createPool } from '../shared/db/client.js';
 import { logger } from '../shared/logger.js';
+import { driftRepairs } from '../shared/metrics/drift-repairs.js';
+import { queueDepth } from '../shared/metrics/queue-depth.js';
 import { createReadModelWriterClient } from '../shared/read-model-writer-client.js';
 import { exitIfScheduleLost } from './exit-if-schedule-lost.js';
 import { startWorker } from './start-worker.js';
@@ -31,11 +33,15 @@ const {
 const handler = new MaintenanceDispatcher(
   new ReconcilerRunHandler(
     new SweepBoundariesCommand(new BoundaryRepository(db), queue, logger),
-    new RepairDriftCommand(source, listing, rebuildCategory, logger),
+    new RepairDriftCommand(source, listing, rebuildCategory, driftRepairs, logger),
     logger,
   ),
   rebuild,
 );
+
+// Every process that holds queue handles reports their depth; Prometheus keeps one
+// series per queue whichever of them answered the scrape.
+queueDepth(queue, ['promotions', 'products', 'ingestion', 'maintenance']);
 
 const worker = new Worker(
   'maintenance',

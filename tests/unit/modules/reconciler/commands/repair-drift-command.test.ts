@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { RepairDriftCommand } from '@src/modules/reconciler/commands/repair-drift-command.js';
 import { captureLogger } from '../../../capture-logger.js';
 
+const counter = () => ({ inc: vi.fn() });
+
 const catalogue = (counts: [string, number][]) => ({
   categoryCounts: () => Promise.resolve(new Map(counts)),
 });
@@ -25,11 +27,29 @@ describe('RepairDriftCommand', () => {
       ]),
       readModel({ Accessories: 2, Shoes: 5 }),
       rebuild,
+      counter(),
       captureLogger().logger,
     ).execute();
 
     expect(repaired).toBe(1);
     expect(rebuild.rebuildCategory.mock.calls).toEqual([['Accessories']]);
+  });
+
+  it('counts each repair, because an alert cannot read a log line', async () => {
+    const repairs = counter();
+
+    await new RepairDriftCommand(
+      catalogue([
+        ['Shoes', 5],
+        ['Knitwear', 2],
+      ]),
+      readModel({ Shoes: 4, Knitwear: 1 }),
+      { rebuildCategory: () => Promise.resolve(0) },
+      repairs,
+      captureLogger().logger,
+    ).execute();
+
+    expect(repairs.inc).toHaveBeenCalledTimes(2);
   });
 
   it('rebuilds nothing when every category agrees', async () => {
@@ -39,6 +59,7 @@ describe('RepairDriftCommand', () => {
       catalogue([['Shoes', 5]]),
       readModel({ Shoes: 5 }),
       rebuild,
+      counter(),
       captureLogger().logger,
     ).execute();
 
@@ -53,6 +74,7 @@ describe('RepairDriftCommand', () => {
       catalogue([['Shoes', 5]]),
       readModel({ Shoes: 1 }),
       { rebuildCategory: () => Promise.resolve(5) },
+      counter(),
       logger,
     ).execute();
 
@@ -70,6 +92,7 @@ describe('RepairDriftCommand', () => {
       catalogue([['Knitwear', 9]]),
       readModel({}),
       rebuild,
+      counter(),
       captureLogger().logger,
     ).execute();
 

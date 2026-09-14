@@ -1,0 +1,58 @@
+groups:
+  - name: modaco
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 30s
+        labels: { severity: page }
+        annotations:
+          summary: '{{ $labels.service }} stopped answering its scrape'
+          description: A process is gone or its metrics listener is not bound. Every other rule here is blind for that service until it returns.
+
+      - alert: DeadLetterGrowing
+        expr: queue_failed_jobs > 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: '{{ $value }} jobs in the {{ $labels.queue }} failed set'
+          description: BullMQ stops at `attempts` and leaves the job here, so nothing retries it. Clear it with `npm run retry-failed -- {{ $labels.queue }}` once the cause is fixed.
+
+      - alert: QueueBacklog
+        expr: queue_waiting_jobs > 1000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.queue }} has {{ $value }} jobs waiting'
+          description: A consumer is slower than its producer. Normal during a 500 000-row import, which announces about 500 batches; sustained past one is a stuck or missing worker.
+
+      - alert: ReadModelDrifting
+        expr: increase(readmodel_drift_repairs_total[15m]) > 0
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: The reconciler rebuilt {{ $value }} categories it found drifted
+          description: Redis and PostgreSQL disagreed on a category's size, which no event describes — an eviction, a partial restore, or a write that was lost after being consumed. The repair is automatic; the cause is not.
+
+      - alert: StorefrontUnavailable
+        expr: >
+          sum(rate(http_request_duration_seconds_count{status_code="503"}[5m]))
+          / sum(rate(http_request_duration_seconds_count[5m])) > 0.05
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of requests are answering 503'
+          description: The read model cannot be reached or has not been built. A cold start clears itself once the event handler finishes rebuilding; anything longer is Redis.
+
+      - alert: StorefrontSlow
+        expr: >
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 0.3
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: 'p99 is {{ $value }}s'
+          description: >-
+            Provisional. The 300 ms comes from one machine over loopback, where a quiet
+            stack answers p99 42 ms and a flash sale's recompute takes it to 104 ms.
+            It is a bar to notice, not a service level, and the first run from somewhere
+            that is not a laptop should replace it.

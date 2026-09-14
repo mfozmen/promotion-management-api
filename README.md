@@ -153,6 +153,17 @@ in that last folder is expected to fail, and a 2xx there is the finding. `baseUr
 assertion run immediately after a write may need a second attempt: that is the design rather than
 a flaky test.
 
+[`monitoring/alerts.yml`](./monitoring/alerts.yml) holds the Prometheus rules, loaded by
+`rule_files` and visible at `http://localhost:9090/alerts` once `npm run up` is running. Six of
+them: a target that stopped answering, a failed set that is not empty, a queue backlog, the read
+model drifting, the storefront answering `503`, and a p99 over the provisional bar. Each says what
+to do rather than only what happened — the dead-letter one names the command that clears it.
+
+Two of the six need metrics the application exports for no other reason: `queue_waiting_jobs` and
+`queue_failed_jobs` per queue, and `readmodel_drift_repairs_total`. Bull Board already shows the
+queue counts and that is enough for a person looking, but **an alert rule cannot look**, so it
+needs the same facts as a series.
+
 Demo data. Once the schema is up, one more command fills it:
 
 ```bash
