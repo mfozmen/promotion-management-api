@@ -32,9 +32,11 @@ export function startWorker(name: WorkerName, consuming: QueueName[] = []): Conn
     eventRouting,
   );
 
-  // Every worker serves `/metrics`: Prometheus scrapes each process by name, and a worker's
-  // heap and event loop exist nowhere else. The api serves its own on `PORT`.
+  // A worker's heap and event loop exist nowhere else, so Prometheus scrapes each process by
+  // name. The api serves its own on `PORT`.
   const metrics = serveMetrics(config.WORKER_METRICS_PORT);
+  const closeMetrics = (): Promise<void> =>
+    new Promise((resolve) => metrics.close(() => resolve()));
 
   logger.info({ worker: name, consuming, metricsPort: config.WORKER_METRICS_PORT }, 'connected');
 
@@ -44,7 +46,7 @@ export function startWorker(name: WorkerName, consuming: QueueName[] = []): Conn
     closeOnSigterm: (...also) => {
       process.once('SIGTERM', () => {
         void new GracefulShutdown(queue, config.SHUTDOWN_DRAIN_TIMEOUT_MS)
-          .close(...also, () => new Promise<void>((resolve) => metrics.close(() => resolve())))
+          .close(...also, closeMetrics)
           .then((path) => {
             logger.info({ worker: name, path }, 'shutdown complete');
             // A forced path abandoned whatever was mid-flight, so it is not a clean exit: `0`
