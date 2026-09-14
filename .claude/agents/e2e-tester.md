@@ -245,7 +245,7 @@ first result is ambiguous, and say so.
   (`docker stats` or the cgroup) rather than host RSS — the two count different
   things and a host sampler cannot see a container boundary. A measured run of
   500 000 rows peaked at 49.9 MiB of 256 (ADR-0005).
-- `docs/schema.sql` replays clean and matches the migrated schema (0a).
+- `docs/schema.sql` replays clean and matches the migrated schema (Setup).
 - Every invariant in section 2 holds after every race scenario in section 3.
 
 ## Report format
