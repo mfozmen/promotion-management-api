@@ -4,6 +4,7 @@ import { loadConfig } from '../shared/config.js';
 import { GracefulShutdown } from '../shared/graceful-shutdown.js';
 import { logger } from '../shared/logger.js';
 import { EventQueue } from '../shared/queue/event-queue.js';
+import { serveMetrics } from '../shared/metrics/serve-metrics.js';
 import type { QueueName } from '../shared/queue/queue-name.js';
 
 /** The three services in `docker-compose.yml`; a name that is not one of them is not a worker. */
@@ -31,7 +32,13 @@ export function startWorker(name: WorkerName, consuming: QueueName[] = []): Conn
     eventRouting,
   );
 
-  logger.info({ worker: name, consuming }, 'connected');
+  // A worker's heap and event loop exist nowhere else, so Prometheus scrapes each process by
+  // name. The api serves its own on `PORT`.
+  const metrics = serveMetrics(config.WORKER_METRICS_PORT);
+  const closeMetrics = (): Promise<void> =>
+    new Promise((resolve) => metrics.close(() => resolve()));
+
+  logger.info({ worker: name, consuming, metricsPort: config.WORKER_METRICS_PORT }, 'connected');
 
   return {
     config,
@@ -39,7 +46,7 @@ export function startWorker(name: WorkerName, consuming: QueueName[] = []): Conn
     closeOnSigterm: (...also) => {
       process.once('SIGTERM', () => {
         void new GracefulShutdown(queue, config.SHUTDOWN_DRAIN_TIMEOUT_MS)
-          .close(...also)
+          .close(...also, closeMetrics)
           .then((path) => {
             logger.info({ worker: name, path }, 'shutdown complete');
             // A forced path abandoned whatever was mid-flight, so it is not a clean exit: `0`

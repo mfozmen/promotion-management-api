@@ -1,5 +1,5 @@
-/** A product row as PostgreSQL holds it, which is what every recompute starts
- *  from; the effective price is decided from it rather than read. */
+import type { PromotionCandidate } from './promotion-candidate.js';
+
 export interface SourceRow {
   id: number;
   sku: string;
@@ -8,4 +8,6 @@ export interface SourceRow {
   basePriceCents: number;
   stockQuantity: number;
   pricingRulesVersion: number | null;
+  productPromotion: PromotionCandidate | null;
+  categoryPromotion: PromotionCandidate | null;
 }

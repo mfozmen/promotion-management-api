@@ -1,6 +1,8 @@
 import express, { type Express } from 'express';
 import createError from 'http-errors';
+import promBundle from 'express-prom-bundle';
 import type { AppDependencies } from './app-dependencies.js';
+import { metricsRegistry } from './shared/metrics/metrics-registry.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -11,6 +13,9 @@ import { productReadRoutes } from './modules/storefront/http/product-read-routes
 import { ProductRepository } from './modules/product/db/product-repository.js';
 import { CreateProductCommand } from './modules/product/commands/create-product-command.js';
 import { productRoutes } from './modules/product/http/product-routes.js';
+import { RegisterImportCommand } from './modules/ingestion/commands/register-import-command.js';
+import { ImportStatusQuery } from './modules/ingestion/queries/import-status-query.js';
+import { vendorImportRoutes } from './modules/ingestion/http/vendor-import-routes.js';
 import { PromotionRepository } from './modules/promotion/db/promotion-repository.js';
 import { PromotionAnnouncer } from './modules/promotion/domain/promotion-announcer.js';
 import { CreatePromotionCommand } from './modules/promotion/commands/create-promotion-command.js';
@@ -19,11 +24,23 @@ import { CancelPromotionCommand } from './modules/promotion/commands/cancel-prom
 import { FindPromotionQuery } from './modules/promotion/queries/find-promotion-query.js';
 import { ListPromotionsQuery } from './modules/promotion/queries/list-promotions-query.js';
 import { promotionRoutes } from './modules/promotion/http/promotion-routes.js';
+import { DependencyReadiness } from './shared/dependency-readiness.js';
 import { errorHandler } from './shared/http/error-handler.js';
 import { httpLogger } from './shared/http/http-logger.js';
 
 // JSON only: a multipart vendor upload brings its own byte limit (ADR-0009).
 const BODY_LIMIT = '100kb';
+
+// Built once, not per app: the registry is the process's, and a second histogram of the same name
+// is a registration error. The path label is the pattern the library derives, never the request's
+// own path — one series per product id is how the endpoint added to watch memory becomes the
+// memory problem.
+const requestMetrics = promBundle({
+  autoregister: false,
+  includeMethod: true,
+  includePath: true,
+  promRegistry: metricsRegistry,
+});
 
 export function createApp({
   logger,
@@ -32,16 +49,31 @@ export function createApp({
   scheduler,
   products,
   boardQueues,
+  uploads,
 }: AppDependencies): Express {
   const app = express();
   // Free to remove, and every response including a 404 carries it otherwise.
   app.disable('x-powered-by');
   app.use(httpLogger(logger));
+  app.use(requestMetrics);
   app.use(express.json({ limit: BODY_LIMIT }));
 
   const api = express.Router();
+  // Liveness, not readiness: the compose healthcheck calls this and every worker
+  // waits on `api` being healthy, so a route that failed when a store was down
+  // would keep the workers that repair it from ever starting (ADR-0003).
   api.get('/health', (_req, res) => {
     res.status(200).json({ status: 'ok' });
+  });
+  const readiness = new DependencyReadiness(db, products);
+  api.get('/ready', (_req, res, next) => {
+    readiness
+      .check()
+      .then((dependencies) => {
+        const ready = dependencies.postgres === 'up' && dependencies.redis === 'up';
+        res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'degraded', dependencies });
+      })
+      .catch(next);
   });
   // Both mount on /products: the read side answers GET, the write side POST.
   api.use(
@@ -49,7 +81,7 @@ export function createApp({
     productReadRoutes({
       readiness: new ReadModelReadinessQuery(products),
       find: new FindProductQuery(products),
-      list: new ListProductsQuery(products),
+      list: new ListProductsQuery(products, logger),
     }),
   );
   // The use cases are built here from the repositories, so a route receives
@@ -59,6 +91,20 @@ export function createApp({
   const announcer = new PromotionAnnouncer(queue, scheduler, logger);
 
   api.use('/products', productRoutes(new CreateProductCommand(catalogue, queue, logger)));
+  api.use(
+    '/vendor/imports',
+    vendorImportRoutes({
+      register: new RegisterImportCommand({
+        db,
+        enqueue: (chunk) => queue.publish('chunk.process', chunk),
+        chunkBytes: uploads.chunkBytes,
+        uploadDir: uploads.dir,
+      }),
+      status: new ImportStatusQuery(db),
+      uploadDir: uploads.dir,
+      maxBytes: uploads.maxBytes,
+    }),
+  );
   api.use(
     '/promotions',
     promotionRoutes({
@@ -70,6 +116,20 @@ export function createApp({
     }),
   );
   app.use('/api', api);
+
+  // Outside `/api` for the same reason the board is: a scrape is not part of this API's
+  // contract and must not be wrapped in its error envelope (ADR-0009).
+  app.get('/metrics', (_req, res) => {
+    void metricsRegistry
+      .metrics()
+      .then((body) => res.type(metricsRegistry.contentType).send(body))
+      .catch((err: unknown) => {
+        // One collector throwing takes every metric with it, so the line is the only way to
+        // find out which; a bare 500 reads as the endpoint being broken.
+        logger.error({ err }, 'metrics collection failed');
+        res.status(500).end();
+      });
+  });
 
   // Outside `/api` and outside the envelope: the board serves its own HTML and its own
   // error pages, so it is not part of this API's contract (ADR-0009).

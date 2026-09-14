@@ -15,6 +15,20 @@ describe('ProductReadRepository', () => {
     });
   });
 
+  describe('ping', () => {
+    it('asks Redis to answer, which no other method here can tell from an empty store', async () => {
+      const redis = { ping: () => Promise.resolve('PONG') } as unknown as Redis;
+
+      await expect(new ProductReadRepository(redis).ping()).resolves.toBeUndefined();
+    });
+
+    it('lets an unreachable store raise, so the caller reports down rather than empty', async () => {
+      const redis = { ping: () => Promise.reject(new Error('refused')) } as unknown as Redis;
+
+      await expect(new ProductReadRepository(redis).ping()).rejects.toThrow('refused');
+    });
+  });
+
   describe('isReady', () => {
     it('is false while the rebuild has published nothing', async () => {
       const redis = { exists: () => Promise.resolve(0) } as unknown as Redis;

@@ -1,7 +1,7 @@
 import type { Logger } from 'pino';
 import type { ProductSourceRepository } from '../db/product-source-repository.js';
 import type { ProductWriteRepository } from '../db/product-write-repository.js';
-import type { ProductEntry } from '../domain/dto/product-entry.js';
+import type { ProductPricer } from '../domain/product-pricer.js';
 import type { ProductUpserted } from '../../product/events/product-upserted.js';
 
 /** Recomputes the read-model entry for every product an announcement named.
@@ -12,6 +12,7 @@ export class ProductUpsertedHandler {
   constructor(
     private readonly source: ProductSourceRepository,
     private readonly readModel: ProductWriteRepository,
+    private readonly pricer: ProductPricer,
     private readonly logger: Logger,
   ) {}
 
@@ -20,18 +21,7 @@ export class ProductUpsertedHandler {
     const found = new Map(rows.map((row) => [row.id, row]));
     const deleted = productIds.filter((id) => !found.has(id));
 
-    const entries = [...found.values()].map((row): ProductEntry => ({
-      id: row.id,
-      sku: row.sku,
-      name: row.name,
-      category: row.category,
-      basePriceCents: row.basePriceCents,
-      // No resolver yet: a promotion discounts nothing until PR 2, and the
-      // storefront serves none of this until the rebuild publishes ready.
-      effectivePriceCents: row.basePriceCents,
-      stockQuantity: row.stockQuantity,
-      ...(row.pricingRulesVersion === null ? {} : { pricingRulesVersion: row.pricingRulesVersion }),
-    }));
+    const entries = await Promise.all([...found.values()].map((row) => this.pricer.price(row)));
 
     this.report(
       sourceReadAt,

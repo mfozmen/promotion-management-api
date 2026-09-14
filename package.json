@@ -7,8 +7,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "up": "docker compose --profile test up -d --build --wait",
-    "down": "docker compose --profile test down",
+    "up": "docker compose --profile test --profile monitoring up -d --build --wait",
+    "down": "docker compose --profile test --profile monitoring down",
     "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=.env dist/server.js",
@@ -22,7 +22,9 @@
     "db:migrate": "drizzle-kit migrate",
     "typecheck": "tsc --noEmit",
     "prepare": "husky",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "ingest": "tsx scripts/ingest.ts",
+    "generate:vendor": "tsx scripts/generate-vendor-csv.ts"
   },
   "dependencies": {
     "@bull-board/api": "^9.10.1",
@@ -30,12 +32,15 @@
     "bullmq": "^6.3.4",
     "drizzle-orm": "^0.45.2",
     "express": "^5",
+    "express-prom-bundle": "^8.0.0",
     "http-errors": "^2.0.1",
     "ioredis": "^6.0.0",
     "json-rules-engine": "^7.3.1",
+    "multer": "^2.3.0",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
+    "prom-client": "^15.1.3",
     "zod": "^4.6.2"
   },
   "devDependencies": {
@@ -44,6 +49,7 @@
     "@eslint/js": "^9",
     "@types/express": "^5",
     "@types/http-errors": "^2.0.5",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^6",

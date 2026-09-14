@@ -649,8 +649,9 @@ rather than ignored, so a typo in a client is visible.
 `page=1e9`, `pageSize=99999` and `page=abc` each have a defined answer.
 
 8.3 Errors are `{ error: { message } }` with the right status: `400`
-validation, `404` missing, `409` conflict, `429` backpressure, `503` read model
-not ready. The status is the taxonomy a client branches on; the message is for a
+validation, `404` missing, `409` conflict, `503` read model not ready. No route
+answers `429`: the intake has no backpressure control, so a rule naming one
+would be a rule no endpoint can satisfy. The status is the taxonomy a client branches on; the message is for a
 human, and it is the whole body: no code, no field-level breakdown (ADR-0009).
 
 8.3b A response may name where a problem is and which of the caller's own
@@ -893,8 +894,8 @@ the first classes (#39). ADR-0008.
 **Severity: warning. Blocking when a failure path has no recovery.**
 
 9.1 Every automated recovery has a manual counterpart and vice versa: retry and
-dead-letter, reconciler and rebuild, backpressure and drain. A failure mode with
-neither is a finding.
+dead-letter, reconciler and rebuild, a stalled lease and a re-claim. A failure
+mode with neither is a finding.
 
 9.2 Retries have exponential backoff and a ceiling. A retry loop without backoff
 is an outage amplifier.
@@ -906,6 +907,24 @@ the dead-letter set, a stuck lease expires and is visible in the job status.
 explicit confirmation parameter and say in their response what they removed.
 
 9.5 A new failure mode arrives with its metric, so the Grafana rules can see it.
+
+9.6 Cleanup of a resource a row will reference happens only where no committed
+row references it yet, never in a `catch` that spans the commit. A write that a
+later step can still fail after — an enqueue outside the transaction, a response
+that throws — leaves the resource in place, because the row that names it is
+already durable. The failure: a `catch` wrapping both the commit and the
+announcement deleted a vendor upload after its job row existed, leaving a
+running import whose chunks named bytes no worker could open, behind two unique
+indexes that refused both the re-upload and the same bytes. The leak the cleanup
+was added to fix was recoverable; the cleanup was not. A test that makes the
+post-commit step fail and asserts the resource survives is what distinguishes
+the two. When the commit happens inside the function you called, the two throws
+are indistinguishable at the call site, so assume every `catch` around that call
+spans the commit. What that leaves is a resource orphaned by a pre-commit
+failure — one unreferenced upload per failed registration, which no sweep
+reclaims; it is accepted because an operator can delete it and a deleted upload
+cannot be recovered, and reclaiming it by reintroducing the catch is the failure
+above.
 
 ---
 
@@ -1152,6 +1171,26 @@ signal that reports the first is read as the second.
 
 Evidence: `docker compose up -d --wait` called two containers healthy while
 neither published its port, because the healthcheck runs inside the container.
+
+13.14 **A number states what produced it and what it is compared against, or
+it is deleted.** A figure in a document is read as a decision someone made, so a
+measured one names the run, the machine and the accounting it came from; a
+chosen one says it was chosen; and one with neither behind it goes. Two figures
+in one sentence are two measurements until proved otherwise: a host process's
+resident memory and a container's own accounting are different quantities, and
+putting them either side of "against" asserts a comparison neither supports. The
+places that reach for a quantity are trade-offs and pass conditions rather than
+context or decision paragraphs, so that is where to look.
+
+Evidence: an appendix entry sourced a `130-192 ms p99` for `GET /api/health` to
+"the project's own ADR", which records no p99 for any route; the same sweep found
+a healthy-in-6.4 s figure that belonged to the healthcheck it replaced, a 5-second
+propagation bound with no run behind it, and a 100 ms pass condition sitting
+inside its own machine's 106-to-63 ms variance. Every one of the four read
+fluently because the method was missing. The comparison half has its own count:
+host RSS was measured against a cgroup limit in four places in one day — an ADR
+trade-off, an agent's pass condition, a case file's measure line and a run
+report — and each read as one quantity because both were spelled in megabytes.
 
 ## 13b. The rulebook learns
 

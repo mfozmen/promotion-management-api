@@ -18,6 +18,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
+- prom-client, Prometheus and Grafana (process metrics under the `monitoring` compose profile; see [ADR-0011](./ADR.md))
 - SonarCloud (static analysis / quality gate)
 - GitHub Actions (CI)
 - Claude AI advisory review on pull requests
@@ -33,8 +34,16 @@ Docker with the Compose plugin, and Node for the two npm scripts below.
 
 ```bash
 cp .env.example .env   # placeholders only; .env is gitignored
-npm run up             # PostgreSQL, Redis, the api, three workers and the test stores
+npm run up             # the stores, the api, three workers, the test stores and monitoring
 ```
+
+Grafana is on http://localhost:3001, no login, with Prometheus scraping the api and each worker
+every five seconds. The dashboard is the community **NodeJS Application Dashboard**
+([grafana.com id 11159](https://grafana.com/grafana/dashboards/11159)) rather than one of ours;
+pick the process in the `instance` list. During a 500 000-row import, the panel to watch is the
+`ingestion-worker` instance's heap and resident memory against the 256 MiB the container is
+limited to — the heap is what `--max-old-space-size=192` bounds and the resident figure is what
+the cgroup kills on.
 
 The API is on http://127.0.0.1:3100 and BullMQ's dashboard on
 http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data; add `-v` to that compose command to
@@ -54,20 +63,28 @@ process that migrates.
 - `reconciler` **consumes `reconciler.run` on the `maintenance` queue** and registers the
   repeatable that publishes it every five minutes, so the promotion boundary sweep runs on a fresh
   stack with nothing to start by hand.
-- `event-handler` will drain `promotions` and `products` for the read model; it consumes nothing
-  yet (issue #12).
-- `ingestion-worker` will drain `ingestion` for the chunk processor; it consumes nothing yet
-  (issue #105). It is capped at 256 MiB and half a CPU — the case study's own constraint, and what
-  Scenario A's 500 000-row import is measured against — and runs with
-  `NODE_OPTIONS=--max-old-space-size=192` so V8's heap ceiling sits under that cap.
+- `event-handler` rebuilds the read model on boot and then drains `promotions` and `products`
+  for it.
+- `ingestion-worker` drains `ingestion` for the chunk processor, one chunk at a time. It is
+  capped at 256 MiB and half a CPU — the case study's own constraint, and what Scenario A's
+  500 000-row import is measured against — and runs with `NODE_OPTIONS=--max-old-space-size=192`
+  so V8's heap ceiling sits under that cap. One containerised run at those limits processed all
+  500 000 rows in 6 of 6 chunks with none rejected, peaking at 49.9 MiB of the 256 by container
+  accounting, and a V8 heap flat across chunks (25 MB falling to 18 MB) — flat being the property
+  rather than the peak, since nothing accumulates as the file is consumed. The reasoning and the
+  host-side figures are in ADR-0005. Scenario B has no measurement yet.
 
-Each start-up line carries a `consuming` list: `maintenance` for the reconciler, empty for the
-other two, so an idle queue is not read as a drained one. None of the three has a healthcheck, so
-`--wait` treats them as up once they are running.
+Each start-up line carries a `consuming` list — `maintenance`, `ingestion`, and `products` with
+`promotions` — and the port that worker serves `/metrics` on. None of the three has a healthcheck,
+so `--wait` treats them as up once they are running; Prometheus reporting the target `down` is the
+nearest thing to one (ADR-0011).
 
-`api` and `ingestion-worker` share a named `uploads` volume at `/app/uploads`, because `api` writes
-the uploaded file and the worker reads it back by `file_ref`; nothing writes to it yet (the upload
-endpoint and chunk worker arrive with issue #16).
+`api` and `ingestion-worker` bind-mount `./uploads` at `/app/uploads`, because whoever registers a
+file writes it there and the worker reads it back by `file_ref` — a name inside that directory
+rather than a path, so the two processes agree on where it is across a container boundary. A named
+volume would not have done: the host's `./uploads`, which `npm run ingest` writes to, would have
+been a different directory that looked identical in this file. Both `npm run ingest -- <file>`
+and `POST /api/vendor/imports` write there.
 
 `docker compose stop` gives those four services — `api` and the three workers, the ones that close
 a queue — `stop_grace_period: 15s` for a shutdown budgeted at `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s),
@@ -91,7 +108,28 @@ That one command is the whole boot. `api` migrates before it listens, so `--wait
 
 It is one verb rather than two because a one-shot migration service cannot be waited on: `--wait` means "running, or healthy where a healthcheck exists", and a one-shot is neither for long, so it reports green over a migration still installing and red over one that finished. A long-lived service with a healthcheck has no such gap — the check cannot answer in front of a missing schema. ADR-0003 holds the measurements.
 
-For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
+For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. Against a running stack the same registration goes over HTTP, which is the only door a
+Docker-only reader has:
+
+```
+curl -s http://127.0.0.1:3100/api/ready
+curl -X POST http://127.0.0.1:3100/api/vendor/imports -F vendor=acme -F file=@fixtures/vendor-sample.csv
+curl -s http://127.0.0.1:3100/api/vendor/imports/1
+```
+
+The first says whether PostgreSQL and Redis are reachable and names which is not; the second
+answers `202 {"jobId":1,"chunksTotal":1}`; the third reports the import until `status` reads
+`completed`. Measured on this build through the compose stack, a 300-row file: `202`, then
+`completed` with `chunksDone: 1`, `rowsProcessed: 300`, `rowsRejected: 0`, and 300 products stored
+at the marked-up price. The `api` container wrote the file and the `ingestion-worker` container
+read the same bytes back through the shared `./uploads` mount — the same registration the command
+below performs from a checkout.
+
+`npm run ingest -- <file> [vendor]` registers a vendor file: it copies the file into `UPLOAD_DIR`,
+stores the job and one chunk row per byte range, and enqueues a `chunk.process` job for each, which
+the `ingestion-worker` drains. `npm run generate:vendor -- --rows 500000` writes a file to register.
+`POST /api/vendor/imports` does the same registration over HTTP, for a file that is not already
+on the machine running the command.
 
 Demo data. Once the schema is up, one more command fills it:
 
@@ -105,7 +143,7 @@ Run it as often as you like: what you get depends on the migrations and this run
 
 Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own: an active `Electronics` promotion under another name is not deleted by name, so the insert aborts on `23P01` and the whole file rolls back, leaving no half-written catalogue behind.
 
-[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the `ingestion-worker` container runs but registers no consumer, and the upload endpoint and chunk worker arrive with issue #16.
+[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. `npm run ingest -- fixtures/vendor-sample.csv` registers it and the `ingestion-worker` drains it; `curl -F vendor=acme -F file=@fixtures/vendor-sample.csv` sends the same file over the wire.
 
 Tests and checks. The whole integration layer runs against the `test` profile's own PostgreSQL and Redis, never the ones `api` and the workers use: the queue and shutdown tests obliterate the queues they touch, and the layer clones a database per test file. `npm run up` starts both, and neither holds anything worth keeping.
 
@@ -155,13 +193,13 @@ migration fails the build. It reads the success line rather than the exit code b
 `drizzle-kit generate` exits 0 even when it fails and writes nothing; `git add -AN` is what
 makes an untracked new migration visible to the diff (ADR-0003).
 
-Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data`, `redis-data` and `uploads` volumes as well. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
+Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data`, `redis-data`, `prometheus-data` and `grafana-data` volumes as well — `./uploads` is a bind mount on the host and survives either way. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
 
 ### Configuration
 
-`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
+`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`, plus 9090 and 3001 for Prometheus and Grafana under the `monitoring` profile; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `WORKER_METRICS_PORT` (default `3101`) is where each worker serves `/metrics`; it is published nowhere and is reachable on the compose network alone, so all three workers share the one number. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
 
-The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, the three worker services (`event-handler`, `ingestion-worker`, `reconciler`) running that same image with one command each, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. The workers have no healthcheck, so `--wait` treats them as up once they are running, whether or not they consume. The `monitoring` profile is not built: issue #18 adds it.
+The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, the three worker services (`event-handler`, `ingestion-worker`, `reconciler`) running that same image with one command each, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. The workers have no healthcheck, so `--wait` treats them as up once they are running, whether or not they consume. The `monitoring` profile adds Prometheus at http://127.0.0.1:9090 and Grafana at http://127.0.0.1:3001, and `npm run up` starts it; `docker compose up -d` without the profile leaves both out and changes nothing else.
 
 ### The queue
 
@@ -178,8 +216,8 @@ takes `reconciler.run` off `maintenance` and runs the boundary sweep
 (`src/modules/reconciler/commands/sweep-boundaries-command.ts`). `readmodel.rebuild`
 shares that queue and has no handler, so publishing one fails into the dead-letter
 set rather than being acknowledged by a process that ignored it — deliberate, and the
-read-model story adds the handler. Nothing consumes `promotions`, `products` or
-`ingestion` yet (issues #12 and #105).
+read-model story adds the handler. `ingestion` has a consumer — the chunk worker — and `maintenance` has the
+reconciler. `promotions` and `products` have none yet (issue #12).
 
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
@@ -238,7 +276,7 @@ The DDL is the migration set in [`src/shared/db/migrations/`](./src/shared/db/mi
 
 `active_promotions` is the one answer to which clock decides whether a promotion is running: `status = 'active' and tstzrange(starts_at, ends_at) @> now()`, evaluated by PostgreSQL, never re-derived in application code. The resolver selects from it instead of restating the predicate (ADR-0004). The admin reads do not: `GET /api/promotions` and `GET /api/promotions/:id` have to show drafts, scheduled and expired promotions too, which the view by definition does not hold, so they project a five-valued `state` from the same half-open window in SQL (one `sql` fragment in `src/modules/promotion/db/promotion-repository.ts`). The range is half-open: a promotion is live the instant `starts_at` arrives and stops the instant `ends_at` does. `tests/integration/shared/db/active-promotions.test.ts` pins that boundary — it inserts and reads inside one transaction, where `now()` is `transaction_timestamp()` and therefore constant, so an inclusive upper bound fails the test instead of passing it unnoticed. It is not an endpoint; no route exposes it.
 
-`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them. The Redis read model has no DDL of its own, so nothing under `migrations/` describes it. Its keys are the product hash, the two sorted sets, and the `readmodel:source-read-at` token hash that orders every write and outlives a delete (ADR-0003, ADR-0006). The code that writes them exists — `ProductWriteRepository` and `ProductUpsertedHandler` — but **nothing runs it and no shopper sees it yet**: no worker consumes `product.upserted` or the `promotions` queue, nothing publishes `readmodel:ready`, and both product routes therefore answer `503` on a fresh stack. A product is also written at its base price with no promotion: the promotion resolver is what discounts it, and the read-model rebuild is what publishes the ready key.
+`tests/integration/` and the module folders under `src/modules/` are named in the design spec and land with the endpoints that need them. The Redis read model has no DDL of its own, so nothing under `migrations/` describes it. Its keys are the product hash, the two sorted sets, and the `readmodel:source-read-at` token hash that orders every write and outlives a delete (ADR-0003, ADR-0006). The code that writes them exists — `ProductWriteRepository`, `ProductUpsertedHandler` and `PromotionChangedHandler`, pricing each product through the seeded promotion policy — but **nothing runs it and no shopper sees it yet**: no worker consumes `product.upserted` or the `promotions` queue, nothing publishes `readmodel:ready`, and both product routes therefore answer `503` on a fresh stack. The read-model rebuild is what publishes the ready key, and it is the next pull request.
 
 ## Dynamic pricing rules
 
@@ -264,19 +302,22 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 ## API
 
-All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are JSON, capped at 100 kB, and validated strictly: an unknown field is a `400`, never a silently dropped one. The Statuses column lists what a route decides for itself; `400`, `413` and `415` come from the shared boundary and can answer any of them.
+All endpoints are mounted under the `/api` prefix (ADR-0009). JSON bodies are capped at 100 kB and validated strictly: an unknown field is a `400`, never a silently dropped one, and that `400` can answer any route. The vendor upload is the exception — it is multipart, so it never reaches the JSON parser and carries its own size cap and its own `415`.
 
-| Method | Path                         | Description                                                                                                             | Statuses            |
-| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`               |
-| GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503` |
-| GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503` |
-| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`        |
-| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `201`, `404`, `409` |
-| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `200`, `404`, `409` |
-| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`        |
-| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`               |
-| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`        |
+| Method | Path                         | Description                                                                                                             | Statuses                          |
+| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`                             |
+| GET    | `/api/ready`                 | Readiness probe: asks PostgreSQL and Redis and names which one is unreachable                                           | `200`, `503`                      |
+| GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503`               |
+| GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503`               |
+| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`                      |
+| POST   | `/api/vendor/imports`        | Register a vendor file (multipart `file`, field `vendor`); answers `{ jobId, chunksTotal }` and queues a job per chunk  | `202`, `400`, `409`, `413`, `415` |
+| GET    | `/api/vendor/imports/:id`    | Follow an import: `status`, `chunksTotal`, `chunksDone`, `rowsProcessed`, `rowsRejected`, `lastError`                   | `200`, `404`                      |
+| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `201`, `404`, `409`               |
+| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `200`, `404`, `409`               |
+| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`                      |
+| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`                             |
+| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`                      |
 
 **Operations.** After `npm run up`, BullMQ's own dashboard is at
 http://localhost:3100/admin/queues — the four queues with their counts, the dead-letter set
@@ -284,6 +325,15 @@ http://localhost:3100/admin/queues — the four queues with their counts, the de
 retry, promote or remove a job. It is Bull Board mounted inside the api process, outside the
 `/api` prefix and outside this API's error envelope, and like everything else here it is
 unauthenticated.
+
+`GET /metrics` is the other surface outside the prefix: http://localhost:3100/metrics on the api,
+and `WORKER_METRICS_PORT` on each worker. It answers Prometheus's text format, carries
+`prom-client`'s default process metrics plus one request histogram from `express-prom-bundle`
+(`http_request_duration_seconds`, labelled by method, status and the route pattern the router
+matched rather than the path that arrived), and answers `500` with an empty body if a collector
+throws. Queue depth, dead-letter count and read-model drift are not among the numbers it reports,
+so a scenario run's latency and throughput come from `autocannon`'s own output and Grafana is where
+the shape of the run over time is visible (ADR-0011).
 
 `GET /api/products` takes `category` (exact match, optional, 256 characters), `sort=effectivePrice` (the only sort), `order=asc|desc` (default `asc`), `page` (default 1) and `pageSize` (1-100, default 20); the resulting offset may not exceed 10 000. `GET /api/products/:id` takes an id of digits only.
 
