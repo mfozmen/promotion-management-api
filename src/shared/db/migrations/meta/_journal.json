@@ -43,6 +43,13 @@
       "when": 1789340177926,
       "tag": "0005_reconciler_watermark_milliseconds",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789347661787,
+      "tag": "0006_seed_promotion_rules",
+      "breakpoints": true
     }
   ]
 }

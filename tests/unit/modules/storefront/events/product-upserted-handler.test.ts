@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProductUpsertedHandler } from '@src/modules/storefront/events/product-upserted-handler.js';
 import type { ProductSourceRepository } from '@src/modules/storefront/db/product-source-repository.js';
 import type { ProductWriteRepository } from '@src/modules/storefront/db/product-write-repository.js';
+import type { ProductPricer } from '@src/modules/storefront/domain/product-pricer.js';
 import { captureLogger } from '../../../capture-logger.js';
 
 const READ_AT = '1789380000000000';
@@ -27,15 +28,22 @@ function collaborators(rows: ReturnType<typeof row>[]) {
     removeAll: vi.fn((ids: unknown[]) => Promise.resolve(ids.map(() => undefined))),
   } as unknown as ProductWriteRepository;
   const { logger, lines } = captureLogger();
+  // The pricing is `ProductPricer`'s and is proved there; here it only has to
+  // be the thing the handler writes.
+  const pricer = {
+    price: vi.fn((row: { id: number; sku: string }) =>
+      Promise.resolve({ ...row, effectivePriceCents: 10_000 }),
+    ),
+  } as unknown as ProductPricer;
 
-  return { source, write, logger, lines };
+  return { source, write, logger, lines, pricer };
 }
 
 describe('ProductUpsertedHandler', () => {
   it('writes every product the announcement named', async () => {
-    const { source, write, logger } = collaborators([row(1), row(2)]);
+    const { source, write, logger, pricer } = collaborators([row(1), row(2)]);
 
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1, 2] });
+    await new ProductUpsertedHandler(source, write, pricer, logger).handle({ productIds: [1, 2] });
 
     const [entries] = vi.mocked(write.writeAll).mock.calls[0] ?? [];
     expect(entries).toHaveLength(2);
@@ -43,40 +51,40 @@ describe('ProductUpsertedHandler', () => {
   });
 
   it('writes the whole batch in one call rather than one round trip per product', async () => {
-    const { source, write, logger } = collaborators([row(1), row(2), row(3)]);
+    const { source, write, logger, pricer } = collaborators([row(1), row(2), row(3)]);
 
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1, 2, 3] });
+    await new ProductUpsertedHandler(source, write, pricer, logger).handle({
+      productIds: [1, 2, 3],
+    });
 
     expect(write.writeAll).toHaveBeenCalledTimes(1);
   });
 
   it('writes with the instant PostgreSQL read, not one the worker made up', async () => {
-    const { source, write, logger } = collaborators([row(1)]);
+    const { source, write, logger, pricer } = collaborators([row(1)]);
 
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1] });
+    await new ProductUpsertedHandler(source, write, pricer, logger).handle({ productIds: [1] });
 
     expect(vi.mocked(write.writeAll).mock.calls[0]?.[1]).toBe(READ_AT);
   });
 
-  it('prices a product at its base until a promotion resolver exists', async () => {
-    const { source, write, logger } = collaborators([row(1, { basePriceCents: 7_000 })]);
+  it('writes what the pricer decided rather than deciding a price of its own', async () => {
+    const { source, write, logger, pricer } = collaborators([row(1)]);
 
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1] });
+    await new ProductUpsertedHandler(source, write, pricer, logger).handle({ productIds: [1] });
 
-    // No resolver on this branch, so nothing discounts. The storefront cannot
-    // serve any of it yet: `readmodel:ready` is published by the rebuild.
+    expect(pricer.price).toHaveBeenCalledTimes(1);
     expect(vi.mocked(write.writeAll).mock.calls[0]?.[0][0]).toMatchObject({
-      basePriceCents: 7_000,
-      effectivePriceCents: 7_000,
+      effectivePriceCents: 10_000,
     });
   });
 
   it('removes an id the announcement named and PostgreSQL no longer holds', async () => {
-    const { source, write, logger } = collaborators([row(1)]);
+    const { source, write, logger, pricer } = collaborators([row(1)]);
 
     // Deleted between the publish and this handler: an at-least-once queue
     // makes that ordinary rather than exceptional.
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1, 2] });
+    await new ProductUpsertedHandler(source, write, pricer, logger).handle({ productIds: [1, 2] });
 
     expect(vi.mocked(write.removeAll).mock.calls[0]?.[0]).toEqual([2]);
     // The token carries the category, so the handler needs no second store to
@@ -84,20 +92,12 @@ describe('ProductUpsertedHandler', () => {
     expect(vi.mocked(write.removeAll).mock.calls[0]?.[1]).toBe(READ_AT);
   });
 
-  it('omits the pricing rules version when the row carries none', async () => {
-    const { source, write, logger } = collaborators([row(1, { pricingRulesVersion: null })]);
-
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1] });
-
-    expect(vi.mocked(write.writeAll).mock.calls[0]?.[0][0]).not.toHaveProperty(
-      'pricingRulesVersion',
-    );
-  });
-
   it('reads once for the whole batch rather than once per product', async () => {
-    const { source, write, logger } = collaborators([row(1), row(2), row(3)]);
+    const { source, write, logger, pricer } = collaborators([row(1), row(2), row(3)]);
 
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1, 2, 3] });
+    await new ProductUpsertedHandler(source, write, pricer, logger).handle({
+      productIds: [1, 2, 3],
+    });
 
     // One token for the batch is what makes the compare-and-set meaningful:
     // three reads would give three instants and three orderings.
@@ -105,19 +105,19 @@ describe('ProductUpsertedHandler', () => {
   });
 
   it('does not fail the batch when a write is refused by an older token', async () => {
-    const { source, write, logger } = collaborators([row(1), row(2)]);
+    const { source, write, logger, pricer } = collaborators([row(1), row(2)]);
     vi.mocked(write.writeAll).mockResolvedValueOnce([LATER, undefined]);
 
     await expect(
-      new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1, 2] }),
+      new ProductUpsertedHandler(source, write, pricer, logger).handle({ productIds: [1, 2] }),
     ).resolves.toBeUndefined();
   });
 
   it('names the products a refusal dropped, so an inversion is not silent', async () => {
-    const { source, write, logger, lines } = collaborators([row(1), row(2)]);
+    const { source, write, logger, lines, pricer } = collaborators([row(1), row(2)]);
     vi.mocked(write.writeAll).mockResolvedValueOnce([LATER, undefined]);
 
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1, 2] });
+    await new ProductUpsertedHandler(source, write, pricer, logger).handle({ productIds: [1, 2] });
 
     // ADR-0003 clause 4 will not widen the token without a count of the ties it
     // loses, and nothing can count what nothing records.
@@ -130,18 +130,18 @@ describe('ProductUpsertedHandler', () => {
   });
 
   it('says nothing when every write applied', async () => {
-    const { source, write, logger, lines } = collaborators([row(1)]);
+    const { source, write, logger, lines, pricer } = collaborators([row(1)]);
 
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [1] });
+    await new ProductUpsertedHandler(source, write, pricer, logger).handle({ productIds: [1] });
 
     expect(lines).toEqual([]);
   });
 
   it('names a refused removal too', async () => {
-    const { source, write, logger, lines } = collaborators([]);
+    const { source, write, logger, lines, pricer } = collaborators([]);
     vi.mocked(write.removeAll).mockResolvedValueOnce([LATER]);
 
-    await new ProductUpsertedHandler(source, write, logger).handle({ productIds: [9] });
+    await new ProductUpsertedHandler(source, write, pricer, logger).handle({ productIds: [9] });
 
     expect(lines[0]).toMatchObject({ refused: [{ productId: 9, storedToken: LATER }] });
   });
