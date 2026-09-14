@@ -28,9 +28,9 @@ function vendorFile(rows: number): string {
     { length: rows },
     (_, i) => `SKU-${sequence}-${i},name ${i},Electronics,800.00,150\n`,
   ).join('');
-  const path = join(dir, `vendor-${sequence}.csv`);
-  writeFileSync(path, header + body);
-  return path;
+  const name = `vendor-${sequence}.csv`;
+  writeFileSync(join(dir, name), header + body);
+  return name;
 }
 
 /** Collects what was enqueued, so a test can see one job per chunk and no more. */
@@ -51,7 +51,7 @@ const vendor = () => `vendor-${sequence}`;
 const registrarWith = (
   enqueue: (chunk: { jobId: number; chunkIndex: number }) => Promise<unknown>,
   chunkBytes = 1024,
-) => new RegisterImportCommand({ db: db(), enqueue, chunkBytes });
+) => new RegisterImportCommand({ db: db(), enqueue, chunkBytes, uploadDir: dir });
 
 const chunksOf = (jobId: number) =>
   db()
@@ -102,8 +102,8 @@ describe('RegisterImportCommand', () => {
 
   it('enqueues nothing when the file has no rows to process', async () => {
     sequence += 1;
-    const path = join(dir, `empty-${sequence}.csv`);
-    writeFileSync(path, header);
+    const path = `empty-${sequence}.csv`;
+    writeFileSync(join(dir, path), header);
     const sink = recorder();
 
     const { chunksTotal } = await registrarWith(sink.enqueue).register(vendor(), path);

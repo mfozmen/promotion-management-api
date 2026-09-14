@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { copyFile, mkdir } from 'node:fs/promises';
+import { extname, join } from 'node:path';
 import { eventRegistry } from '../src/events/event-registry.js';
 import { eventRouting } from '../src/events/event-routing.js';
 import { RegisterImportCommand } from '../src/modules/ingestion/commands/register-import-command.js';
@@ -31,13 +34,23 @@ const queue = EventQueue.connect(
 );
 
 try {
+  // Copied into the upload directory first, because what is stored is a name
+  // inside it rather than a path: the worker reads the file from a different
+  // filesystem — the container mounts the uploads volume and knows nothing of a
+  // host path — so a file left where the caller had it is one the reader cannot
+  // open. Copying is also what an upload route would do.
+  await mkdir(config.UPLOAD_DIR, { recursive: true });
+  const fileRef = `${randomUUID()}${extname(path)}`;
+  await copyFile(path, join(config.UPLOAD_DIR, fileRef));
+
   const { jobId, chunksTotal } = await new RegisterImportCommand({
     db: createDb(pool),
     enqueue: (chunk) => queue.publish('chunk.process', chunk),
     chunkBytes: config.INGESTION_CHUNK_BYTES,
-  }).register(vendor, path);
+    uploadDir: config.UPLOAD_DIR,
+  }).register(vendor, fileRef);
 
-  console.log(`job ${jobId}: ${chunksTotal} chunks queued from ${path}`);
+  console.log(`job ${jobId}: ${chunksTotal} chunks queued from ${fileRef}`);
 } finally {
   await queue.close();
   await pool.end();

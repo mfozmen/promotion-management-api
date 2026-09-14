@@ -36,6 +36,7 @@ const handler = new ChunkProcessHandler({
   batchSize: config.INGESTION_BATCH_SIZE,
   budgetMs: config.INGESTION_BUDGET_MS,
   leaseMs: config.INGESTION_LEASE_MS,
+  uploadDir: config.UPLOAD_DIR,
 });
 
 const worker = new Worker(

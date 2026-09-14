@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { products } from '@src/modules/product/db/schema/products.js';
@@ -87,7 +87,7 @@ async function jobWithChunk(
     .insert(ingestionJobs)
     .values({
       vendor: `vendor-${sequence}`,
-      fileRef: path,
+      fileRef: basename(path),
       fileSha256: `sha-${sequence}`,
       fileSizeBytes: endOffset,
       chunksTotal: 1,
@@ -138,6 +138,7 @@ const processorWith = (publish: (ids: readonly number[]) => Promise<void>, batch
     publish,
     batchSize,
     reenqueue: () => Promise.resolve(),
+    uploadDir: dir,
     log: silentLog,
   });
 
@@ -205,6 +206,7 @@ describe('ProcessChunkCommand', () => {
       products: new ProductRepository(db()),
       calculators: calculators(),
       reenqueue: () => Promise.resolve(),
+      uploadDir: dir,
       log: { error: (...args: unknown[]) => logged.push(args) },
       publish: () => Promise.reject(new Error('redis is down')),
     }).process({ jobId, chunkIndex: 0 });
@@ -229,6 +231,7 @@ describe('ProcessChunkCommand', () => {
           n === 2 ? Promise.reject(new Error('killed mid-batch')) : Promise.resolve(),
         ),
         reenqueue: () => Promise.resolve(),
+        uploadDir: dir,
         log: silentLog,
         publish: recorder().publish,
       }).process({ jobId, chunkIndex: 0 }),
@@ -283,6 +286,7 @@ describe('ProcessChunkCommand', () => {
         calculators: broken,
         publish: recorder().publish,
         reenqueue: () => Promise.resolve(),
+        uploadDir: dir,
         log: silentLog,
       }).process({ jobId, chunkIndex: 0 }),
     ).rejects.toThrow('rule set is unusable');
@@ -307,6 +311,7 @@ describe('ProcessChunkCommand', () => {
       calculators: calculators(),
       batchSize: 2,
       reenqueue: () => Promise.resolve(),
+      uploadDir: dir,
       log: silentLog,
       publish: async (ids) => {
         batches += 1;
@@ -348,6 +353,7 @@ describe('ProcessChunkCommand', () => {
       }),
       batchSize: 100,
       reenqueue: () => Promise.resolve(),
+      uploadDir: dir,
       log: silentLog,
       publish: recorder().publish,
     }).process({ jobId, chunkIndex: 0 });
@@ -378,6 +384,7 @@ describe('ProcessChunkCommand', () => {
       // the first batch fits and the second would not.
       now: () => (clock++ === 0 ? 0 : 1000),
       log: silentLog,
+      uploadDir: dir,
       reenqueue: (chunk) => {
         enqueued.push(chunk);
         return Promise.resolve();
@@ -409,6 +416,7 @@ describe('ProcessChunkCommand', () => {
       budgetMs: 500,
       now: () => (clock++ === 0 ? 0 : 1000),
       log: silentLog,
+      uploadDir: dir,
       reenqueue: (chunk) => {
         enqueued.push(chunk);
         return Promise.resolve();
@@ -501,6 +509,7 @@ describe('ProcessChunkCommand', () => {
         ),
         batchSize: 2,
         reenqueue: () => Promise.resolve(),
+        uploadDir: dir,
         log: silentLog,
         publish: recorder().publish,
       }).process({ jobId, chunkIndex: 0 }),

@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { TransactionRollbackError } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import type { Db } from '../../../shared/db/client.js';
@@ -52,6 +53,8 @@ export class ProcessChunkCommand {
   private readonly log: Pick<Logger, 'error'>;
   private readonly batchSize: number;
   private readonly leaseMs: number;
+  /** This process's view of where vendor files live; the stored ref is relative to it. */
+  private readonly uploadDir: string;
   private readonly budgetMs: number;
   private readonly now: () => number;
   private readonly reenqueue: (chunk: ChunkProcess) => Promise<unknown>;
@@ -71,6 +74,7 @@ export class ProcessChunkCommand {
     reenqueue: (chunk: ChunkProcess) => Promise<unknown>;
     batchSize?: number;
     leaseMs?: number;
+    uploadDir: string;
     budgetMs?: number;
     now?: () => number;
   }) {
@@ -82,6 +86,7 @@ export class ProcessChunkCommand {
     this.reenqueue = options.reenqueue;
     this.batchSize = options.batchSize ?? ProcessChunkCommand.DEFAULT_BATCH_SIZE;
     this.leaseMs = options.leaseMs ?? ProcessChunkCommand.DEFAULT_LEASE_MS;
+    this.uploadDir = options.uploadDir;
     this.budgetMs = options.budgetMs ?? Number.POSITIVE_INFINITY;
     this.now = options.now ?? Date.now;
   }
@@ -104,7 +109,7 @@ export class ProcessChunkCommand {
     let rowsRejected = 0;
 
     for await (const { line, endOffset } of readRangeLines(
-      job.fileRef,
+      join(this.uploadDir, job.fileRef),
       claimed.nextOffset,
       claimed.endOffset,
     )) {

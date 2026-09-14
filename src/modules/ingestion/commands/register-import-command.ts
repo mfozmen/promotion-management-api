@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Db } from '../../../shared/db/client.js';
 import { chunkBoundaries } from '../domain/chunk-boundaries.js';
 import { ingestionChunks } from '../db/schema/ingestion-chunks.js';
@@ -24,18 +25,31 @@ export class RegisterImportCommand {
   private readonly db: Db;
   private readonly enqueue: (chunk: ChunkProcess) => Promise<unknown>;
   private readonly chunkBytes: number;
+  private readonly uploadDir: string;
 
   constructor(options: {
     db: Db;
     enqueue: (chunk: ChunkProcess) => Promise<unknown>;
     chunkBytes: number;
+    /** Where vendor files live for this process; the container's is not the host's. */
+    uploadDir: string;
   }) {
     this.db = options.db;
     this.enqueue = options.enqueue;
     this.chunkBytes = options.chunkBytes;
+    this.uploadDir = options.uploadDir;
   }
 
-  async register(vendor: string, path: string): Promise<Registration> {
+  /**
+   * `fileRef` is a name inside the upload directory, never a path. The worker runs
+   * in a different filesystem from whoever registered the file — the container
+   * mounts the uploads volume at `/app/uploads` and knows nothing of a host path —
+   * so an absolute path stored here is one the reader cannot open, and the import
+   * fails at the first chunk with a file that exists everywhere except where it
+   * is needed.
+   */
+  async register(vendor: string, fileRef: string): Promise<Registration> {
+    const path = join(this.uploadDir, fileRef);
     const [size, fileSha256, boundaries] = await Promise.all([
       stat(path).then((file) => file.size),
       RegisterImportCommand.sha256(path),
@@ -49,7 +63,7 @@ export class RegisterImportCommand {
         .insert(ingestionJobs)
         .values({
           vendor,
-          fileRef: path,
+          fileRef,
           fileSha256,
           fileSizeBytes: size,
           chunksTotal: boundaries.length,

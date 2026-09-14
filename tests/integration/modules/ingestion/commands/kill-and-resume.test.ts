@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { products } from '@src/modules/product/db/schema/products.js';
@@ -77,7 +77,7 @@ async function sixRowFile(): Promise<{ jobId: number; startOffset: number; endOf
     .insert(ingestionJobs)
     .values({
       vendor: 'vendor',
-      fileRef: path,
+      fileRef: basename(path),
       fileSha256: 'sha',
       fileSizeBytes: endOffset,
       chunksTotal: 1,
@@ -121,6 +121,7 @@ describe('a worker killed mid-chunk', () => {
       ),
       batchSize: BATCH,
       reenqueue: () => Promise.resolve(),
+      uploadDir: dir,
       log: silentLog,
       publish: (ids) => {
         announced.push(...ids);
@@ -146,6 +147,7 @@ describe('a worker killed mid-chunk', () => {
       calculators: calculators(),
       batchSize: BATCH,
       reenqueue: () => Promise.resolve(),
+      uploadDir: dir,
       log: silentLog,
       publish: () => Promise.reject(new Error('should never be called')),
     });
@@ -159,6 +161,7 @@ describe('a worker killed mid-chunk', () => {
       calculators: calculators(),
       batchSize: BATCH,
       reenqueue: () => Promise.resolve(),
+      uploadDir: dir,
       log: silentLog,
       publish: (ids) => {
         announced.push(...ids);

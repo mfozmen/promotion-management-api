@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ChunkProcessHandler } from '@src/modules/ingestion/events/chunk-process-handler.js';
@@ -54,7 +54,7 @@ async function jobWithChunk(rows: number): Promise<number> {
     .insert(ingestionJobs)
     .values({
       vendor: `vendor-${sequence}`,
-      fileRef: path,
+      fileRef: basename(path),
       fileSha256: `sha-${sequence}`,
       fileSizeBytes: Buffer.byteLength(content),
       chunksTotal: 1,
@@ -79,6 +79,7 @@ const handlerWith = (publish: (ids: readonly number[]) => Promise<void>, budgetM
     calculators: calculators(),
     publish,
     reenqueue: () => Promise.resolve(),
+    uploadDir: dir,
     log: silentLog,
     batchSize: 100,
     budgetMs,
