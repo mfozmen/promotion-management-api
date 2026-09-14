@@ -917,7 +917,13 @@ running import whose chunks named bytes no worker could open, behind two unique
 indexes that refused both the re-upload and the same bytes. The leak the cleanup
 was added to fix was recoverable; the cleanup was not. A test that makes the
 post-commit step fail and asserts the resource survives is what distinguishes
-the two.
+the two. When the commit happens inside the function you called, the two throws
+are indistinguishable at the call site, so assume every `catch` around that call
+spans the commit. What that leaves is a resource orphaned by a pre-commit
+failure — one unreferenced upload per failed registration, which no sweep
+reclaims; it is accepted because an operator can delete it and a deleted upload
+cannot be recovered, and reclaiming it by reintroducing the catch is the failure
+above.
 
 ---
 
