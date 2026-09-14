@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createReadModelClient } from '@src/shared/read-model-client.js';
+import { logger } from '@src/shared/logger.js';
 
 describe('createReadModelClient', () => {
   it('limits its wait on Redis: fails a command rather than queueing it while the server is away', () => {
@@ -19,5 +20,20 @@ describe('createReadModelClient', () => {
     expect(commandTimeout).toBe(1_000);
     // The read model's own database, never the queue's (ADR-0003).
     expect(db).toBe(9);
+  });
+
+  it('logs a connection failure rather than letting ioredis print outside pino', () => {
+    // Without a listener ioredis writes "[ioredis] Unhandled error event" as raw
+    // text, which a structured log cannot carry and a scraper cannot read.
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+    const client = createReadModelClient('redis://localhost:6379', 9);
+
+    client.emit('error', new Error('connect ECONNREFUSED'));
+    client.disconnect();
+
+    expect(error).toHaveBeenCalledWith(
+      { err: expect.any(Error) as Error },
+      'read model client failed',
+    );
   });
 });
