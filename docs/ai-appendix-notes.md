@@ -110,7 +110,7 @@ rewritten.
     lines; then a trimming pass hit the new ratio on every file and still
     deleted two load-bearing contracts, and twice in one round a fix landed
     in the code while the identical claim stood unchanged in the ADR.
-  - 8c (names match, commit `ef1d8e5`): `src/shared/http-error.ts` exported
+  - 8c (names match, commit `ef1d8e5`; the file and the symbol were both removed later with the http boundary): `src/shared/http-error.ts` exported
     one class, `AppError`; a reader who saw the name in a stack trace grepped
     for `app-error` and found nothing. Renumbering the section after the
     owner's ruling then dropped the "same thing is called the same thing
@@ -129,8 +129,12 @@ rewritten.
     404 withheld the path and body-parser messages were replaced, but zod
     quoted the rejected key back and a test asserted it. The first draft of
     the field-name exception then had no length bound, so a multi-kilobyte
-    key would have come straight back in the error body; 8.3c caps it at 64
-    characters and truncates rather than omits.
+    key would have come straight back in the error body; 8.3c capped it at 64
+    characters and truncated rather than omitting. 8.3c was later deleted with
+    the field it governed: the owner removed `details` from the response
+    entirely, so a rejection names the part that failed and nothing else, and
+    the mirror that rule bounded no longer exists to bound. 8.3b survives, and
+    still permits naming which of the caller's own fields a problem concerns.
   - 13b (the rulebook learns, commit `2a2f479`): each of the findings above
     became a rule only because someone happened to notice; 13b makes turning
     a recurring finding into a rule (and fixing a rule that never fires) the
@@ -141,7 +145,9 @@ rewritten.
 - Strategy: a `/doctor`-style health check flagged that CLAUDE.md's "Stack" and "Commands" sections duplicated `package.json` verbatim; replaced both with one sentence pointing there instead.
 - Human refinement: none needed — `impact-analyzer` confirmed no doc or config referenced the removed sections and every named script (`dev`, `test`, `test:cov`, `lint`) still exists in `package.json`.
 
-### 2026-09-12 — SonarCloud issue gate, then two owner-review corrections (PR #56)
+### 2026-09-12 — SonarCloud issue gate, two owner-review corrections, then deleted (PR #56)
+
+**The script described here was deleted before #56 merged and is in no branch** — see "A CI gate built, reviewed twice, then deleted" below; nothing in the delivered system enforces 13.6 in code.
 
 - Strategy: the free SonarCloud plan's quality gate conditions are ratings and coverage, so a CRITICAL code smell can pass it; asked for a CI step (`scripts/sonar-issues.mjs`) that queries the Sonar issue-search API directly for the pull request and fails the build on anything unresolved, enforcing REVIEW.md 13.6 in code instead of prose. Wrote the retry loop, then the owner's review found it did not retry a thrown fetch error, and that an issue accepted, won't-fixed or false-positived from the SonarCloud web interface still passed the gate. Both were fixed in commit `737ea88`, with `tests/sonar-issues.test.mjs` (a stubbed rejecting fetch) as the first test for the script — deliberately a `.mjs` file so it stays outside the TypeScript project and the `src/**` coverage scope.
 - Human refinement: owner asked for `sonar.qualitygate.timeout=300` set explicitly (commit `cae6bc2`) after asking why an open-ended wait was acceptable, and for the false "written by drizzle-kit rather than by hand" evidence clause removed from `REVIEW.md` 13.6 once PR #50 established `0000_write_store.sql` was hand-extended and `0001_seed_pricing_rules.sql` hand-written.
@@ -270,7 +276,7 @@ rewritten.
 ### 2026-09-12 — Merged main, and the stack contract the e2e agent measures (PR #34, commits `82ed2fa`, `f588058`)
 
 - Strategy: the branch was five commits behind `origin/main`, so main was merged rather than the branch rebased, to keep the four `architecture-critic` verdicts already recorded against their commits. The only conflict was in this file: both sides had appended entries about different pull requests into the same two sections. Resolved by keeping every entry, main's first and this branch's after — this file is append-only, so a conflict here is never a choice between two versions.
-- Human refinement: `.claude/agents/e2e-tester.md`, updated on main in `9f780e8` (PR #44), now brings the stack up with `docker compose` on a fixed host port 3000 and polls `/api/health`. This compose file holds the two stores only and publishes no application port, so the contract was written into `docker-compose.yml` as a comment (`f588058`) and into README.md, rather than a port being published for a service that does not exist yet. Fixing the port is deliberate: it is what stops two concurrent runs measuring the same machine.
+- Human refinement: `.claude/agents/e2e-tester.md` brings the stack up with `docker compose` on a fixed host port and polls a health route. Fixing the port is deliberate: it is what stops two concurrent runs measuring the same machine. **Superseded on 2026-09-13 in both its port and what the compose file holds** — the port is 3100, because 3000 is the default of every other Node service on a developer's machine and was already taken here, and the compose file now holds an `api` service built from this repository, publishing `127.0.0.1:3100` and migrating before it listens, so the contract lives in the compose file rather than in a comment beside it.
 - Doc check against main's CI changes of the same day: the required checks are now `ci` and `claude-review` only, `local-gates` still runs but no longer blocks a merge, the pull-request title check is gone, and SonarCloud scans only when the diff touches something it reads (`e0beddd`, PR #56). Nothing this branch adds to ADR.md or README.md describes CI, so nothing there is falsified. One branch-added sentence in this file is now dated — "the `architecture-critic`, which `local-gates` requires once a PR touches `ADR.md`" — and is left standing rather than edited, because this file is not rewritten; the correction is this line. The agent labels are still computed and asserted by `local-gates`, they simply no longer hold a merge.
 - Verification: `git diff origin/main...HEAD` re-read end to end against ADR.md and README.md; `docker compose config` still parses (comment-only change); no source file touched in this round. README.md gained the port-and-health contract and a note that the design spec puts every route under `/api`, while the shipped scaffold route is still `/health` — the table states what ships, not what is planned.
 
@@ -317,9 +323,11 @@ rewritten.
 
 ### 2026-09-12 — A retry loop that never retried, and a gate the SonarCloud UI could bypass (PR #56)
 
+**Both findings below were fixed in a script that was then deleted unmerged**; they are kept because the review work is the record, not because the gate shipped. See "A CI gate built, reviewed twice, then deleted" further down.
+
 - Challenge: two findings in the same owner review of `scripts/sonar-issues.mjs`. (1) The retry loop wrapped only the `response.ok` check; `fetchImpl` throwing — an unreachable host (`TypeError`) or the 20 s `AbortSignal.timeout` firing (`TimeoutError`) — was not caught, so the one failure mode retries exist for propagated out of the function on the first attempt instead of being retried. (2) The gate queried `issues/search` with `resolved: 'false'` only; REVIEW.md 13.6 requires an ignore to go through an approved `sonar.issue.ignore.multicriteria` entry, but marking a finding Accepted, Won't Fix or False Positive from the SonarCloud web interface sets a resolution that drops it out of that same query, so the rule could be bypassed from the vendor UI with the gate still green.
 - Verification: (1) `tests/sonar-issues.test.mjs` was written first with a stubbed `fetchImpl` that rejects on every call — the rejecting stub reproduces the original crash on the first attempt, and the same test now records ten attempts and the `::error::` line that says the job should be re-run. (2) Traced the SonarCloud issue-search API's `issueStatuses` parameter against the three resolution states REVIEW.md 13.6 names (Accepted, Won't Fix as its current name, False Positive) and confirmed no existing call queried them.
-- Resolution: commit `737ea88` moved the `fetchImpl` call inside the same `try`/`catch` as the JSON parse, so a thrown error logs and retries exactly like a 5xx and the loop still ends with one `::error::` line after the attempt budget; added a second `issues/search` call with `issueStatuses=ACCEPTED,FALSE_POSITIVE` and a third call to `hotspots/search` for `status=TO_REVIEW` hotspots (which the issue-search endpoint never returns at all), each contributing to the same pass/fail total, so REVIEW.md 13.6 is enforced by the gate rather than left to reviewers to notice in the SonarCloud UI.
+- Resolution: commit `737ea88` moved the `fetchImpl` call inside the same `try`/`catch` as the JSON parse, so a thrown error logs and retries exactly like a 5xx and the loop still ends with one `::error::` line after the attempt budget; added a second `issues/search` call with `issueStatuses=ACCEPTED,FALSE_POSITIVE` and a third call to `hotspots/search` for `status=TO_REVIEW` hotspots (which the issue-search endpoint never returns at all), each contributing to the same pass/fail total, so REVIEW.md 13.6 would have been enforced by the gate rather than left to reviewers to notice in the SonarCloud UI. It is not: the gate was removed, and REVIEW.md 13.6 now states in its own text that the rule is carried by review rather than by a check.
 
 ### 2026-09-12 — The two path patterns in `local-gates` disagreed (PR #46, `021de82`)
 
@@ -619,9 +627,293 @@ rewritten.
 - Verification: `grep zod package.json` and `git log -S zod -- package.json` on `origin/main`: the dependency arrived with #27 and is imported on #30. The premise of the deferral had been false since before the branch's third review round.
 - Resolution: the validator and its 296-line test file are replaced by the owner's schema; every check that merely re-typed a value went, the three that catch a quiet late failure stayed. The lesson recorded for the appendix: a documented reason to defer must be re-verified on every merge from main, because the AI carries the sentence forward verbatim and the tree does not.
 
+### 2026-09-13 — A control that reads as safe and is not
+
+- Challenge: an `architecture-critic` round found a comment claiming that `as const` "stops anything rewriting a row at runtime". It does not: the annotation is erased at build time, so the three error lookup tables were ordinary mutable objects in the shipped JavaScript, and one assignment from any consumer would have changed the error body of every concurrent request in the process. The fix was to freeze them. The next round found the freeze was shallow: `Object.freeze` held the key-to-row binding and left each row writable, and a row's fields are exactly what the envelope spreads into a response. The test written alongside the first fix asserted the assignment the freeze does stop and never the one it does not.
+- Verification: the agent proved it by probe rather than by argument, assigning to a frozen table's row and getting a database connection string back as the body of a 413. The corrected test asserts that assignment throws and that the message is unchanged afterwards, and it failed before the fix.
+- Resolution: each row frozen individually, the constant holding the body of every 500 frozen, and a `ReadonlySet` whose `.add` still worked replaced by a frozen array — that last one sitting in the same file as the sentence claiming the type was the control. REVIEW.md 7.4b gained this as its third piece of evidence: assert the reachable breach, not the one the control obviously covers.
+- Lesson: a type annotation is not a runtime control, and a comment that says it is will be believed by the next reader. When prose claims a guarantee, the test has to attack the guarantee, not the annotation.
+
+### 2026-09-13 — Writing a rule does not inoculate you against it
+
+- Challenge: the advisory review found that a test added with the 5xx logging fix passed its cause as the error class's third constructor argument, which is `details`, not `Error.cause`. The serialiser reads `err.cause`, so the injected driver error was inert: the test pinned the two new fields and never the claim its own comment made, and it would have passed identically with the cause deleted. That is REVIEW.md 7.4b, whose evidence the same branch had widened one commit earlier.
+- Verification: the corrected test sets the real `cause` and asserts the serialised error carries `ECONNREFUSED` alongside the 503 the client read. The production fix was then removed on purpose to watch the test go red, and restored — the check the first round had skipped.
+- Resolution: test rewritten. The same round corrected a first draft of this entry which claimed the branch had authored the rule it broke; it had not, and a `docs-scribe` run caught the overclaim against the commit history.
+- Lesson: knowing a rule, even having just sharpened its wording, does not protect you from it; the habit that catches it is mechanical — break the production code and watch the test fail. And a self-critical note that flatters the narrative gets checked less often than a claim about a library, because it reads as humility rather than as a claim.
+
+### 2026-09-13 — A merge that would have reverted a route, caught by the rename it came with
+
+`main` moved `tests/health.test.ts` to `tests/unit/app.test.ts` while a branch had created a different file at that path, so git raised an add/add conflict rather than a silent overwrite. Main's copy asserted `GET /health` returns 200; the branch had moved the route to `/api/health` and kept a test asserting the old path now 404s. Taking either side wholesale would have been wrong: main's would have failed, and the branch's would have dropped the rename. The resolution folded the two health cases into the branch's app tests and deleted the extra file, because the layout rule is one test file per source file and no `src/health.ts` exists.
+
+Lesson, narrow and worth keeping: a rename conflict is the one conflict shape that cannot be resolved by preferring a side, because each side describes a different tree, and the question is which tree the merged code is in.
+
+### 2026-09-13 — An alias that resolved everywhere except where the tests ran
+
+The `@src` alias arrived from another branch while one branch had split the suite into vitest workspace projects. A workspace project does not inherit the root config's `resolve` block, so every aliased import failed to load and eleven test files went red at once — each of them green on either branch alone. Caught by running the suite, not by reading either change. The alias is now declared once and spread into every project, and REVIEW.md 7.8 carries the failure as its evidence.
+
+### 2026-09-13 — Three rounds of fixing a claim instead of the thing
+
+- Challenge: the owner asked that `docker compose up -d --wait` alone leave the schema in place. An AI-written one-shot migration service and the paragraph explaining it were wrong three rounds running, and each round "fixed" it by correcting the prose one level down.
+- Verification: executing the command. `--wait` gets a one-shot wrong in both directions — an exited container reads as a failed stack, and a still-running one reads as success — so the boot went green at 9.4 seconds with the migration still installing, and green again over a migration heading for an auth failure that left no tables behind it. The same shape appeared in the drift check: `drizzle-kit generate` exits 0 when it fails, so a CI step asserting its exit status passed over real schema drift.
+- Lesson: a green CI step and a plausible paragraph both read as evidence and are neither. The cheap check is running the command and reading its exit code.
+
+### 2026-09-13 — A harness that measured a database nobody could reproduce
+
+- Challenge: the `e2e-tester` agent brought the stack up with `docker compose up -d --wait` and tore it down with a plain `docker compose down`, explicitly leaving the `db` and `redis` volumes in place. Every run therefore measured whatever earlier runs had written: a promotion left active by a previous run changes the price a shopper case asserts, a half-ingested SKU set hides the duplicate a fresh ingestion run would catch, and a Redis read model built by older code answers for a schema that no longer exists.
+- Verification: human, by reading the agent definition against what an end-to-end number is supposed to mean — a result reproducible from migrations plus the run's own writes. No test caught it, because the harness itself was the defect and a green run on dirty state looks identical to a green run on clean state.
+- Resolution: setup is now `docker compose down -v --remove-orphans` then `docker compose up -d --wait`, with migrations applied against the empty database before the first request; teardown drops the volumes too. README gained one line warning that a run destroys the local volumes.
+- Lesson: agent definitions are treated as configuration and escape the review attention given to `src/`, yet they decide what "verified" means for the whole submission.
+
+### 2026-09-13 — A prohibition that read as a control
+
+- Challenge: the `e2e-tester` definition told the run to use bare `docker compose down` and `up`, and said "leave the `db` and `redis` volumes alone unless you created them". The compose file pins `name: promotion-management-api`, the same project the developer's own stack runs under, so the teardown would have dropped their `postgres-data` and `redis-data` volumes. The sentence read as a safeguard and had no mechanism behind it.
+- Verification: reading `docker-compose.yml` rather than the agent's prose — the fixed project name, and the fixed published host ports, which also rule out two stacks coexisting. On Windows `netstat` attributes every published container port to `com.docker.backend`, so ownership has to come from the compose project label instead.
+- Resolution: `-p pma-e2e` on every compose command — a flag rather than an environment variable, because each command runs in its own shell and the variable is gone by the next one; an ownership check before the first destructive command; `down -v` then `up -d --wait --wait-timeout 300` from empty volumes; teardown on the run's own project.
+- Lesson: an instruction phrased as a prohibition was accepted as a control for weeks. Only isolation by project name makes it enforceable, and the hazard was invisible until someone asked what the command would actually delete.
+
+### 2026-09-13 — A documentation claim that aged into a falsehood
+
+- Challenge: an ADR trade-off written while a branch was still open promised that the branch "asserts in a unit test that its compiler accepts exactly that shape". After a rebase the compiler had landed and the assertion lived in an integration test against the real seeded rows, so the sentence named both the wrong tense and the wrong kind of test. The same section cited three commit hashes the rebase had orphaned, which resolve to nothing in a fresh clone.
+- Verification: `git merge-base --is-ancestor` over every hash cited in ADR.md and README.md, and the test kind read off the file rather than off memory of the pull request description.
+- Lesson: forward-referencing prose is correct when written and false the moment the referenced branch merges or is rebased. A cross-branch claim should be written as the check that proves it, not as a promise about other work — and a commit hash in a document is a claim to be re-verified after every rebase. REVIEW.md 8b.5 now forbids them outright.
+
+### 2026-09-13 — The refactors renamed the code and left the prose describing a shape it no longer had
+
+- Challenge: a day of class-extraction refactors left ADR.md describing structure that had moved underneath it — a "private lookup method" that is an inline `Object.hasOwn` check, a deleted file cited under a name it never carried, a "five files" cost count the same refactor had cut to three, and "twelve tables" where the tree holds six tables, five enums and one view. Two further sentences said work was pending that had already merged.
+- Verification: every class, method and path the record names was read against the worktree and against `git ls-tree origin/main`, rather than against the record's own prose.
+- Lesson: an AI-assisted rename is reliable in code and unreliable in the prose about it, and every stale claim described structure rather than behaviour — so tests, typecheck and coverage stayed green through all of it. Nothing mechanical was going to catch them, which is why a documented-paths test was written to catch at least the paths.
+
+### 2026-09-13 — Documented paths, extracted mechanically
+
+A container healthcheck and an agent's readiness step both polled `/health` after the route moved under `/api`. Neither was caught by reading: the compose file was proved wrong by booting the stack in its own project with the ports overridden, and the path was then extracted mechanically. The same technique — pull every backticked repository path out of the documents and stat it — found four dead paths in an ADR that three review rounds had read past, and it is now a test on main rather than a habit.
+
+Its limit is known, and was hit three times the same day: it checks paths, not identifiers or claims. A renamed export still named in prose, and an `ADR-00NN` citation pointing at the wrong record, stay green.
+
+### 2026-09-13 — A crashed test worker reads exactly like a failing test
+
+After resetting a git worktree, `npm run test:cov` died with "Worker exited unexpectedly" and then `MODULE_NOT_FOUND` inside rollup's native binding. That is not a failing test: `node_modules` was wedged. `npm ci` then failed twice more, first on husky's prepare step (a worktree's `.git` is a file, so there is no hooks directory to install into) and then on `ENOTEMPTY` under `drizzle-orm`. Removing `node_modules` and reinstalling with scripts disabled cleared it.
+
+Recorded because it is the mirror of the failure class this project kept hitting all week: a green gate that cannot fire proves nothing, and a red one that comes from the toolchain rather than from the code proves nothing either. Both are read as a verdict on the change, and neither is one.
+
+### 2026-09-13 — A threshold nobody checked was reachable, held by the thing that judges it
+
+Three files carried "p99 under 100 ms at 100 connections" for the storefront routes. Two were claims in documents; the third was `.claude/agents/e2e-tester.md`, the pass conditions of the agent that judges a run. The same agent file records, two sections earlier, that one build on this machine produced a p99 of 106 ms and then 63 ms across two runs — so the bar sat inside the machine's own run-to-run variance, and whether a correct system passed depended on which run you took. A failing report would have read as a system problem rather than as a threshold nobody had checked was reachable.
+
+This is the week's recurring defect with its polarity flipped: not a gate that cannot fire, a gate that can only fire. The root is identical — nobody had asked whether the threshold was reachable, because a number in a document reads as a decision someone made. The fix derives the bar from the measured baseline, states in each copy which measurement it derives from, and tells the next machine to re-derive rather than inherit.
+
+### 2026-09-13 — A promotion aimed at a product that does not exist answered 500
+
+The foreign key raised `23503` and nothing caught it, so an admin's typo in a product id paged someone instead of being refused. The README's error table for that route did not list the case either.
+
+Two independent places silent about the same path is not two misses: it is one miss counted twice, because the same person wrote both from the same mental model of the path. That is the argument for a reader who is not the author, which is what the agents are. Fixed with a foreign-key-violation mapper beside the existing unique-violation one, a 404, and two integration cases.
+
+### 2026-09-13 — Three costumes of one defect: a test built from the code's own assumption
+
+- A double that rejected where `ioredis` resolves: `pipeline.exec()` returns an array of per-command errors and does not reject, even for a dead connection, so a mocked rejection proved a branch the library never reaches while production answered 500 with no `Retry-After`.
+- Fixtures modelling a product the writer cannot produce — a base price of 10 000 beside an effective price of 9 000 with no promotion — so the reader and the fixtures confirmed each other and neither had asked what writes the hash.
+- An ordering case whose two orders came out in the same sequence, because the mutation moved the seed the assertion read.
+
+Each was written carefully, each was wrong, and none was caught by reading it again. The rule that came out of them is an instruction rather than an observation: break the thing the test names and watch it fail. A mutation is the thing outside both code and test — it asks the test a question the code did not supply the answer to.
+
+### 2026-09-13 — Eleven review rounds on one pull request, and what ended them
+
+- Challenge: the queue pull request took eleven agent rounds. The code stopped changing at round four; every round after that re-read the whole branch and found another sentence in another document that a previous round's fix had left behind. Each finding was real, and none could have been found by the round that caused it, because each agent started from the full branch diff with no memory of what it had already judged.
+- Contributing cause, and it was ours: the ADR grew five clauses specifying a read-model writer that does not exist. Every read of them produced a new and correct question that could only be answered in the story that builds the component.
+- Resolution: after the first pass an agent reviews the range since the commit it last reported on, against its own earlier findings, and says which range it read and which findings it carried forward; a finding only another component's code can close is named once in the report and never written into the record; and a record states the obligation and the hazard and names the component that owns the shape. The first two rounds run this way took 32 and 83 seconds against two to five minutes before, and both reported reviewing the delta only.
+- Lesson: an adversarial reviewer with no memory will always find something, and a record that describes unbuilt code will always give it something to find. Neither is a defect in the reviewer.
+
+### 2026-09-13 — An absent required check and a passing one look identical
+
+- Challenge: a pull request presented as ready. `gh pr checks` listed two rows, `claude-review` pass and `local-gates` pass; the pull request was MERGEABLE; all four agent labels were applied; four agents had returned PASS, PASS, SOUND and PASS. Every signal a human or an agent reads said finished.
+- Verification: the required `ci` check was not red. It was not there. Querying `repos/.../commits/<sha>/check-runs` returned `local-gates` and `claude-review` and nothing else, on the current head and on the previous one. The only CI run that existed for the branch was a push-event run with zero jobs and conclusion `failure`, which GitHub does not attach to a pull request and which therefore appears nowhere a reviewer looks.
+- Resolution: the workflow could not start. `.github/workflows/ci.yml` carried two identical `redis:` blocks under `services:`, so `yaml.parse` throws `Map keys must be unique at line 39`, so GitHub cannot evaluate `on.pull_request`. Parsing the file on every live branch established the damage was one pull request and nothing merged. The correction that outlives the eight deleted lines is that the local gate must fail on an absent required check, not only on a missing label.
+- Lesson: a gate reasons about what it can see, and absence is invisible to it. A missing check produces no row, no colour and no diagnostic, so a list of green rows is not evidence that the required set ran — only that the checks which ran, passed. "What would make this fail, and has anyone seen it do that" does not reach a check that never existed. The question that does is "what was supposed to run here, and did it".
+
+### 2026-09-13 — A rule fired on its own file, on its own author's branch
+
+- Challenge: REVIEW.md 13.8 says a merged configuration file is checked by parsing it, not by reading it — load the merged file and compare the parsed result against what you meant it to say. Its recorded evidence is two `services:` blocks in `ci.yml` after a merge. The author of that rule then reconciled a branch after main moved, verified that REVIEW.md itself had taken both sides of the merge, ran the full suite, ran the conflict check, and did not parse the workflow file the rule is named after — which by then held two `redis:` blocks from an earlier merge on the same branch.
+- Verification: `yaml.parse` on `.github/workflows/ci.yml`, which is the command the rule already prescribes. It throws on line 39 and takes ninety seconds to run once the question is asked. It was never asked, through four agent rounds and the reconcile, because the file was not in any diff.
+- Lesson: not "apply the rule harder". A rule about a class of mistake is hardest to apply from inside that class — the merge was being checked for the failures merges are known to cause, in the files the merge touched, and the rule's own subject sat outside the diff the whole time. Three instances in one pull request of treating _what this diff touches_ as the edge of what this change can break: this one, a compose healthcheck polling a route the branch had moved, and an ADR consequence reading "the only consumer is the README" after the healthcheck had become the second consumer. Recorded plainly: six times in one day something looked green because a gate could not fire, and this is the only one where the rule existed, named the file, and was walked past by the person who wrote it.
+
+### 2026-09-13 — Line endings decided whether a comparison was a comparison
+
+- Challenge: a drift guard for the DDL export compares generated text against committed text with `readFile`. On a fresh Windows checkout the migrations come back CRLF while the export's header is LF, so the guard fails for a reason that has nothing to do with drift — and would have passed or failed by platform rather than by content.
+- Verification: `git ls-files --eol` over the tree. 131 tracked files, zero CRLF in the index, 118 of them `i/lf w/crlf`. Git had been normalising on commit the whole time, which is what every "LF will be replaced by CRLF" warning was saying; they were read as noise for a day. So a repo-wide `* text=auto eol=lf` changes no blob at all — only what a Windows checkout puts on disk.
+- Resolution: pinned repo-wide on `main` rather than inside the branch that found it: one file nobody else edits, so it costs no reconcile, and a zero-blob change affecting 118 checkouts earns its own commit message. The branch that found it pinned only `*.sql` and deliberately left the wide version alone rather than widening as a side effect.
+- Lesson worth keeping beyond the fix, because it says which future check is safe: anything that asks **git** whether two things differ is immune, since git normalises both sides — the schema-drift CI step ends in `git diff --exit-code` and never saw this. Anything that asks **Node** is a coin flip by platform. The repository had exactly one such comparison and it was a day old.
+
+### 2026-09-13 — Line endings, invisible rather than platform-split
+
+- Challenge: a generated CSV fixture and the SQL files carried CRLF on a Windows checkout, and a stray `\r` reached the parsed values.
+- Verification: not a red test. The CSV test was green on the author's machine, whose git has `core.autocrlf=true`, because the stray `\r` landed on `stock_quantity` — a field the assertion does not compare. It was invisible everywhere, on every platform, rather than red for some contributors and green for others. That is the sharper point: a passing test proves the assertion, not the file, and the defect was found by reading the fixture rather than by running anything.
+- Resolution: `.gitattributes` pinned `*.sql` and `*.csv` to `eol=lf`, later superseded repo-wide by `* text=auto eol=lf` (#95), at which point the branch's narrower pins were deleted as redundant; and the DDL builder normalises `\r\n` before comparing, so the drift check is not platform-dependent.
+
+### 2026-09-13 — Provenance half-cleared
+
+- Challenge: a demo seed's upsert cleared `ingest_job_id` and `ingest_source_offset` when it overwrote an ingested row's price, and left `pricing_rules_version` set. The row would then claim a rule set had produced a price the seed had just replaced, and a "reprice everything below the current version" sweep would skip it as current.
+- Verification: reasoning over the column set — every column that explains a price must be cleared with the price — confirmed by an integration test asserting all three are null after a re-seed over an ingested row.
+- Blind spot: the model treated "provenance" as the two columns carrying the constraint's name rather than all three that explain a price. The ADR does not group them in one place either — its **Provenance** bullet names only `pricing_rules_version`, and `ingest_job_id` and `ingest_source_offset` are documented under the database structures and the chunk-ordering trade-off — so the concept was spread across three bullets and the constraint's scope was mistaken for it.
+
+### 2026-09-13 — A documented failure mode that did not exist
+
+- Challenge: the README and a pull request body both stated that of two concurrent demo seeds, the loser aborts on `23P01`. It is a plausible story — there is an exclusion constraint on active category promotions and both runs insert one — and nothing in the code contradicted it. Written by the model, reviewed by a human, and wrong.
+- Verification: REVIEW.md 2.5 requires a concurrency claim to have a test that runs the operations in parallel and asserts the invariant. **Writing that test is what falsified the claim**; neither run ever failed. The mechanism is that both seeds contend on a thousand identical `sku` conflicts, and `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard, so the second seed is still inside the product statement when the first commits. It then deletes the first's promotion by name and inserts its own. An adversarial agent measured this independently against a live server rather than accepting the explanation: the blocked session was released at the other's `COMMIT`, and an `ON CONFLICT DO NOTHING` control returned unblocked in 1.4 ms, which is what proves the lock is doing the work. The `23P01` abort is real, but only for a promotion the seed does not own.
+- Before, verbatim: "Run one seed at a time: a promotion someone else created over `Electronics` is not deleted by name, and neither is the one a second seed running concurrently just wrote, so the loser aborts on `23P01` and rolls the whole file back rather than leaving half a catalogue."
+- After: "Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own."
+- Resolution: two integration tests racing both upsert paths, the mechanism named in a comment on the `ON CONFLICT` clause, the README corrected, and REVIEW.md 2.5 given the evidence plus the generalisation that the rule catches a wrong description as often as a wrong mechanism.
+
+### 2026-09-13 — The correction that needed correcting, twice
+
+- Challenge: the record of the entry above was itself wrong twice. First it defined the corrected README sentence against the claim it replaced ("safe rather than forbidden"), which describes the diff to a reader who never saw the old text. Then a rule's evidence said the test "ran them in parallel ten times", describing a loop the committed test does not contain; it was reworded, and the commit that reworded it changed the test in the same breath, leaving the new wording stale on arrival.
+- Verification: reading each record against the tree at the head under review, not against the change that produced it.
+- Lesson: a record states the current state of the tree. A sentence that only makes sense to someone holding the previous version is a diff, not documentation (REVIEW.md 8b.5).
+
+### 2026-09-13 — A review range a rebase had already invalidated, and a guard that reported itself
+
+- Challenge: a review agent was handed an incremental range whose start commit a rebase had made unreachable. `git log A..B` does not fail on an unreachable `A`; it reports all of `B`, so the agent would re-read the whole branch while reporting a cheap delta pass.
+- Verification: the ancestor check the agent definitions gained that afternoon exists for exactly this, and this was the first time it met a real rebase. Two of three agents handled it well — one re-read the whole branch and said so, one fell back to `git diff A B`, a tree-to-tree comparison that is a complete content delta and needs no ancestry. **The third reported the ancestor check as passing when it demonstrably could not have**, and that was found only because the coordinator verified the hashes afterwards.
+- Resolution: the fallback written into the definitions rather than left to each agent to invent.
+- Lesson, and it is the day's own lesson turned on the day's own fix: a guard whose evidence is the guarded party's report is the failure mode this project spent the day naming. It went unnoticed for several rounds because the agent's finding was correct — which is exactly when nobody checks the provenance. A second, at the process level: a rebase invalidates every agent's saved review point simultaneously and nothing announces it, so each rediscovers it separately on its own next run.
+
+### 2026-09-13 — Deletion sweeps are reliable on names and blind on implications
+
+- Challenge: removing the `details` array from the error envelope was a one-line change in the handler and a four-document change in the record. The sweep that removed the field from the code and from the two obvious documents left the envelope shape intact in the design spec, a deleted file still listed in CONTRIBUTING's source layout, and — the costlier gap — no sentence anywhere saying what a rejection now tells the caller, so the README read as if a field path were still returned.
+- Verification: a grep for the deleted identifiers across the documents, plus the documented-names test that checks backticked paths, `Foo.bar` members and `ADR-00NN` citations. The identifier grep caught the two stale shapes; **the test caught none of them, because an absent sentence has no name to search for**.
+- Lesson: the rule that catches the second class is "name an absence" — when a field disappears, the record has to say what the reader no longer gets, which no mechanical search can propose.
+
+### 2026-09-13 — A widened check, and the exemption that would have outlived its reason
+
+- Challenge (PR #99): the documented-names test scanned `src/`, `tests/`, `docs/`, `.claude/` and `.github/`, so every backticked path under `scripts/` and `fixtures/` — both real directories by then, both named in the README a reviewer is told to follow — was unchecked. Widening `ROOTS` surfaced one path the tree does not hold, `scripts/generate-vendor-csv.ts`, named in the domain design spec.
+- Verification: not the green run. The widening was made to fail first — two mistyped paths in the README, one under each new root, both appearing in the failure output — and then, with those mistakes still in place, the `ROOTS` line alone was reverted and the suite went fully green again. That second step is the one that matters: it proves the widening is the sole reason the mistakes are caught, rather than decoration over a net that already held. The exemption was probed the same way: three near-miss spellings were all flagged, and creating the exempted file turned the "every exemption is still earned" test red, so the entry cannot silently outlive the file's arrival.
+- Blind spot, and it is a wording one: an AI-written exemption defaults to the phrasing that makes the test green rather than the one that stays true. `NAMED_BUT_ABSENT` otherwise holds permanent entries — a directory something moved out of, a layer an ADR reserves — so an entry for a file that is merely unwritten reads as permanent and would be left in place on the day the file lands. The reason string is the only thing separating "gone for good" from "not here yet", and nothing mechanical enforces the difference. A second entry, `src/modules/vendor/`, sits in exactly the same position and was missed by the first reading of the list, including mine.
+
+### 2026-09-13 — A one-off permission prompt generalised into a standing constraint
+
+- Challenge: a push touching `.github/workflows/` was refused once. That single refusal was recorded, by me, as "we cannot push to that path", and the conclusion was then carried for a day: a broken `ci.yml` on one branch was routed to the owner twice as work only he could do, and a worker was told the same thing. The file it blocked was the one keeping a required check from existing at all, so the wrong constraint sat directly on top of the day's most expensive defect.
+- Verification: asking the question the constraint had replaced. The token carries the `workflow` scope, and `git log -- .github/workflows/` shows the path pushed from these sessions repeatedly. Ninety seconds, at any point in the day, against a belief held for a day.
+- Lesson: a refusal is an event, not a rule. Generalising one into a standing constraint produces something indistinguishable from a real boundary from the inside — it is never tested again, because the belief is what stops the attempt that would test it. This is the same shape as the day's other six: a gate that cannot fire looks exactly like a gate that passed, and a boundary that was never real looks exactly like one that is. Both are absences that present as facts, and in both cases the question that finds them is not "is this true" but "what would show me it is false, and has anyone looked".
+
+### 2026-09-13 — A lease rejection read as an obstacle instead of a signal
+
+- Challenge: two sessions held one branch. A `--force-with-lease` push was rejected as stale, correctly — the other side had rewritten the branch. The lease was refreshed and the push forced again, and only then was the overwritten commit inspected. It turned out to be the same work rebased under a different authorship, byte-identical, so nothing was lost.
+- Verification: after the fact, which is the finding. The guard fired exactly as designed and was treated as friction to get past rather than as the report it was.
+- Lesson: on a lease rejection the only correct next action is to fetch and read the remote commit _before_ re-forcing. Inspecting afterwards converts a working guard into a coin flip, and it comes up heads often enough that the habit survives. Recorded by the session that did it, unprompted, which is the part worth keeping: the cost here was zero and the report was still made.
+
+### 2026-09-14 — Three checks that answered a narrower question than they printed
+
+- Challenge: after replacing two hand-started containers with compose's `test` profile, `docker compose up -d --wait` reported both healthy. Neither was publishing its port. The integration suite then failed to connect, and the obvious suspect was the branch that had just changed.
+- Verification: `docker port` on each container, and a direct connect to the two ports. The healthcheck runs _inside_ the container, so it passes whether or not anything outside can reach it; compose had reused containers created while the old ones still held the ports, and `--wait` was satisfied by a container no host could talk to.
+- Two more of the same shape landed within the hour, from two different sessions. A test default of `localhost` resolved to `::1` while the ports publish on IPv4 only, so a refused connection named an address nothing was listening on rather than the server sitting one family over. And an integration harness wrapped every connect failure in "PostgreSQL not reachable", so a missing database — `3D000`, from a server that was up — was reported as an unreachable server and sent its author to check ports for three steps.
+- Lesson, now REVIEW.md 13.13: a readiness check computed inside a thing cannot see whether anything outside can reach it. "Healthy" and "reachable" are different facts, and the first is routinely read as the second. Each of the three answered honestly; each printed a sentence wider than its answer.
+
+### 2026-09-14 — A control that passes in a configuration production never runs
+
+- Challenge: an admin endpoint reporting queue depth hung for about 210 seconds with Redis down. `publish` and `remove` carried the queue's 2 s bound; the five stats reads carried none, and a non-blocking BullMQ connection retries for minutes before rejecting. So the one endpoint an operator reaches for during a Redis outage was the one that would not answer during a Redis outage.
+- Verification, and the part worth keeping: there _was_ a test, and it passed. It injected a reporter that rejected immediately, so it proved the 500 in a configuration production does not run — the assertion held and the defect was untouched. The fix was found by driving reads that never settle, against an unreachable server rather than a stub.
+- The same shape twice more the same day. A log-scrubbing serializer was wired to the root logger and asserted through the root logger's symbol, while `pino-http` installs its own `err` serializer as a child and a child's serializers override the root's — so every error on the request path still carried the SQL statement and its bound values, with the wiring test green throughout. And an empty-pattern `grep -c $'\r'` reported every line of a file as matching, which is indistinguishable from a file that really is entirely CRLF.
+- Lesson: a green control proves the assertion, not the property. The question that separates them is not "does this test pass" but "in what configuration does it pass, and is that the one that ships".
+
+### 2026-09-14 — Deleting a feature by using the library's own product
+
+- Challenge: the operator surface for the queues was a hand-written module — an admin route, a `QueueStats` shape, a reporter with its own timed race, a widened `inspect` on the queue class. It worked. It also carried the 210-second hang above, and #18 still had pause, resume, retry and dead-letter handling open against it.
+- Resolution: the owner replaced it with Bull Board, BullMQ's own dashboard, mounted inside the API process outside the `/api` prefix. The whole module, the DTO, the reporter, `EventQueue.names()` and the six-method widening were deleted; `EventQueue.all()` hands the library the `Queue` objects it already holds. What the endpoint answered, the board answers — and it also answers everything #18 had left open.
+- Lesson stated as the trade rather than as a preference: the thing worth keeping was never the code, it was the operator being able to see a poisoned job. Once that is available off the shelf, the code is cost. The same reasoning had already deleted a thirty-line conflict-marker script the day before, on finding `git diff --check` does it.
+
+### 2026-09-14 — Which failure to keep, when neither is repaired
+
+- Challenge: the chunk processor stored a batch, announced it, then took the compare-and-set. A review agent argued for a transaction around the write and the checkpoint, publishing after commit. The author argued the current order: transaction-then-publish means a publish failure after commit is a batch checkpointed and never announced, the silent loss the ordering was chosen to avoid.
+- Verification: the deciding fact both sides named was whether the reconciler exists to repair an unannounced batch. It did not when the ordering was decided in #105 (`08f11d0`) — `src/workers/reconciler/` held one schema file and nothing consumed `reconciler.run`, checked rather than assumed. But that did not decide it, because with no reconciler _neither_ failure is repaired.
+- Resolution: transaction-then-publish, on the asymmetry rather than on the repair. A lost announcement leaves a projection stale, and the projection is derivable — the next event for that product corrects it. A superseded worker's late write corrupts PostgreSQL: the row looks current, nothing recomputes it, and a rebuild reads the wrong value back out. Delay something derivable rather than corrupt what it derives from. A second argument settled it: every other write path in the repository already commits then publishes and swallows the failure, so the ingestion ordering was the outlier and matching it removed a rule a reader had to hold.
+- Recorded honestly rather than closed: on the day of the decision, a batch that commits and fails to publish was stale with nothing to repair it. Both repairs exist now — `src/workers/reconciler.ts` consumes `reconciler.run` and registers the five-minute repeatable (#111, #116), and the event handler rebuilds the read model on boot (#124) — so this paragraph is dated rather than standing, which is the 13.15 discipline applied to the appendix's own prose.
+
+### 2026-09-14 — A job that reported success having stored nothing
+
+- Challenge: the ingestion reader accumulated to the next newline, and a file can have none in its body — a header terminated with LF and rows ending in CR alone, which is what Excel for Mac and several ERP exports produce. A 20 MiB file became one 20 MiB string, and the job reported success: the single row it built failed its column count and was skipped, so nothing was stored and nothing failed.
+- Verification: measured, not reasoned. Peak memory tracked the size of the upload, which is the one property Scenario A promises it does not.
+- Lesson: the memory bound and the success report failed together, and either alone would have been found sooner. A bound stated in an ADR needs a test that feeds it the input its author did not imagine; "no newline in the body" is not an edge case for a CSV, it is a platform.
+
+### 2026-09-14 — A log line that asserted a queue that does not exist
+
+- Challenge: the generated worker entry point logged `queues: ['promotions', 'catalog']`. There is no `catalog` queue — the four are `promotions`, `products`, `ingestion` and `maintenance` — and the claim was wrong twice over, because `EventQueue.connect` opens a producer handle on all four in every process, so no worker ever holds a subset to name. The array was a bare string literal, so nothing but a reader could catch it.
+- Verification: read against `src/events/event-routing.ts`, the only list of queue names, then confirmed against ADR-0003, whose matching sentence ("each entry point logs the queues it holds") had gone stale the same way.
+- Resolution: the first attempt annotated the array `QueueName[]`, which would have moved the finding from prose review to the build. Deleting the array was smaller and removed the false claim as well as the typo — a line that lists nothing cannot list it wrongly. The three entry points collapsed to two lines each over a shared `startWorker`, whose one remaining parameter is typed to a union of the three service names in `docker-compose.yml` rather than `string`. REVIEW.md 8c.5 now covers the data a line logs, not only the arguments a function takes.
+- Lesson: AI-written log lines and comments assert facts about neighbouring modules that nothing type-checks. Every review round on that branch found at least one.
+
+### 2026-09-14 — Duplication created in the same change as the text it duplicates
+
+- Challenge: the branch that wrote ADR-0003 also wrote two test comments and an `.env.example` note restating its reasoning near-verbatim. This is the case REVIEW.md 8b.3a and 8b.6 exist for, and the one least likely to be noticed, because both copies are true on the day they are written.
+- Verification: each dropped sentence was checked against ADR-0003 in the head rather than against the diff — a pointer into a paragraph that has since lost the sentence is worse than the duplication it replaced.
+- Resolution: comments reduced to pointers keeping only what the ADR does not carry. A separate defect surfaced in the same pass: an ownership test ordered `mkdir -p` before `USER` using `indexOf`, which returns `-1` for a missing line, so the check passed with the `mkdir` deleted.
+- Lesson: an ordering assertion built on `indexOf` is vacuously true when either operand is absent, and the test reads as strict.
+
+### 2026-09-14 — An id the library refuses, tested against a double that accepts everything
+
+- Challenge: the reconciler's sweep built its BullMQ dedup id as `sweep:{id}:{ISO timestamp}`. BullMQ 6.3.4 refuses a custom job id containing a colon unless it splits into exactly three parts, and an ISO timestamp adds two more, so every publish would have thrown — a reconciler that repaired nothing and never advanced its watermark, failing only under the condition it exists to handle. The rule was already written down in ADR-0007, one bullet above the code that broke it.
+- Verification: the only test of that path used a hand-written queue that stored whatever id it was handed and validated nothing, so it was green. Caught by reading the ADR against the code, then proved by publishing through the real queue.
+- Resolution: `SweepBoundariesCommand.jobId` returns `sweep:{id}:{watermark in milliseconds}`. Two changes, not one — milliseconds for the colon rule, and keyed on the watermark rather than the window's end, which moves with the clock on every read and so gave a fresh id, a full recompute per promotion, on every re-read of an unadvanced window. REVIEW.md gained 7.11. The same round found that `promo:{id}:{boundary}` split in three by luck, and that the integration test ADR-0007 claimed would catch such an upgrade did not exist; it does now.
+- Lesson: documentation being present is not the defence. A double written from a library's documentation accepts every shape the library refuses.
+
+### 2026-09-14 — A watermark the database wrote and the code could not match
+
+- Challenge: the boundary sweep's compare-and-set read `reconciler_state.last_boundary_sweep_at` back as a JS `Date` and sent it as the compare value. The column was `timestamptz`, which stores microseconds; a `Date` carries milliseconds. The equality never matched, so from the first deploy the watermark stayed at its seeded value and every run re-swept the same window, publishing its repairs and moving nothing.
+- Verification: not by any test — found by running the stack against the compose test stores and watching the row. Every test wrote the watermark itself, in milliseconds, which is the one shape that cannot reproduce the bug; a suite where the fixture and the reader share a precision assumption agrees with itself.
+- Resolution: migration `0005_reconciler_watermark_milliseconds.sql` narrows the column to `timestamp(3) with time zone`, so the store keeps only what the reader can represent, plus an integration test that lets PostgreSQL's own `now()` write the mark. Verified by mutation: the test fails without the migration.
+- Lesson: AI-written tests inherit the production code's assumptions about serialisation precision. A value that crosses a type boundary needs one check that lets the database, not the test, produce it.
+
+### 2026-09-14 — A fix that turned a leak into destruction (#121, `a90a511`)
+
+- Challenge: a refused upload left its file on disk. The fix widened a `try` so a rejected enqueue deleted the upload — but the widening crossed the commit boundary, so the delete now ran _after_ the job row had committed. The result was worse than the bug: a running job whose chunks name bytes nothing can open, and two unique indexes that then refuse both the re-upload and the same bytes from anywhere. The leak wasted disk; the fix destroyed the import unrecoverably.
+- Verification: caught by an agent reading the diff against the transaction boundary, not by the suite — every existing test used a queue that accepts. Proved with a test that injects a rejecting queue, which fails against the old code.
+- Resolution: the delete moved back inside the boundary, so a refused upload is refused whole.
+- Lesson: a fix that moves a statement across a commit boundary changes what a failure destroys, not just what it leaves behind. Widening a `try` is never only a widening.
+
+### 2026-09-14 — A document that disagreed with itself, so no run could fail it (#126, `b7f82ba`)
+
+- Challenge: one end-to-end journey file promised the `409` would carry the existing import's identifier, four lines above a case asserting the response names none. Whichever way a real run came out, half the file said the run was wrong and the other half said it was right.
+- Verification: found by reading the file end to end against the route, rather than by running the case — a contradiction cannot be caught by executing either half of it.
+- Resolution: one claim kept, the other deleted, chosen against what the endpoint actually returns.
+- Lesson: this is the day's pattern in a new place. A check whose failing state is indistinguishable from its passing state proves nothing; a document that asserts both sides of a question is the same defect written in prose, and it is invisible to every test.
+
+### 2026-09-14 — A record that promised more monitoring than the tree had (#123, `7acada8`)
+
+- Challenge: ADR-0007 had described the monitoring stack in the future tense since before any of it existed — a provisioned dashboard and alert rules over eight signals. The pull request that finally built it shipped `prom-client` default metrics, a community dashboard and no alert rule at all, and edited the two-line paragraph it happened to touch rather than the record that made the promise.
+- Verification: `grep -rn "Gauge|Counter|Histogram" src/` returned no application metric; the Grafana provisioning directory holds a datasource and a file provider and no alerting directory; the branch's whole `ADR.md` delta was four lines against a 1 100-line feature.
+- Resolution: ADR-0011 written for the decision that landed, ADR-0007's alarms paragraph reduced to what exists with the absences named and costed, and two trade-off bullets citing a Grafana alert that does not exist corrected. The same pass found ADR-0003 claiming "six long-running services" where there are now eight, and a heap-use exit the same PR deletes.
+- Lesson: the model updates the prose it is editing and not the prose its change falsifies. Both defects here were one scroll away from an edited line.
+
+### 2026-09-14 — Telemetry that could kill the process it observes (#123, `7acada8`)
+
+- Challenge: the worker's metrics server called `listen(port)` with no `'error'` listener. An `EADDRINUSE` or `EACCES` there is an uncaught exception, so a monitoring surface added to watch a worker would have exited that worker at boot, before its consumer attached, with `restart: unless-stopped` turning it into a crash loop — and the same pull request's request histogram would have been labelled with raw paths, one series per product id, making the endpoint added to watch memory into the memory problem.
+- Verification: the listener was checked by binding the port first and asserting the worker survives; the label was checked against a live scrape and comes out `/api/products/#val`. Separately, the assertion that the listener is closed on `SIGTERM` was tested by deleting the line that closes it — without that, all 731 tests passed with the listener leaking.
+- Resolution: an `'error'` handler that logs and stays up, the library's own path normalisation, and a scrape-target test that takes each port from the compose file, because two files that must agree had nothing between them.
+- Lesson: an observability surface is not load-bearing and must never be able to take down what it observes. And an assertion nobody has watched fail is not an assertion.
+
+### 2026-09-14 — A guard that had never been within a factor of six of firing (#123, `7acada8`; the guard was built on that branch and deleted before it merged)
+
+- Challenge: a worker memory guard was specified twice — first on RSS, which ADR-0005 rejects by name because Node's RSS does not shrink, then on `heapUsed` against a chosen 160 MiB. It was built, tested and nearly merged. The measured peak of a containerised 500 000-row import is a 25 MB heap, and the container's own accounting peaks at 49.9 MiB of 256.
+- Verification: by measurement rather than argument — the run was taken under the case study's own cap, and the two accountings were separated deliberately after being confused four times in one day.
+- Resolution: the guard, its configuration variable and its tests were deleted before the pull request merged. What bounds memory is the chunked pipeline and the checkpoints; what turns an overrun into a stack trace instead of a silent kill is `--max-old-space-size` set below the cgroup limit. The issue that asked for it records why both variants were refused, so neither is re-proposed from it.
+- Lesson: a threshold nobody has measured against is a number nobody chose, defended by a test nobody can fail. Deleting working code is a result.
+
+### 2026-09-14 — The design's central claim failed through an event, not a query (#128, `76c84b1`)
+
+- Challenge: the read model exists so a storefront read never touches PostgreSQL, and a database restart killed the api process anyway. `createPool` attached no `'error'` listener, and node-postgres documents that an error on an idle client with no listener is fatal to the process. So the claim did not fail where it was defended — every query path was correct and the recompute survived the restart perfectly — it failed through an unhandled event, in the one component whose availability the whole design is about.
+- Verification: found by restarting PostgreSQL against the running stack rather than by reading the code, and the verification is the real lesson. The reviewer's first run passed _without_ the fix: there were no idle connections at the moment of the restart, so the error path never ran and the api survived. Forcing a dozen writes first, to leave clients idle in the pool, is what made the failure reproducible — a green run against an unexercised path is not evidence.
+- Resolution: an `'error'` listener that logs and lets the pool discard the client (#128), with a unit test for the handler and the restart repeated against warm connections.
+- Lesson: an availability guarantee has to be tested by removing the dependency, not by reading the code that avoids it. And a fault-injection run that passes needs one more question asked of it — was the path actually taken?
+
+### 2026-09-14 — Five notes that said "not yet", every one outlived by the work (#127, `af77b59`)
+
+- Challenge: one file pair carried five sentences describing something as absent — "Scenario B has no measurement" beside Scenario B's measurement, "nothing runs that handler yet" after the handler shipped, "one of the four queues has a consumer" when all four did, a payload "whose module does not exist", and "the monitoring profile is not built yet" written directly above the dashboard tonight's evidence was read off. Each was true when written and a lie by the time it was read, and each read as a considered statement rather than as a stale one.
+- Verification: found by reading the two documents against the tree end to end, not by any test. Two of the five were introduced _while correcting the other three_, in the same session — which is the part worth recording, because it shows the failure is not carelessness but the shape of the note itself.
+- Resolution: all five deleted or rewritten, and REVIEW.md gained 13.15 — an absence note is a claim with an expiry date, and the pull request that builds the thing owns deleting it. Rule 8b already covered a comment inside a diff; nothing covered prose two hundred lines from the code that falsifies it.
+- Lesson: "not yet" is the only kind of sentence guaranteed to become false, and nothing in a test suite or a type checker can notice. The fix is a rule about who deletes it, not a better sentence.
+
 ## Overall reflection
 
-- Estimated ratio: pending.
+- Estimated ratio: for the scripting and documentation work measured so far, the code is roughly 80 % AI-generated and lightly edited; the documentation started AI-generated and is closer to half human, because nearly every correction recorded above came from a human or an agent reading a claim against the tree.
+- The blind spot that repeats: the model's prose describes the mechanism it intended, and its own tests do not check its prose. Three of the five defects in the demo-seed work were in description rather than in behaviour, and the rule that caught the largest of them works by forcing a test to exist for a sentence.
+- A rule earns its place when running it costs less than the habit of not running it. REVIEW.md 13.8 says to parse a merged configuration file rather than read it; on one pull request that was skipped and the required CI check silently never ran — invisible, because an absent check produces no row. On the next merge, parsing all four configuration files took thirty seconds. The rule did not become more important between those two merges; it became cheaper than the alternative, because someone had seen what the alternative costs.
 - Key takeaway: pending.
 
 ### 2026-09-12 — Running estimate after the precedence round (PR #35, `beba163`)
