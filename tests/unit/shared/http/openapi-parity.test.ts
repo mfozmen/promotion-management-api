@@ -13,8 +13,6 @@ import { appDeps } from '@tests/app-deps.js';
 const TAKES_NO_INPUT = new Set([
   'get /api/health',
   'get /api/ready',
-  'get /api/metrics',
-  'get /metrics',
   'get /api/openapi.json',
   // multipart, bounded by multer rather than by a zod schema; the document
   // cannot describe it until the upload is validated by a schema too.
@@ -27,7 +25,9 @@ describe('the document and the application', () => {
   it('describes exactly the routes the application answers', () => {
     const served = routeInventory(app())
       .map((route) => route.path.replace(/:([A-Za-z0-9_]+)/g, '{$1}'))
-      .filter((path) => !path.startsWith('/api/docs'));
+      // What this API serves. `/metrics` and the board answer neither its
+      // envelope nor its content type, and the page itself serves HTML.
+      .filter((path) => path.startsWith('/api') && !path.startsWith('/api/docs'));
 
     const documented = Object.keys(openapiDocument(app()).paths);
 
@@ -40,7 +40,7 @@ describe('the document and the application', () => {
     const unvalidated = routeInventory(app())
       .filter((route) => Object.keys(route.schemas).length === 0)
       .map((route) => `${route.method} ${route.path}`)
-      .filter((route) => !route.startsWith('get /api/docs'))
+      .filter((route) => route.includes(' /api/') && !route.startsWith('get /api/docs'))
       .filter((route) => !TAKES_NO_INPUT.has(route));
 
     expect(unvalidated).toEqual([]);
@@ -52,6 +52,17 @@ describe('the document and the application', () => {
     for (const path of ['/api/products', '/api/promotions', '/api/vendor/imports/{id}']) {
       expect(documented.has(path)).toBe(true);
     }
+  });
+
+  it('publishes nothing mounted outside the prefix', () => {
+    // `/metrics` was in the document promising the shared error envelope, which
+    // it never answers: its failure is an empty 500 (ADR-0009). No parity test
+    // could catch that, because the document and the list it is checked against
+    // come from the same walk — both were wrong in the same direction.
+    const documented = Object.keys(openapiDocument(app()).paths);
+
+    expect(documented.filter((path) => !path.startsWith('/api'))).toEqual([]);
+    expect(documented).not.toContain('/metrics');
   });
 });
 

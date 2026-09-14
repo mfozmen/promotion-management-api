@@ -324,7 +324,7 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 ## API
 
-The live reference is `GET /api/docs`, a Swagger UI page over `GET /api/openapi.json`. That document is generated from the zod schemas that validate each request, so the request side of it cannot drift from the code; it describes requests only, and the table below is where the responses are. All endpoints are mounted under the `/api` prefix (ADR-0009). JSON bodies are capped at 100 kB and validated strictly: an unknown field is a `400`, never a silently dropped one, and that `400` can answer any route. The vendor upload is the exception — it is multipart, so it never reaches the JSON parser and carries its own size cap and its own `415`.
+The live reference is `GET /api/docs`, a Swagger UI page over `GET /api/openapi.json`. That document is generated from the zod schemas that validate each request, so the request side of it cannot drift from the code (ADR-0013). It describes what each endpoint accepts, plus the one error envelope they all share; what an endpoint returns on success is in the table below and nowhere else. All endpoints are mounted under the `/api` prefix (ADR-0009). JSON bodies are capped at 100 kB and validated strictly: an unknown field is a `400`, never a silently dropped one, and that `400` can answer any route. The vendor upload is the exception — it is multipart, so it never reaches the JSON parser and carries its own size cap and its own `415`.
 
 | Method | Path                         | Description                                                                                                             | Statuses                          |
 | ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
@@ -340,6 +340,8 @@ The live reference is `GET /api/docs`, a Swagger UI page over `GET /api/openapi.
 | POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`                      |
 | GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`                             |
 | GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`                      |
+| GET    | `/api/openapi.json`          | The OpenAPI 3.1 document, built per request from the schemas that validate the routes above                             | `200`                             |
+| GET    | `/api/docs`                  | Swagger UI over that document; it fetches the URL above rather than rendering a copy                                    | `200`                             |
 
 **Operations.** After `npm run up`, BullMQ's own dashboard is at
 http://localhost:3100/admin/queues — the four queues with their counts, the dead-letter set

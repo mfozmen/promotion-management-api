@@ -81,7 +81,6 @@ export function createApp({
   mountAt(
     api,
     '/products',
-
     productReadRoutes({
       readiness: new ReadModelReadinessQuery(products),
       find: new FindProductQuery(products),
@@ -98,7 +97,6 @@ export function createApp({
   mountAt(
     api,
     '/vendor/imports',
-
     vendorImportRoutes({
       register: new RegisterImportCommand({
         db,
@@ -114,7 +112,6 @@ export function createApp({
   mountAt(
     api,
     '/promotions',
-
     promotionRoutes({
       create: new CreatePromotionCommand(promotions, announcer),
       assign: new AssignPromotionCommand(promotions, announcer),

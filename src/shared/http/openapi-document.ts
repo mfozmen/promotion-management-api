@@ -49,7 +49,7 @@ Every error, whatever its status, is the envelope below (ADR-0009).`;
 export function openapiDocument(app: Express): OpenapiDocument {
   const paths: OpenapiDocument['paths'] = {};
 
-  for (const route of routeInventory(app)) {
+  for (const route of routeInventory(app).filter(inScope)) {
     const path = openapiPath(route.path);
     paths[path] = { ...paths[path], [route.method]: operation(route) };
   }
@@ -60,6 +60,17 @@ export function openapiDocument(app: Express): OpenapiDocument {
     paths,
     components: { schemas: { Error: ERROR_SCHEMA } },
   };
+}
+
+/**
+ * What this API serves, which is what is mounted under `/api`. The scrape and
+ * the board sit outside that prefix because they answer neither this API's
+ * envelope nor its content type (ADR-0009), so publishing them here would
+ * promise the envelope for `GET /metrics`, whose failure is an empty 500. The
+ * documentation page is left out for the same reason: it serves HTML.
+ */
+function inScope(route: InventoriedRoute): boolean {
+  return route.path.startsWith('/api') && !route.path.startsWith('/api/docs');
 }
 
 function operation(route: InventoriedRoute): Operation {

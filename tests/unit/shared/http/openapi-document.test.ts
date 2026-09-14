@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import express from 'express';
+import express, { Router } from 'express';
 import { z } from 'zod';
 import { mountAt } from '@src/shared/http/mount-at.js';
 import { openapiDocument } from '@src/shared/http/openapi-document.js';
@@ -18,7 +18,7 @@ function appWith(build: (app: express.Express) => void): express.Express {
 
 describe('openapiDocument', () => {
   it('is an OpenAPI 3.1 document', () => {
-    const doc = openapiDocument(appWith((app) => app.get('/things', noop)));
+    const doc = openapiDocument(appWith((app) => app.get('/api/things', noop)));
 
     expect(doc.openapi).toBe('3.1.0');
     expect(doc.info).toMatchObject({ title: expect.any(String), version: expect.any(String) });
@@ -26,13 +26,13 @@ describe('openapiDocument', () => {
 
   it('writes a path parameter the way OpenAPI spells it, not the way Express does', () => {
     const app = appWith((a) =>
-      a.get('/things/:id', validate({ params: z.strictObject({ id: z.string() }) }), noop),
+      a.get('/api/things/:id', validate({ params: z.strictObject({ id: z.string() }) }), noop),
     );
 
     const doc = openapiDocument(app);
 
-    expect(Object.keys(doc.paths)).toEqual(['/things/{id}']);
-    expect(doc.paths['/things/{id}']?.get?.parameters).toEqual([
+    expect(Object.keys(doc.paths)).toEqual(['/api/things/{id}']);
+    expect(doc.paths['/api/things/{id}']?.get?.parameters).toEqual([
       { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
     ]);
   });
@@ -40,13 +40,13 @@ describe('openapiDocument', () => {
   it('takes each query field as its own parameter, and marks only the required ones', () => {
     const app = appWith((a) =>
       a.get(
-        '/things',
+        '/api/things',
         validate({ query: z.strictObject({ category: z.string(), limit: z.string().optional() }) }),
         noop,
       ),
     );
 
-    const parameters = openapiDocument(app).paths['/things']?.get?.parameters;
+    const parameters = openapiDocument(app).paths['/api/things']?.get?.parameters;
 
     expect(parameters).toEqual([
       { name: 'category', in: 'query', required: true, schema: { type: 'string' } },
@@ -60,7 +60,7 @@ describe('openapiDocument', () => {
     // not the thing anyone puts in a URL.
     const app = appWith((a) =>
       a.get(
-        '/things/:id',
+        '/api/things/:id',
         validate({
           params: z.strictObject({
             id: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1)),
@@ -70,23 +70,23 @@ describe('openapiDocument', () => {
       ),
     );
 
-    expect(openapiDocument(app).paths['/things/{id}']?.get?.parameters?.[0]?.schema).toEqual({
+    expect(openapiDocument(app).paths['/api/things/{id}']?.get?.parameters?.[0]?.schema).toEqual({
       type: 'string',
       pattern: '^\\d+$',
     });
   });
 
   it('invents no parameters for a schema that declares no fields', () => {
-    const app = appWith((a) => a.get('/things', validate({ query: z.strictObject({}) }), noop));
+    const app = appWith((a) => a.get('/api/things', validate({ query: z.strictObject({}) }), noop));
 
-    expect(openapiDocument(app).paths['/things']?.get?.parameters).toBeUndefined();
+    expect(openapiDocument(app).paths['/api/things']?.get?.parameters).toBeUndefined();
   });
 
   it('carries a body schema as the request body', () => {
     const body = z.strictObject({ name: z.string().min(1) });
-    const app = appWith((a) => a.post('/things', validate({ body }), noop));
+    const app = appWith((a) => a.post('/api/things', validate({ body }), noop));
 
-    expect(openapiDocument(app).paths['/things']?.post?.requestBody).toEqual({
+    expect(openapiDocument(app).paths['/api/things']?.post?.requestBody).toEqual({
       required: true,
       content: {
         'application/json': {
@@ -102,11 +102,11 @@ describe('openapiDocument', () => {
   });
 
   it('points every operation at the one error envelope the API actually sends', () => {
-    const app = appWith((a) => a.get('/things', noop));
+    const app = appWith((a) => a.get('/api/things', noop));
 
     const doc = openapiDocument(app);
 
-    expect(doc.paths['/things']?.get?.responses?.default).toEqual({
+    expect(doc.paths['/api/things']?.get?.responses?.default).toEqual({
       description: expect.any(String),
       content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
     });
@@ -124,19 +124,19 @@ describe('openapiDocument', () => {
   });
 
   it('includes a route that validates nothing, with no parameters invented for it', () => {
-    const doc = openapiDocument(appWith((app) => app.get('/health', noop)));
+    const doc = openapiDocument(appWith((app) => app.get('/api/health', noop)));
 
-    expect(doc.paths['/health']?.get?.parameters).toBeUndefined();
-    expect(doc.paths['/health']?.get?.requestBody).toBeUndefined();
+    expect(doc.paths['/api/health']?.get?.parameters).toBeUndefined();
+    expect(doc.paths['/api/health']?.get?.requestBody).toBeUndefined();
   });
 
   it('keeps two methods on one path as two operations', () => {
     const app = appWith((a) => {
-      a.get('/things', noop);
-      a.post('/things', noop);
+      a.get('/api/things', noop);
+      a.post('/api/things', noop);
     });
 
-    expect(Object.keys(openapiDocument(app).paths['/things'] ?? {}).sort()).toEqual([
+    expect(Object.keys(openapiDocument(app).paths['/api/things'] ?? {}).sort()).toEqual([
       'get',
       'post',
     ]);
@@ -145,9 +145,23 @@ describe('openapiDocument', () => {
   it('says on the document that it describes requests only', () => {
     // A page silent about responses, with nothing saying why, reads as a page
     // that forgot them. The limit is stated where a reader meets it.
-    const doc = openapiDocument(appWith((app) => app.get('/things', noop)));
+    const doc = openapiDocument(appWith((app) => app.get('/api/things', noop)));
 
     expect(doc.info.description).toMatch(/README/);
+  });
+
+  it('leaves out what is mounted outside the prefix, whatever the walk finds', () => {
+    // ADR-0009 puts the scrape and the board outside `/api` because they answer
+    // neither this API's envelope nor its content type. Publishing `/metrics`
+    // here would promise the envelope for a path that ends a failure with an
+    // empty 500, and no parity test could say so: it compares the document with
+    // the walk that built it, so both would be wrong together.
+    const app = appWith((a) => {
+      a.get('/metrics', noop);
+      mountAt(a, '/api', Router().get('/things', noop) as never);
+    });
+
+    expect(Object.keys(openapiDocument(app).paths)).toEqual(['/api/things']);
   });
 
   it('walks a mounted router so the document cannot describe fewer routes than the app serves', () => {
