@@ -1,6 +1,6 @@
+import { IngestionRepository } from '@src/modules/ingestion/db/ingestion-repository.js';
 import { and, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { checkpointBatch } from '@src/modules/ingestion/db/checkpoint-batch.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { useTestDatabase } from '../../../db.js';
@@ -38,7 +38,7 @@ describe('checkpointBatch', () => {
   it('advances the offset and adds the batch counts', async () => {
     const jobId = await chunkAt(200);
 
-    const moved = await checkpointBatch(db(), {
+    const moved = await new IngestionRepository(db()).checkpointBatch(db(), {
       jobId,
       chunkIndex: 0,
       seenOffset: 200,
@@ -60,7 +60,7 @@ describe('checkpointBatch', () => {
     // checkpoint and the rows between would be processed twice.
     const jobId = await chunkAt(400);
 
-    const moved = await checkpointBatch(db(), {
+    const moved = await new IngestionRepository(db()).checkpointBatch(db(), {
       jobId,
       chunkIndex: 0,
       seenOffset: 200,
@@ -78,7 +78,7 @@ describe('checkpointBatch', () => {
   it('accumulates counts across batches rather than replacing them', async () => {
     const jobId = await chunkAt(0);
 
-    await checkpointBatch(db(), {
+    await new IngestionRepository(db()).checkpointBatch(db(), {
       jobId,
       chunkIndex: 0,
       seenOffset: 0,
@@ -86,7 +86,7 @@ describe('checkpointBatch', () => {
       rowsProcessed: 10,
       rowsRejected: 1,
     });
-    await checkpointBatch(db(), {
+    await new IngestionRepository(db()).checkpointBatch(db(), {
       jobId,
       chunkIndex: 0,
       seenOffset: 100,
@@ -105,7 +105,7 @@ describe('checkpointBatch', () => {
     const jobId = await chunkAt(500);
 
     const [a, b] = await Promise.all([
-      checkpointBatch(db(), {
+      new IngestionRepository(db()).checkpointBatch(db(), {
         jobId,
         chunkIndex: 0,
         seenOffset: 500,
@@ -113,7 +113,7 @@ describe('checkpointBatch', () => {
         rowsProcessed: 5,
         rowsRejected: 0,
       }),
-      checkpointBatch(db(), {
+      new IngestionRepository(db()).checkpointBatch(db(), {
         jobId,
         chunkIndex: 0,
         seenOffset: 500,
@@ -132,7 +132,7 @@ describe('checkpointBatch', () => {
   it('marks the chunk done when the checkpoint reaches the end of its range', async () => {
     const jobId = await chunkAt(900);
 
-    await checkpointBatch(db(), {
+    await new IngestionRepository(db()).checkpointBatch(db(), {
       jobId,
       chunkIndex: 0,
       seenOffset: 900,
@@ -147,7 +147,7 @@ describe('checkpointBatch', () => {
   it('leaves a chunk running while bytes remain', async () => {
     const jobId = await chunkAt(0);
 
-    await checkpointBatch(db(), {
+    await new IngestionRepository(db()).checkpointBatch(db(), {
       jobId,
       chunkIndex: 0,
       seenOffset: 0,

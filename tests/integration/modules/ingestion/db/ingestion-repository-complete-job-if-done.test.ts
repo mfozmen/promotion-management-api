@@ -1,7 +1,6 @@
+import { IngestionRepository } from '@src/modules/ingestion/db/ingestion-repository.js';
 import { and, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { completeJobIfDone } from '@src/modules/ingestion/db/complete-job-if-done.js';
-import { refreshJobProgress } from '@src/modules/ingestion/db/refresh-job-progress.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { useTestDatabase } from '../../../db.js';
@@ -63,7 +62,7 @@ describe('refreshJobProgress', () => {
       .set({ rowsProcessed: 40, rowsRejected: 1 })
       .where(and(eq(ingestionChunks.jobId, jobId), eq(ingestionChunks.chunkIndex, 1)));
 
-    await refreshJobProgress(db(), jobId);
+    await new IngestionRepository(db()).refreshJobProgress(jobId);
 
     const job = await jobRow(jobId);
     expect(job?.rowsProcessed).toBe(160);
@@ -83,10 +82,10 @@ describe('refreshJobProgress', () => {
       .update(ingestionChunks)
       .set({ rowsProcessed: 500 })
       .where(eq(ingestionChunks.jobId, jobId));
-    await completeJobIfDone(db(), jobId);
+    await new IngestionRepository(db()).completeJobIfDone(jobId);
 
     // A straggler refresh arriving after the finish must change nothing.
-    await refreshJobProgress(db(), jobId);
+    await new IngestionRepository(db()).refreshJobProgress(jobId);
 
     const job = await jobRow(jobId);
     expect(job?.status).toBe('completed');
@@ -97,7 +96,7 @@ describe('refreshJobProgress', () => {
   it('counts nothing for a job whose chunks have not started', async () => {
     const jobId = await jobWith(2);
 
-    await refreshJobProgress(db(), jobId);
+    await new IngestionRepository(db()).refreshJobProgress(jobId);
 
     const job = await jobRow(jobId);
     expect({ done: job?.chunksDone, rows: job?.rowsProcessed }).toEqual({ done: 0, rows: 0 });
@@ -110,7 +109,7 @@ describe('completeJobIfDone', () => {
     await finish(jobId, 0);
     await finish(jobId, 1);
 
-    expect(await completeJobIfDone(db(), jobId)).toBe(true);
+    expect(await new IngestionRepository(db()).completeJobIfDone(jobId)).toBe(true);
     const job = await jobRow(jobId);
     expect(job?.status).toBe('completed');
     // Final counters come from the statement that completes it, so a completed
@@ -122,7 +121,7 @@ describe('completeJobIfDone', () => {
     const jobId = await jobWith(2);
     await finish(jobId, 0);
 
-    expect(await completeJobIfDone(db(), jobId)).toBe(false);
+    expect(await new IngestionRepository(db()).completeJobIfDone(jobId)).toBe(false);
     expect((await jobRow(jobId))?.status).toBe('running');
   });
 
@@ -134,8 +133,8 @@ describe('completeJobIfDone', () => {
     await finish(jobId, 0);
 
     const [first, second] = await Promise.all([
-      completeJobIfDone(db(), jobId),
-      completeJobIfDone(db(), jobId),
+      new IngestionRepository(db()).completeJobIfDone(jobId),
+      new IngestionRepository(db()).completeJobIfDone(jobId),
     ]);
 
     expect([first, second].filter(Boolean)).toHaveLength(1);
@@ -146,7 +145,7 @@ describe('completeJobIfDone', () => {
     await finish(jobId, 0);
     await db().update(ingestionJobs).set({ status: 'failed' }).where(eq(ingestionJobs.id, jobId));
 
-    expect(await completeJobIfDone(db(), jobId)).toBe(false);
+    expect(await new IngestionRepository(db()).completeJobIfDone(jobId)).toBe(false);
     expect((await jobRow(jobId))?.status).toBe('failed');
   });
 });

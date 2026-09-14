@@ -1,10 +1,10 @@
+import { IngestionRepository } from '@src/modules/ingestion/db/ingestion-repository.js';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { products } from '@src/modules/product/db/schema/products.js';
-import { claimChunk } from '@src/modules/ingestion/db/claim-chunk.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { ProcessChunkCommand } from '@src/modules/ingestion/commands/process-chunk-command.js';
@@ -170,7 +170,7 @@ describe('ProcessChunkCommand', () => {
 
   it('does nothing when another worker holds the lease', async () => {
     const { jobId } = await jobWithChunk(row(1));
-    await claimChunk(db(), jobId, 0, 90_000);
+    await new IngestionRepository(db()).claimChunk(jobId, 0, 90_000);
     const sink = recorder();
 
     const result = await processorWith(sink.publish).process({ jobId, chunkIndex: 0 });

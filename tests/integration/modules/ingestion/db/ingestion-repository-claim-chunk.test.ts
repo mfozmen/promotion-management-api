@@ -1,6 +1,6 @@
+import { IngestionRepository } from '@src/modules/ingestion/db/ingestion-repository.js';
 import { and, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import { claimChunk } from '@src/modules/ingestion/db/claim-chunk.js';
 import { ingestionChunks } from '@src/modules/ingestion/db/schema/ingestion-chunks.js';
 import { ingestionJobs } from '@src/modules/ingestion/db/schema/ingestion-jobs.js';
 import { useTestDatabase } from '../../../db.js';
@@ -45,7 +45,7 @@ describe('claimChunk', () => {
   it('claims a pending chunk, takes a lease and counts the attempt', async () => {
     const jobId = await newJobWithChunk();
 
-    const claimed = await claimChunk(db(), jobId, 0, 90_000);
+    const claimed = await new IngestionRepository(db()).claimChunk(jobId, 0, 90_000);
 
     expect(claimed?.nextOffset).toBe(0);
     const row = await chunkRow(jobId);
@@ -58,9 +58,9 @@ describe('claimChunk', () => {
     // Duplicate `chunk.process` jobs are expected — the spec says extra
     // invocations are harmless — and the lease is what makes that true.
     const jobId = await newJobWithChunk();
-    await claimChunk(db(), jobId, 0, 90_000);
+    await new IngestionRepository(db()).claimChunk(jobId, 0, 90_000);
 
-    expect(await claimChunk(db(), jobId, 0, 90_000)).toBeNull();
+    expect(await new IngestionRepository(db()).claimChunk(jobId, 0, 90_000)).toBeNull();
     expect((await chunkRow(jobId))?.attempts).toBe(1);
   });
 
@@ -72,7 +72,7 @@ describe('claimChunk', () => {
       attempts: 1,
     });
 
-    const claimed = await claimChunk(db(), jobId, 0, 90_000);
+    const claimed = await new IngestionRepository(db()).claimChunk(jobId, 0, 90_000);
 
     expect(claimed?.nextOffset).toBe(400);
     expect((await chunkRow(jobId))?.attempts).toBe(2);
@@ -81,7 +81,7 @@ describe('claimChunk', () => {
   it('resumes from the checkpoint, not from the start of the range', async () => {
     const jobId = await newJobWithChunk({ nextOffset: 640, startOffset: 0, endOffset: 1000 });
 
-    const claimed = await claimChunk(db(), jobId, 0, 90_000);
+    const claimed = await new IngestionRepository(db()).claimChunk(jobId, 0, 90_000);
 
     expect(claimed?.nextOffset).toBe(640);
     expect(claimed?.endOffset).toBe(1000);
@@ -90,7 +90,7 @@ describe('claimChunk', () => {
   it('refuses a chunk already done, so a redelivered job does not redo it', async () => {
     const jobId = await newJobWithChunk({ status: 'done', nextOffset: 1000 });
 
-    expect(await claimChunk(db(), jobId, 0, 90_000)).toBeNull();
+    expect(await new IngestionRepository(db()).claimChunk(jobId, 0, 90_000)).toBeNull();
   });
 
   it('lets exactly one of two racing claims win', async () => {
@@ -102,8 +102,8 @@ describe('claimChunk', () => {
     });
 
     const [a, b] = await Promise.all([
-      claimChunk(db(), jobId, 0, 90_000),
-      claimChunk(db(), jobId, 0, 90_000),
+      new IngestionRepository(db()).claimChunk(jobId, 0, 90_000),
+      new IngestionRepository(db()).claimChunk(jobId, 0, 90_000),
     ]);
 
     expect([a, b].filter((c) => c !== null)).toHaveLength(1);
@@ -113,6 +113,6 @@ describe('claimChunk', () => {
   it('returns null for a chunk that does not exist', async () => {
     const jobId = await newJobWithChunk();
 
-    expect(await claimChunk(db(), jobId, 99, 90_000)).toBeNull();
+    expect(await new IngestionRepository(db()).claimChunk(jobId, 99, 90_000)).toBeNull();
   });
 });

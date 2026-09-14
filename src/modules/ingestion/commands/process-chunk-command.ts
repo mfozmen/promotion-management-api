@@ -2,15 +2,10 @@ import { join } from 'node:path';
 import { TransactionRollbackError } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import type { Db } from '../../../shared/db/client.js';
+import { IngestionRepository } from '../db/ingestion-repository.js';
 import type { ProductRepository } from '../../product/db/product-repository.js';
 import type { ProductUpsert } from '../../product/domain/dto/product-upsert.js';
 import type { BasePriceCalculatorCache } from '../../pricing/domain/base-price-calculator-cache.js';
-import { checkpointBatch } from '../db/checkpoint-batch.js';
-import { claimChunk } from '../db/claim-chunk.js';
-import { completeJobIfDone } from '../db/complete-job-if-done.js';
-import { refreshJobProgress } from '../db/refresh-job-progress.js';
-import { releaseChunk } from '../db/release-chunk.js';
-import { findIngestionJob } from '../db/find-ingestion-job.js';
 import type { ChunkOutcome } from '../domain/dto/chunk-outcome.js';
 import type { ChunkProcess } from '../events/chunk-process.js';
 import { parseVendorRow } from '../domain/parse-vendor-row.js';
@@ -55,6 +50,8 @@ export class ProcessChunkCommand {
   private readonly leaseMs: number;
   /** This process's view of where vendor files live; the stored ref is relative to it. */
   private readonly uploadDir: string;
+  /** Every query this command makes against the ingestion tables. */
+  private readonly ingestion: IngestionRepository;
   private readonly budgetMs: number;
   private readonly now: () => number;
   private readonly reenqueue: (chunk: ChunkProcess) => Promise<unknown>;
@@ -87,19 +84,20 @@ export class ProcessChunkCommand {
     this.batchSize = options.batchSize ?? ProcessChunkCommand.DEFAULT_BATCH_SIZE;
     this.leaseMs = options.leaseMs ?? ProcessChunkCommand.DEFAULT_LEASE_MS;
     this.uploadDir = options.uploadDir;
+    this.ingestion = new IngestionRepository(options.db);
     this.budgetMs = options.budgetMs ?? Number.POSITIVE_INFINITY;
     this.now = options.now ?? Date.now;
   }
 
   async process({ jobId, chunkIndex }: ChunkProcess): Promise<ChunkOutcome> {
-    const claimed = await claimChunk(this.db, jobId, chunkIndex, this.leaseMs);
+    const claimed = await this.ingestion.claimChunk(jobId, chunkIndex, this.leaseMs);
     // A duplicate delivery is the ordinary path, not an error: the registration step
     // enqueues one job per chunk and a redelivery costs nothing.
     if (claimed === null) return { claimed: false, rowsProcessed: 0, rowsRejected: 0 };
 
     // A claimed chunk proves the job: `ingestion_chunks.job_id` carries a foreign key
     // to it and nothing cascades, so the row cannot outlive what it points at.
-    const job = (await findIngestionJob(this.db, jobId))!;
+    const job = (await this.ingestion.findIngestionJob(jobId))!;
 
     const calculator = await this.calculators.current();
     const startedAt = this.now();
@@ -131,7 +129,7 @@ export class ProcessChunkCommand {
         // Between batches is the only safe place to stop: the checkpoint is
         // committed, so the next invocation resumes from it having lost nothing.
         if (this.now() - startedAt >= this.budgetMs && endOffset < claimed.endOffset) {
-          await releaseChunk(this.db, jobId, chunkIndex, claimed.leaseUntil);
+          await this.ingestion.releaseChunk(jobId, chunkIndex, claimed.leaseUntil);
           await this.reenqueue({ jobId, chunkIndex });
           return { claimed: true, exhausted: true, rowsProcessed, rowsRejected };
         }
@@ -150,9 +148,9 @@ export class ProcessChunkCommand {
     // The checkpoint reached the end of the range, so this chunk is done. Its
     // counters go up to the job before the status does, or a `completed` job is
     // readable for an instant reporting that it processed nothing.
-    await refreshJobProgress(this.db, jobId);
+    await this.ingestion.refreshJobProgress(jobId);
     // The job is completed by whichever chunk was last, and only one call wins.
-    await completeJobIfDone(this.db, jobId);
+    await this.ingestion.completeJobIfDone(jobId);
 
     return { claimed: true, rowsProcessed, rowsRejected };
   }
@@ -224,7 +222,7 @@ export class ProcessChunkCommand {
     try {
       await this.db.transaction(async (tx) => {
         ids = await this.products.upsertMany(tx, batch.rows);
-        const moved = await checkpointBatch(tx, {
+        const moved = await this.ingestion.checkpointBatch(tx, {
           jobId,
           chunkIndex,
           seenOffset: batch.seenOffset,
