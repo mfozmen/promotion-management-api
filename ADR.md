@@ -306,9 +306,18 @@ Neither figure means anything without saying which.
 looks like. At the kill, chunk 2 had committed **537 360 bytes and 12 000 rows**; chunks 3, 4 and
 5 had not started. On restart the worker resumed chunk 2 **from its checkpoint rather than from
 its start**, reaching 71 000 rows on the second attempt, while 3, 4 and 5 ran to completion
-untouched. The clean run the same day: **6 of 6 chunks, 500 000 rows, none rejected, ~85 s, peak
+untouched. The clean run the same day: **6 of 6 chunks, 500 000 rows, none rejected, peak
 55.7 MiB of 256**, and the catalogue holds **500 000 distinct SKUs** afterwards — no row lost and
 none written twice.
+
+That run took **about 85 s with the read-model consumer draining its announcements**, so it is
+the same quantity as the 128 s below and not the 29 s: the `event-handler` was up and consuming
+`products` throughout, and its queue was empty afterwards. It is faster than the 128 s because
+the catalogue was already warm — most rows upserted to values they already held, which the
+writer skips — so the two are comparable in kind and not in workload. The three peaks now in
+this record are all container accounting on this machine: **49.9 MiB** (the branch run),
+**54.9 MiB** (through the HTTP route with the consumer draining) and **55.7 MiB** (this run).
+Nothing here is a host RSS figure except the one below that says so.
 
 What that run also found is that **the resume has a hole this record must not paper over**: a
 chunk whose worker dies twice is moved to BullMQ's failed set as stalled, and nothing re-enqueues
