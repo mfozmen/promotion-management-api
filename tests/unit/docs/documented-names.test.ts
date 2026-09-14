@@ -4,6 +4,11 @@ import { describe, expect, it } from 'vitest';
 const DOCUMENTS = [
   'ADR.md',
   'README.md',
+  'docs/running-locally.md',
+  'docs/api.md',
+  'docs/data-model.md',
+  'docs/operations.md',
+  'docs/testing.md',
   'CONTRIBUTING.md',
   'REVIEW.md',
   'CLAUDE.md',

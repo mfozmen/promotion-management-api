@@ -35,8 +35,7 @@ export function validate(schemas: {
     }
     next();
   };
-  // What the route accepts, where `route-inventory.ts` can read it: a document
-  // generated from a list of routes would be a second description to keep true.
+  // What the route accepts, where `route-inventory.ts` can read it.
   (handler as unknown as Record<symbol, unknown>)[Symbol.for('pma.validates')] = schemas;
 
   return handler;

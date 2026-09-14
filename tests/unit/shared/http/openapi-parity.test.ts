@@ -51,7 +51,10 @@ describe('the document and the application', () => {
     // Both sides of every other check are the same reading of the application,
     // so they agree even when both are wrong; the table is written by a person
     // and can disagree (REVIEW.md 13.12, 13.16).
-    const table = readFileSync(new URL('../../../../README.md', import.meta.url), 'utf8')
+    const readme = readFileSync(new URL('../../../../README.md', import.meta.url), 'utf8');
+    const endpoints = readme.slice(readme.indexOf('## Endpoints'));
+    const table = endpoints
+      .slice(0, endpoints.indexOf('\n## '))
       .split('\n')
       .filter((line) => line.startsWith('| '))
       .map((line) => /`(\/api\/[^`]*)`/.exec(line)?.[1])

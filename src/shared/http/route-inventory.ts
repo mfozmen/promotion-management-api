@@ -16,12 +16,6 @@ interface Layer {
   route?: { path: string; methods: Record<string, boolean>; stack: Layer[] };
 }
 
-/**
- * Every route Express will actually answer, with the schemas it validates.
- * Walked rather than listed, so a route cannot be in the application and absent
- * from the document: the only thing written by hand is the mount path, in the
- * `mountAt` call that mounts it.
- */
 export function routeInventory(app: Express): InventoriedRoute[] {
   return walk((app as unknown as { router: { stack: Layer[] } }).router.stack, '');
 }

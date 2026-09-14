@@ -36,18 +36,18 @@ const DESCRIPTION = `Generated from the zod schemas that validate each request, 
 here is what the API enforces rather than what someone remembered to write down.
 
 What each endpoint accepts, plus the one error envelope they all share. What an endpoint returns on
-success is in the README's API table and nowhere else: one response shape is a zod
-transform and the rest are TypeScript interfaces, and neither can be converted, so publishing them
-here would mean writing them by hand — the one part of this document that could then drift while
-looking exactly like the parts that cannot.
+success is the README's endpoint table, and the semantics - query parameters, statuses, the status
+and state distinction - are in docs/api.md. Success bodies are not published here because one is a
+zod transform and the rest are TypeScript interfaces: writing them out by hand would be the one part
+of this document that could drift while looking exactly like the parts that cannot.
+
+POST /api/vendor/imports is described less than it is validated, for the same reason in reverse: it
+takes a multipart file bounded by multer rather than by a schema, so this document has nothing to
+read and shows the operation with no request body. Send the file as the field "file" and the vendor
+as "vendor"; the README table's row describes that request.
 
 Every error, whatever its status, is the envelope below (ADR-0009).`;
 
-/**
- * The document, built by walking the application rather than from a list.
- * A route added later appears here without anyone remembering to add it; one
- * added without schemas appears with no inputs, which the parity test catches.
- */
 export function openapiDocument(app: Express): OpenapiDocument {
   const paths: OpenapiDocument['paths'] = {};
 

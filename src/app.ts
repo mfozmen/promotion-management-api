@@ -120,8 +120,6 @@ export function createApp({
       list: new ListPromotionsQuery(promotions),
     }),
   );
-  // Inside the prefix, as issue #2 asks: the document describes this API and
-  // is served by it, unlike the board and the scrape, which describe neither.
   mountAt(
     api,
     '/',
