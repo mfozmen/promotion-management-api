@@ -63,9 +63,10 @@ export function openapiDocument(app: Express): OpenapiDocument {
   };
 }
 
-const NO_SCHEMA = `No schema describes this operation's inputs, so none are published here. Either it
-takes none, or it is validated by something this document cannot read - the vendor upload's
-multipart file is bounded by multer. The README's endpoint table says which.`;
+const NO_INPUTS = 'This operation takes no inputs.';
+
+const readBy = (takes: string): string =>
+  `This operation's request body is read by something no schema describes, so nothing is published for it here. It takes ${takes}.`;
 
 function operation(route: InventoriedRoute): Operation {
   const parameters = [
@@ -78,7 +79,7 @@ function operation(route: InventoriedRoute): Operation {
     summary: `${route.method.toUpperCase()} ${route.path}`,
     // Swagger UI deep-links to an operation, so the document's own description
     // can sit a screen above where the reader lands.
-    ...(parameters.length === 0 && body === undefined ? { description: NO_SCHEMA } : {}),
+    ...describe(route, parameters.length === 0 && body === undefined),
     ...(parameters.length > 0 ? { parameters } : {}),
     ...(body
       ? {
@@ -95,6 +96,12 @@ function operation(route: InventoriedRoute): Operation {
       },
     },
   };
+}
+
+function describe(route: InventoriedRoute, empty: boolean): { description?: string } {
+  if (route.bodyReadBy !== undefined) return { description: readBy(route.bodyReadBy) };
+
+  return empty ? { description: NO_INPUTS } : {};
 }
 
 /** One parameter per field: a path or query schema is an object, OpenAPI is not. */

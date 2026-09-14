@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import express, { Router } from 'express';
 import { z } from 'zod';
+import { bodyReadBy } from '@src/shared/http/body-read-by.js';
 import { mountAt } from '@src/shared/http/mount-at.js';
 import { openapiDocument } from '@src/shared/http/openapi-document.js';
 import { validate } from '@src/shared/http/request-validator.js';
@@ -130,15 +131,25 @@ describe('openapiDocument', () => {
     expect(doc.paths['/api/health']?.get?.requestBody).toBeUndefined();
   });
 
-  it('says on the operation itself when no schema describes its inputs', () => {
-    // Swagger UI deep-links to an operation, so a reader can arrive below the
-    // document's own description. An operation showing nothing has to account
-    // for itself where it is read.
-    const app = appWith((a) => a.post('/api/vendor/imports', noop));
+  it('names what reads a body this document cannot describe, and the fields it takes', () => {
+    // Swagger UI deep-links, so a reader arrives at the operation rather than at
+    // the document's description. The field names have to be where they land.
+    const app = appWith((a) =>
+      a.post('/api/vendor/imports', bodyReadBy(noop, 'multipart/form-data: file, vendor'), noop),
+    );
 
     const operation = openapiDocument(app).paths['/api/vendor/imports']?.post;
 
-    expect(operation?.description).toMatch(/no schema/i);
+    expect(operation?.description).toContain('multipart/form-data: file, vendor');
+  });
+
+  it('says an operation takes nothing when nothing reads its body either', () => {
+    // Not the same sentence as above: `/api/health` has no inputs, and telling
+    // its reader about a multipart upload would be a new false impression in the
+    // place the other line exists to remove one.
+    const app = appWith((a) => a.get('/api/health', noop));
+
+    expect(openapiDocument(app).paths['/api/health']?.get?.description).toMatch(/no inputs/i);
   });
 
   it('says nothing extra on an operation whose inputs a schema does describe', () => {

@@ -3,11 +3,13 @@ import type { ZodObject } from 'zod';
 
 const MOUNTED_AT = Symbol.for('pma.mountedAt');
 const VALIDATES = Symbol.for('pma.validates');
+const BODY_READ_BY = Symbol.for('pma.bodyReadBy');
 
 export interface InventoriedRoute {
   method: string;
   path: string;
   schemas: { body?: ZodObject; query?: ZodObject; params?: ZodObject };
+  bodyReadBy?: string;
 }
 
 interface Layer {
@@ -25,10 +27,16 @@ function walk(stack: Layer[], prefix: string): InventoriedRoute[] {
     if (layer.route) {
       const path = asPath(`${prefix}${layer.route.path}`);
 
+      const handlers = layer.route.stack;
+      const reader = handlers
+        .map((handler) => handler.handle?.[BODY_READ_BY] as string | undefined)
+        .find((takes) => takes !== undefined);
+
       return Object.keys(layer.route.methods).map((method) => ({
         method,
         path,
-        schemas: declared(layer.route!.stack),
+        schemas: declared(handlers),
+        ...(reader === undefined ? {} : { bodyReadBy: reader }),
       }));
     }
     const nested = layer.handle?.stack;
