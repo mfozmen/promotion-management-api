@@ -24,10 +24,6 @@ export class IngestionRepository {
       .update(ingestionChunks)
       .set({
         status: 'running',
-        // Truncated to milliseconds because the lease doubles as the holder's proof
-        // and JavaScript's Date cannot hold PostgreSQL's microseconds: an untruncated
-        // lease comes back rounded, never equals the stored value, and the holder
-        // fails to prove it is the holder.
         // Truncated because the lease doubles as the holder's proof and a JavaScript
         // `Date` cannot hold PostgreSQL's microseconds: untruncated, it comes back
         // rounded and the real holder fails to prove it is the holder.
