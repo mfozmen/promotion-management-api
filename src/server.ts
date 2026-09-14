@@ -23,14 +23,17 @@ const queue = EventQueue.connect(
   eventRegistry,
   eventRouting,
 );
+const db = createDb(pool);
+const products = new ProductReadRepository(
+  createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB),
+);
+
 const app = createApp({
   logger,
-  db: createDb(pool),
+  db,
   queue,
   scheduler: new PromotionScheduler(queue),
-  products: new ProductReadRepository(
-    createReadModelClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB),
-  ),
+  products,
   boardQueues: queue.all(),
   uploads: {
     dir: config.UPLOAD_DIR,

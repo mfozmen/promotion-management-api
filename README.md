@@ -18,6 +18,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
+- prom-client, Prometheus and Grafana (process metrics under the `monitoring` compose profile; see [ADR-0011](./ADR.md))
 - SonarCloud (static analysis / quality gate)
 - GitHub Actions (CI)
 - Claude AI advisory review on pull requests
@@ -33,8 +34,16 @@ Docker with the Compose plugin, and Node for the two npm scripts below.
 
 ```bash
 cp .env.example .env   # placeholders only; .env is gitignored
-npm run up             # PostgreSQL, Redis, the api, three workers and the test stores
+npm run up             # the stores, the api, three workers, the test stores and monitoring
 ```
+
+Grafana is on http://localhost:3001, no login, with Prometheus scraping the api and each worker
+every five seconds. The dashboard is the community **NodeJS Application Dashboard**
+([grafana.com id 11159](https://grafana.com/grafana/dashboards/11159)) rather than one of ours;
+pick the process in the `instance` list. During a 500 000-row import, the panel to watch is the
+`ingestion-worker` instance's heap and resident memory against the 256 MiB the container is
+limited to — the heap is what `--max-old-space-size=192` bounds and the resident figure is what
+the cgroup kills on.
 
 The API is on http://127.0.0.1:3100 and BullMQ's dashboard on
 http://127.0.0.1:3100/admin/queues. `npm run down` stops everything and keeps the data; add `-v` to that compose command to
@@ -54,8 +63,8 @@ process that migrates.
 - `reconciler` **consumes `reconciler.run` on the `maintenance` queue** and registers the
   repeatable that publishes it every five minutes, so the promotion boundary sweep runs on a fresh
   stack with nothing to start by hand.
-- `event-handler` will drain `promotions` and `products` for the read model; it consumes nothing
-  yet (issue #12).
+- `event-handler` rebuilds the read model on boot and then drains `promotions` and `products`
+  for it.
 - `ingestion-worker` drains `ingestion` for the chunk processor, one chunk at a time. It is
   capped at 256 MiB and half a CPU — the case study's own constraint, and what Scenario A's
   500 000-row import is measured against — and runs with `NODE_OPTIONS=--max-old-space-size=192`
@@ -65,9 +74,10 @@ process that migrates.
   rather than the peak, since nothing accumulates as the file is consumed. The reasoning and the
   host-side figures are in ADR-0005. Scenario B has no measurement yet.
 
-Each start-up line carries a `consuming` list: `maintenance` for the reconciler, empty for the
-other two, so an idle queue is not read as a drained one. None of the three has a healthcheck, so
-`--wait` treats them as up once they are running.
+Each start-up line carries a `consuming` list — `maintenance`, `ingestion`, and `products` with
+`promotions` — and the port that worker serves `/metrics` on. None of the three has a healthcheck,
+so `--wait` treats them as up once they are running; Prometheus reporting the target `down` is the
+nearest thing to one (ADR-0011).
 
 `api` and `ingestion-worker` bind-mount `./uploads` at `/app/uploads`, because whoever registers a
 file writes it there and the worker reads it back by `file_ref` — a name inside that directory
@@ -183,13 +193,13 @@ migration fails the build. It reads the success line rather than the exit code b
 `drizzle-kit generate` exits 0 even when it fails and writes nothing; `git add -AN` is what
 makes an untracked new migration visible to the diff (ADR-0003).
 
-Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data`, `redis-data` and `uploads` volumes as well. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
+Stop the stack with `docker compose down`, or `docker compose down -v` to drop the `postgres-data`, `redis-data`, `prometheus-data` and `grafana-data` volumes as well — `./uploads` is a bind mount on the host and survives either way. An `e2e-tester` run never touches this stack: it puts `-p pma-e2e` on every compose command so its own volumes are the only ones it drops, and it stops rather than starting if you are holding 3100, 5432 or 6379.
 
 ### Configuration
 
-`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
+`.env.example` lists every variable the application reads; copy it to `.env` and adjust. `src/shared/config.ts` parses them with zod — a missing or malformed value throws naming the offending variable — and `src/server.ts` calls it before it migrates or listens, so a bad value stops the boot rather than the first request. Redis runs one server with two logical databases: `REDIS_READ_MODEL_DB` (default `0`) for the storefront read model and `REDIS_QUEUE_DB` (default `1`) for the BullMQ queues; they must differ. The ports `docker-compose.yml` publishes are fixed at 5432, 6379 and 3100 on `127.0.0.1`, plus 9090 and 3001 for Prometheus and Grafana under the `monitoring` profile; if one is taken on your machine, change the published port in the compose file and `DATABASE_URL`, `REDIS_URL` or `PORT` to match. `WORKER_METRICS_PORT` (default `3101`) is where each worker serves `/metrics`; it is published nowhere and is reachable on the compose network alone, so all three workers share the one number. `PORT` defaults to 3100 in both `src/shared/config.ts` and `.env.example`, and the compose healthcheck and published port name 3100 literally, so changing it for the container means changing all three together. Changing `POSTGRES_PASSWORD` against an existing `postgres-data` volume does not change the password PostgreSQL already has: the stack still reports healthy and the application fails at its first connect, so recreate the volume with `docker compose down -v` (ADR-0003).
 
-The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, the three worker services (`event-handler`, `ingestion-worker`, `reconciler`) running that same image with one command each, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. The workers have no healthcheck, so `--wait` treats them as up once they are running, whether or not they consume. The `monitoring` profile is not built: issue #18 adds it.
+The compose file holds the two stores, the `api` service built from this repository's `Dockerfile`, the three worker services (`event-handler`, `ingestion-worker`, `reconciler`) running that same image with one command each, and a browser for each store behind the `tools` profile: `docker compose --profile tools up -d` adds Adminer at http://127.0.0.1:8081 (server `postgres`, user `promo`) and redis-commander at http://127.0.0.1:8082; a plain `docker compose up` does not start them. `api` publishes http://127.0.0.1:3100 and migrates before it serves, so `docker compose up -d --wait` returns only once the schema is current and the application is answering — there is no migration command to run and no `migrate` service any more. The port is 3100 rather than 3000 because 3000 is what every other Node service on a developer's machine takes. The workers have no healthcheck, so `--wait` treats them as up once they are running, whether or not they consume. The `monitoring` profile adds Prometheus at http://127.0.0.1:9090 and Grafana at http://127.0.0.1:3001, and `npm run up` starts it; `docker compose up -d` without the profile leaves both out and changes nothing else.
 
 ### The queue
 
@@ -315,6 +325,15 @@ http://localhost:3100/admin/queues — the four queues with their counts, the de
 retry, promote or remove a job. It is Bull Board mounted inside the api process, outside the
 `/api` prefix and outside this API's error envelope, and like everything else here it is
 unauthenticated.
+
+`GET /metrics` is the other surface outside the prefix: http://localhost:3100/metrics on the api,
+and `WORKER_METRICS_PORT` on each worker. It answers Prometheus's text format, carries
+`prom-client`'s default process metrics plus one request histogram from `express-prom-bundle`
+(`http_request_duration_seconds`, labelled by method, status and the route pattern the router
+matched rather than the path that arrived), and answers `500` with an empty body if a collector
+throws. Queue depth, dead-letter count and read-model drift are not among the numbers it reports,
+so a scenario run's latency and throughput come from `autocannon`'s own output and Grafana is where
+the shape of the run over time is visible (ADR-0011).
 
 `GET /api/products` takes `category` (exact match, optional, 256 characters), `sort=effectivePrice` (the only sort), `order=asc|desc` (default `asc`), `page` (default 1) and `pageSize` (1-100, default 20); the resulting offset may not exceed 10 000. `GET /api/products/:id` takes an id of digits only.
 

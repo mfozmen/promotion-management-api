@@ -3,6 +3,15 @@ import { logger } from '../../../src/shared/logger.js';
 import { EventQueue } from '../../../src/shared/queue/event-queue.js';
 import { startWorker } from '../../../src/workers/start-worker.js';
 
+// The listener is real HTTP; six tests binding the same port is a flake, and what this file is
+// about is the queue and the shutdown rather than the socket.
+const closeMetrics = vi.fn((done: () => void) => {
+  done();
+});
+vi.mock('../../../src/shared/metrics/serve-metrics.js', () => ({
+  serveMetrics: () => ({ close: closeMetrics }),
+}));
+
 /** What every entry point runs, whatever else it wires up afterwards. */
 describe('startWorker', () => {
   const close = vi.fn<() => Promise<void>>();
@@ -17,7 +26,10 @@ describe('startWorker', () => {
     vi.stubEnv('SHUTDOWN_DRAIN_TIMEOUT_MS', '10000');
     // `restoreAllMocks` resets a plain `vi.fn`, so the default belongs per test.
     close.mockReset().mockResolvedValue(undefined);
-    vi.spyOn(EventQueue, 'connect').mockReturnValue({ close } as unknown as EventQueue<never>);
+    vi.spyOn(EventQueue, 'connect').mockReturnValue({
+      close,
+      all: () => [],
+    } as unknown as EventQueue<never>);
   });
 
   afterEach(() => {
@@ -46,7 +58,7 @@ describe('startWorker', () => {
     startWorker('reconciler', ['maintenance']);
 
     expect(info).toHaveBeenCalledWith(
-      { worker: 'reconciler', consuming: ['maintenance'] },
+      { worker: 'reconciler', consuming: ['maintenance'], metricsPort: 3101 },
       'connected',
     );
   });
@@ -56,7 +68,10 @@ describe('startWorker', () => {
 
     startWorker('ingestion-worker');
 
-    expect(info).toHaveBeenCalledWith({ worker: 'ingestion-worker', consuming: [] }, 'connected');
+    expect(info).toHaveBeenCalledWith(
+      { worker: 'ingestion-worker', consuming: [], metricsPort: 3101 },
+      'connected',
+    );
   });
 
   it('closes the queue and what the caller holds on SIGTERM', async () => {
@@ -71,6 +86,9 @@ describe('startWorker', () => {
 
     expect(pool).toHaveBeenCalledOnce();
     expect(close).toHaveBeenCalledOnce();
+    // Without this the listener leaks: the mock's `close` was never asserted, so deleting the
+    // line that closes it left every test green.
+    expect(closeMetrics).toHaveBeenCalledOnce();
   });
 
   it('exits anyway when a close never settles, rather than waiting for SIGKILL', async () => {

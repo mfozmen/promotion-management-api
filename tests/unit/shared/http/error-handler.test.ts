@@ -26,7 +26,7 @@ describe('errorHandler', () => {
     [400, 'Invalid request body'],
     [404, 'Product not found'],
     [409, 'An active promotion already covers this product'],
-    [429, 'Too many pending imports'],
+    [422, 'That discount would price the product below zero'],
   ])('answers %i with the message its raiser wrote', async (status, message) => {
     // A 4xx is exposed by default, so the raiser's words reach the caller and the
     // status carries which failure it was. There is no code field to disagree with it.
