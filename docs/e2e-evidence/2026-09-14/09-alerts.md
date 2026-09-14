@@ -2,8 +2,9 @@
 
 Seven rules in `monitoring/alerts.yml`, loaded by Prometheus at
 `http://localhost:9090/alerts` once `npm run up` is running. **A rule that has
-never fired is indistinguishable from a system that is never in trouble**, so each
-one below was made to fire against the running stack.
+never fired is indistinguishable from a system that is never in trouble**, so two
+of them were made to fire against the running stack and the rest are named below
+with the reason each was not.
 
 ## Loaded, and reading real series
 
@@ -71,7 +72,7 @@ quotes it and the description says why; the count itself lives on
 correct, the metric was correct, and the sentence a human would have been paged
 with was wrong.
 
-## The three not fired here
+## The rest, not fired here
 
 - **DeadLetterGrowing** (`for: 2m`) and **QueueBacklog** (`for: 5m`) need a
   poisoned consumer or a backlog sustained past the window; the mechanism they read
@@ -81,6 +82,10 @@ with was wrong.
   storefront answered 13 × `503` across about six and a half seconds — below the
   rule's 5 % over 2 m, which is the rule declining to page for a self-correcting
   blip, correctly.
+- **StorefrontSlow** was never reached: p99 on this stack is 42 ms quiet and 104 ms
+  under a flash sale's recompute, both far under the provisional 300 ms bar
+  (ADR-0012).
+- **QueueDepthUnreadable** was added after this run and is the paragraph above.
 
 ## Vantage
 
