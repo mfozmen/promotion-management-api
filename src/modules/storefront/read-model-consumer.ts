@@ -5,6 +5,7 @@ import { pricingRules } from '../pricing/db/schema/pricing-rules.js';
 import { EffectivePriceCalculator } from '../promotion/domain/effective-price-calculator.js';
 import { PromotionResolver } from '../promotion/domain/promotion-resolver.js';
 import { PromotionRepository } from '../promotion/db/promotion-repository.js';
+import { ProductReadRepository } from './db/product-read-repository.js';
 import { RebuildReadModelCommand } from './commands/rebuild-read-model-command.js';
 import { ProductSourceRepository } from './db/product-source-repository.js';
 import { ProductWriteRepository } from './db/product-write-repository.js';
@@ -50,6 +51,11 @@ export async function readModelConsumer(
       logger,
     ),
     rebuild: new ReadModelRebuildHandler(rebuild),
+    // The reconciler's drift check needs both halves: what PostgreSQL groups and
+    // what the sorted sets list, plus the scoped rebuild that repairs a mismatch.
+    source,
+    readModel: new ProductReadRepository(redis),
+    rebuildCategory: rebuild,
     // The boot path calls this one: the gate that skips a warm read model is
     // inside it, so the entry point names a method rather than deciding.
     rebuildOnBoot: () => rebuild.rebuildUnlessReady(),

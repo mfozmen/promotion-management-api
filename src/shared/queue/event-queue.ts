@@ -106,6 +106,36 @@ export class EventQueue<R extends Registry> {
     return this.queues[name];
   }
 
+  /**
+   * Every job in one queue's failed set, back to waiting, in pages. Bull Board
+   * retries one job at a time, which is an operator story for one poisoned job
+   * and not for the hundred a bad deploy leaves behind.
+   *
+   * Paged rather than read whole: a failed set is unbounded by design, since
+   * nothing trims it.
+   *
+   * Each job is retried at most once per run, and that is the whole of the
+   * termination argument. A retried job that fails again re-enters the set while
+   * this is still walking it, so a loop that stopped only when the set emptied
+   * would never stop against a consumer that rejects everything — measured at
+   * 157 retries of three jobs before the count was bounded this way.
+   */
+  async retryFailed(name: QueueName, pageSize = 100): Promise<number> {
+    const queue = this.queues[name];
+    const seen = new Set<string>();
+
+    for (;;) {
+      const failed = await this.bounded(`getFailed("${name}")`, queue.getFailed(0, pageSize - 1));
+      const fresh = failed.filter((job) => job.id !== undefined && !seen.has(job.id));
+      if (fresh.length === 0) return seen.size;
+
+      for (const job of fresh) {
+        seen.add(job.id as string);
+        await job.retry();
+      }
+    }
+  }
+
   /** The queues this bus holds, so a reader iterates what exists rather than a second list. */
   all(): Queue[] {
     return Object.values(this.queues);

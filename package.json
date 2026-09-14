@@ -24,6 +24,7 @@
     "prepare": "husky",
     "seed": "tsx scripts/seed.ts",
     "ingest": "tsx scripts/ingest.ts",
+    "retry-failed": "tsx scripts/retry-failed.ts",
     "generate:vendor": "tsx scripts/generate-vendor-csv.ts"
   },
   "dependencies": {

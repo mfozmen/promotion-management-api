@@ -136,6 +136,13 @@ the `ingestion-worker` drains. `npm run generate:vendor -- --rows 500000` writes
 `POST /api/vendor/imports` does the same registration over HTTP, for a file that is not already
 on the machine running the command.
 
+`npm run retry-failed -- <queue>` puts every job in one queue's failed set back to waiting and
+logs the count. The dashboard retries one job at a time, which is the right shape for one
+poisoned job and the wrong one for the hundred a bad deploy leaves behind. Each job is retried at
+most once per run: a retried job that fails again re-enters the set while the command is still
+walking it, so a loop that stopped only when the set emptied would never stop against a consumer
+that rejects everything.
+
 Demo data. Once the schema is up, one more command fills it:
 
 ```bash
