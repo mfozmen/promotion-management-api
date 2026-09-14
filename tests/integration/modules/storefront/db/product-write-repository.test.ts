@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import { ProductWriteRepository } from '@src/modules/storefront/db/product-write-repository.js';
 import type { ProductEntry } from '@src/modules/storefront/domain/dto/product-entry.js';
-import { useTestRedis } from '../../../redis.js';
+import { TEST_DATABASE, useTestRedis } from '../../../redis.js';
 
-const redis = useTestRedis();
+const redis = useTestRedis(TEST_DATABASE.productWriteRepository);
 
 const entry = (over: Partial<ProductEntry> = {}): ProductEntry => ({
   id: 1,
