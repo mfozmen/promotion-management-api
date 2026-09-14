@@ -40,6 +40,7 @@ Test cases
 
 ### alerts-2
 
+- Precondition: `npm run up` with the `monitoring` profile, the ingestion worker its own scrape target, `TargetDown` with its `for: 30s` window
 - Given: every target reporting
 - When: the same worker is restarted in one action, so it is absent for less than the `for: 30s` window
 - Then: the rule reaches `pending` at most, and nobody is paged
@@ -69,6 +70,7 @@ Test cases
 
 ### alerts-4
 
+- Precondition: `ReadModelDrifting` firing, with `summary` and `description` annotations to read
 - Given: the firing alert from alerts-3
 - When: its summary and description are read as an on-call person would read them
 - Then: every number shown is a number that means what the sentence says it means, and the one that does not survive is not shown
@@ -97,6 +99,7 @@ Test cases
 
 ### alerts-6
 
+- Precondition: `npm run retry-failed`, `queue_failed_jobs` on `/metrics`, `DeadLetterGrowing` firing
 - Given: the firing alert from alerts-5
 - When: the command in the alert's description is run — `npm run retry-failed -- <queue>` — after the cause is fixed
 - Then: the log line reports how many were returned to waiting, the failed set empties, and the alert clears on the next evaluations
@@ -126,6 +129,7 @@ Test cases
 
 ### alerts-8
 
+- Precondition: `queue_waiting_jobs` on `/metrics`, the ingestion consumer its own scrape target, Bull Board reachable
 - Given: the same import
 - When: the consumer is stopped mid-import and left stopped past five minutes
 - Then: `QueueBacklog` fires naming the queue, and `TargetDown` fires for the same process — two rules describing one failure, which is the intended shape
@@ -154,6 +158,7 @@ Test cases
 
 ### alerts-10
 
+- Precondition: `GET /api/products`, `GET /api/products/:id`, `http_request_duration_seconds_bucket` on `/metrics`, an active category promotion over 50,000 products
 - Given: the same stack under read load
 - When: a flash sale's recompute runs against 50,000 products while the load continues
 - Then: p99 is recorded, and whether `StorefrontSlow` fires is recorded with it
