@@ -822,9 +822,9 @@ Each was written carefully, each was wrong, and none was caught by reading it ag
 ### 2026-09-14 — Which failure to keep, when neither is repaired
 
 - Challenge: the chunk processor stored a batch, announced it, then took the compare-and-set. A review agent argued for a transaction around the write and the checkpoint, publishing after commit. The author argued the current order: transaction-then-publish means a publish failure after commit is a batch checkpointed and never announced, the silent loss the ordering was chosen to avoid.
-- Verification: the deciding fact both sides named was whether the reconciler exists to repair an unannounced batch. It does not — `src/workers/reconciler/` holds one schema file and nothing consumes `reconciler.run`, checked rather than assumed. But that does not decide it, because with no reconciler _neither_ failure is repaired.
+- Verification: the deciding fact both sides named was whether the reconciler exists to repair an unannounced batch. It did not when the ordering was decided in #105 (`08f11d0`) — `src/workers/reconciler/` held one schema file and nothing consumed `reconciler.run`, checked rather than assumed. But that did not decide it, because with no reconciler _neither_ failure is repaired.
 - Resolution: transaction-then-publish, on the asymmetry rather than on the repair. A lost announcement leaves a projection stale, and the projection is derivable — the next event for that product corrects it. A superseded worker's late write corrupts PostgreSQL: the row looks current, nothing recomputes it, and a rebuild reads the wrong value back out. Delay something derivable rather than corrupt what it derives from. A second argument settled it: every other write path in the repository already commits then publishes and swallows the failure, so the ingestion ordering was the outlier and matching it removed a rule a reader had to hold.
-- Recorded honestly rather than closed: a batch that commits and fails to publish is stale with nothing to repair it until the rebuild or the reconciler exists. Both are named in the record; neither is credited with work it does not do.
+- Recorded honestly rather than closed: on the day of the decision, a batch that commits and fails to publish was stale with nothing to repair it. Both repairs exist now — `src/workers/reconciler.ts` consumes `reconciler.run` and registers the five-minute repeatable (#111, #116), and the event handler rebuilds the read model on boot (#124) — so this paragraph is dated rather than standing, which is the 13.15 discipline applied to the appendix's own prose.
 
 ### 2026-09-14 — A job that reported success having stored nothing
 
@@ -860,49 +860,49 @@ Each was written carefully, each was wrong, and none was caught by reading it ag
 - Resolution: migration `0005_reconciler_watermark_milliseconds.sql` narrows the column to `timestamp(3) with time zone`, so the store keeps only what the reader can represent, plus an integration test that lets PostgreSQL's own `now()` write the mark. Verified by mutation: the test fails without the migration.
 - Lesson: AI-written tests inherit the production code's assumptions about serialisation precision. A value that crosses a type boundary needs one check that lets the database, not the test, produce it.
 
-### 2026-09-14 — A fix that turned a leak into destruction
+### 2026-09-14 — A fix that turned a leak into destruction (#121, `a90a511`)
 
 - Challenge: a refused upload left its file on disk. The fix widened a `try` so a rejected enqueue deleted the upload — but the widening crossed the commit boundary, so the delete now ran _after_ the job row had committed. The result was worse than the bug: a running job whose chunks name bytes nothing can open, and two unique indexes that then refuse both the re-upload and the same bytes from anywhere. The leak wasted disk; the fix destroyed the import unrecoverably.
 - Verification: caught by an agent reading the diff against the transaction boundary, not by the suite — every existing test used a queue that accepts. Proved with a test that injects a rejecting queue, which fails against the old code.
 - Resolution: the delete moved back inside the boundary, so a refused upload is refused whole.
 - Lesson: a fix that moves a statement across a commit boundary changes what a failure destroys, not just what it leaves behind. Widening a `try` is never only a widening.
 
-### 2026-09-14 — A document that disagreed with itself, so no run could fail it
+### 2026-09-14 — A document that disagreed with itself, so no run could fail it (#126, `b7f82ba`)
 
 - Challenge: one end-to-end journey file promised the `409` would carry the existing import's identifier, four lines above a case asserting the response names none. Whichever way a real run came out, half the file said the run was wrong and the other half said it was right.
 - Verification: found by reading the file end to end against the route, rather than by running the case — a contradiction cannot be caught by executing either half of it.
 - Resolution: one claim kept, the other deleted, chosen against what the endpoint actually returns.
 - Lesson: this is the day's pattern in a new place. A check whose failing state is indistinguishable from its passing state proves nothing; a document that asserts both sides of a question is the same defect written in prose, and it is invisible to every test.
 
-### 2026-09-14 — A record that promised more monitoring than the tree had
+### 2026-09-14 — A record that promised more monitoring than the tree had (#123, `7acada8`)
 
 - Challenge: ADR-0007 had described the monitoring stack in the future tense since before any of it existed — a provisioned dashboard and alert rules over eight signals. The pull request that finally built it shipped `prom-client` default metrics, a community dashboard and no alert rule at all, and edited the two-line paragraph it happened to touch rather than the record that made the promise.
 - Verification: `grep -rn "Gauge|Counter|Histogram" src/` returned no application metric; the Grafana provisioning directory holds a datasource and a file provider and no alerting directory; the branch's whole `ADR.md` delta was four lines against a 1 100-line feature.
 - Resolution: ADR-0011 written for the decision that landed, ADR-0007's alarms paragraph reduced to what exists with the absences named and costed, and two trade-off bullets citing a Grafana alert that does not exist corrected. The same pass found ADR-0003 claiming "six long-running services" where there are now eight, and a heap-use exit the same PR deletes.
 - Lesson: the model updates the prose it is editing and not the prose its change falsifies. Both defects here were one scroll away from an edited line.
 
-### 2026-09-14 — Telemetry that could kill the process it observes
+### 2026-09-14 — Telemetry that could kill the process it observes (#123, `7acada8`)
 
 - Challenge: the worker's metrics server called `listen(port)` with no `'error'` listener. An `EADDRINUSE` or `EACCES` there is an uncaught exception, so a monitoring surface added to watch a worker would have exited that worker at boot, before its consumer attached, with `restart: unless-stopped` turning it into a crash loop — and the same pull request's request histogram would have been labelled with raw paths, one series per product id, making the endpoint added to watch memory into the memory problem.
 - Verification: the listener was checked by binding the port first and asserting the worker survives; the label was checked against a live scrape and comes out `/api/products/#val`. Separately, the assertion that the listener is closed on `SIGTERM` was tested by deleting the line that closes it — without that, all 731 tests passed with the listener leaking.
 - Resolution: an `'error'` handler that logs and stays up, the library's own path normalisation, and a scrape-target test that takes each port from the compose file, because two files that must agree had nothing between them.
 - Lesson: an observability surface is not load-bearing and must never be able to take down what it observes. And an assertion nobody has watched fail is not an assertion.
 
-### 2026-09-14 — A guard that had never been within a factor of six of firing
+### 2026-09-14 — A guard that had never been within a factor of six of firing (#123, `7acada8`; the guard was built on that branch and deleted before it merged)
 
 - Challenge: a worker memory guard was specified twice — first on RSS, which ADR-0005 rejects by name because Node's RSS does not shrink, then on `heapUsed` against a chosen 160 MiB. It was built, tested and nearly merged. The measured peak of a containerised 500 000-row import is a 25 MB heap, and the container's own accounting peaks at 49.9 MiB of 256.
 - Verification: by measurement rather than argument — the run was taken under the case study's own cap, and the two accountings were separated deliberately after being confused four times in one day.
 - Resolution: the guard, its configuration variable and its tests were deleted before the pull request merged. What bounds memory is the chunked pipeline and the checkpoints; what turns an overrun into a stack trace instead of a silent kill is `--max-old-space-size` set below the cgroup limit. The issue that asked for it records why both variants were refused, so neither is re-proposed from it.
 - Lesson: a threshold nobody has measured against is a number nobody chose, defended by a test nobody can fail. Deleting working code is a result.
 
-### 2026-09-14 — The design's central claim failed through an event, not a query
+### 2026-09-14 — The design's central claim failed through an event, not a query (#128, `76c84b1`)
 
 - Challenge: the read model exists so a storefront read never touches PostgreSQL, and a database restart killed the api process anyway. `createPool` attached no `'error'` listener, and node-postgres documents that an error on an idle client with no listener is fatal to the process. So the claim did not fail where it was defended — every query path was correct and the recompute survived the restart perfectly — it failed through an unhandled event, in the one component whose availability the whole design is about.
 - Verification: found by restarting PostgreSQL against the running stack rather than by reading the code, and the verification is the real lesson. The reviewer's first run passed _without_ the fix: there were no idle connections at the moment of the restart, so the error path never ran and the api survived. Forcing a dozen writes first, to leave clients idle in the pool, is what made the failure reproducible — a green run against an unexercised path is not evidence.
 - Resolution: an `'error'` listener that logs and lets the pool discard the client (#128), with a unit test for the handler and the restart repeated against warm connections.
 - Lesson: an availability guarantee has to be tested by removing the dependency, not by reading the code that avoids it. And a fault-injection run that passes needs one more question asked of it — was the path actually taken?
 
-### 2026-09-14 — Five notes that said "not yet", every one outlived by the work
+### 2026-09-14 — Five notes that said "not yet", every one outlived by the work (#127, `af77b59`)
 
 - Challenge: one file pair carried five sentences describing something as absent — "Scenario B has no measurement" beside Scenario B's measurement, "nothing runs that handler yet" after the handler shipped, "one of the four queues has a consumer" when all four did, a payload "whose module does not exist", and "the monitoring profile is not built yet" written directly above the dashboard tonight's evidence was read off. Each was true when written and a lie by the time it was read, and each read as a considered statement rather than as a stale one.
 - Verification: found by reading the two documents against the tree end to end, not by any test. Two of the five were introduced _while correcting the other three_, in the same session — which is the part worth recording, because it shows the failure is not carelessness but the shape of the note itself.
