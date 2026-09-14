@@ -12,6 +12,10 @@ interface Rebuild {
   rebuildCategory(category: string): Promise<number>;
 }
 
+interface Repairs {
+  inc(): void;
+}
+
 /**
  * The safety net under the safety net. The boundary sweep repairs an announcement
  * that was never published; nothing repairs a write that was published, consumed
@@ -28,6 +32,7 @@ export class RepairDriftCommand {
     private readonly catalogue: Catalogue,
     private readonly readModel: ReadModel,
     private readonly rebuild: Rebuild,
+    private readonly repairs: Repairs,
     private readonly logger: Logger,
   ) {}
 
@@ -44,6 +49,7 @@ export class RepairDriftCommand {
       // the catalogue, and the flash-sale path is the one this runs beside.
       const recomputed = await this.rebuild.rebuildCategory(category);
       repaired += 1;
+      this.repairs.inc();
       this.logger.warn({ category, products, listed, recomputed }, 'read model drift repaired');
     }
 

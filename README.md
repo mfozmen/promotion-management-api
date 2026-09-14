@@ -18,7 +18,7 @@ A REST API for managing products and time-bound promotions for ModaCo, an e-comm
 - json-rules-engine (the ingestion pricing rules, read from the database)
 - Vitest + Supertest (testing)
 - ESLint + Prettier
-- prom-client, Prometheus and Grafana (process metrics under the `monitoring` compose profile; see [ADR-0011](./ADR.md))
+- prom-client, Prometheus and Grafana (metrics under the `monitoring` compose profile, with alert rules in `monitoring/alerts.yml`; see [ADR-0011](./ADR.md) and [ADR-0012](./ADR.md))
 - SonarCloud (static analysis / quality gate)
 - GitHub Actions (CI)
 - Claude AI advisory review on pull requests
@@ -353,9 +353,21 @@ and `WORKER_METRICS_PORT` on each worker. It answers Prometheus's text format, c
 `prom-client`'s default process metrics plus one request histogram from `express-prom-bundle`
 (`http_request_duration_seconds`, labelled by method, status and the route pattern the router
 matched rather than the path that arrived), and answers `500` with an empty body if a collector
-throws. Queue depth, dead-letter count and read-model drift are not among the numbers it reports,
-so a scenario run's latency and throughput come from `autocannon`'s own output and Grafana is where
-the shape of the run over time is visible (ADR-0011).
+throws. The reconciler's carries three more: `queue_waiting_jobs` and `queue_failed_jobs` per
+queue, read from BullMQ at scrape time, and `readmodel_drift_repairs_total`. Only that process
+registers the depths, because a queue's depth is one number rather than one per reader; a depth
+Redis did not answer within two seconds reads `-1`, which is not the `0` of an empty queue.
+A scenario run's latency and throughput still come from `autocannon`'s own output, and Grafana is
+where the shape of the run over time is visible (ADR-0011).
+
+[`monitoring/alerts.yml`](./monitoring/alerts.yml) holds seven Prometheus rules over those numbers,
+loaded by `rule_files` and listed at http://localhost:9090/alerts once `npm run up` is running: a
+target that stopped answering, a failed set that is not empty, a queue backlog, the read model
+drifting, the storefront answering `503`, a p99 past a provisional 300 ms bar, and a depth that has been unreadable for five minutes - `-1` is neither `> 0` nor `> 1000`, so without that last one the two queue rules would go quiet and look healthy. Each says what
+to do rather than only what happened — the dead-letter one names `npm run retry-failed`. Two of
+them were fired on purpose against the running stack, which is in
+[`docs/e2e-evidence/2026-09-14/09-alerts.md`](./docs/e2e-evidence/2026-09-14/09-alerts.md); the
+reasoning, and why the rules are a file here rather than in Grafana, is in ADR-0012.
 
 `GET /api/products` takes `category` (exact match, optional, 256 characters), `sort=effectivePrice` (the only sort), `order=asc|desc` (default `asc`), `page` (default 1) and `pageSize` (1-100, default 20); the resulting offset may not exceed 10 000. `GET /api/products/:id` takes an id of digits only.
 
