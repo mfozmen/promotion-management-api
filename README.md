@@ -130,6 +130,7 @@ and the schema-drift check are in [docs/testing.md](./docs/testing.md).
 | [docs/testing.md](./docs/testing.md)                 | the test layers and what each one needs                                 |
 | [docs/e2e-cases/](./docs/e2e-cases)                  | the user journeys, written from the case study                          |
 | [docs/e2e-evidence/](./docs/e2e-evidence)            | what the runs measured, with each number's vantage point                |
+| [Form 5 - AI Appendix](<./Form 5_AI Appendix.docx>)  | how AI was used building this, the mistakes it made and who caught them |
 | [REVIEW.md](./REVIEW.md)                             | the review rulebook every change is held to                             |
 | [CONTRIBUTING.md](./CONTRIBUTING.md)                 | source layout, naming, the pull request process                         |
 
