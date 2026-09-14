@@ -199,6 +199,44 @@ and the schema-drift check are in [docs/testing.md](./docs/testing.md).
 | `monitoring/`  | Prometheus scrape config and the alert rules                                                                             |
 | `docs/`        | everything below                                                                                                         |
 
+## What we did not get to
+
+Written down rather than left for a reader to find, because a gap nobody names reads as a gap
+nobody saw.
+
+**Nothing ever deletes an ingestion row, and nothing deletes an uploaded file.**
+`ingestion_jobs` and `ingestion_chunks` have no retention policy: no scheduled delete, no
+archive, no `DELETE FROM` anywhere in the tree. The vendor files under `uploads/` are kept for
+the same reason they are written — a chunk names byte offsets into them, so a resumable import
+must still find its source — and nothing removes them once the import has finished. A 500 000-row
+weekly file costs 6 chunk rows and about 21 MB on disk, so the tables grow slowly and the
+directory does not; today's measured state is 64 chunk rows over 72 kB. The design question of
+when an import stops being needed was never asked, and the answer belongs with whoever runs this
+for more than a case study.
+
+**Two small tables never get vacuumed.** Measured on the live stack: `products` holds 500 464
+live rows against **2 dead** — the upsert skips a row whose values are unchanged, which is what
+keeps a weekly re-import from rewriting the catalogue. But `ingestion_jobs` (24 live, 40 dead)
+and `promotions` (13 live, 14 dead) have never been autovacuumed, because the default threshold
+is 50 rows plus 20 % of the live count and neither table is near it. Harmless at this size and
+worth a per-table `autovacuum_vacuum_threshold` before it is not.
+
+**An in-flight write gets a `500` when PostgreSQL drops its connection.** Restarting PostgreSQL
+under load: 49 of 49 reads answered `200` — the read path does not touch it — and 48 of 49 writes
+answered `201`, with the one that was in flight at the restart getting `500` from an
+`ECONNRESET`. `503` with a `Retry-After` is the better answer, since the failure is not the
+caller's and the request is safe to retry.
+
+**Three things a fuller system would have** and this one does not: an operator endpoint to abort
+a running import (Bull Board and `npm run retry-failed -- <queue>` are what exists), an
+Alertmanager destination so a firing rule reaches a person rather than only
+`http://localhost:9090/alerts`, and a measured replacement for `StorefrontSlow`'s provisional
+300 ms bar — which sits on a histogram bucket edge where the resolution to justify it does not
+exist (ADR-0012).
+
+Everything above was found by running the system rather than by reading it; the runs are in
+[docs/e2e-evidence/](./docs/e2e-evidence).
+
 ## Documentation
 
 | Document                                             | What it answers                                                         |
