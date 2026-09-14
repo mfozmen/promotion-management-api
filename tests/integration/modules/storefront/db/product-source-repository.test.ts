@@ -138,6 +138,16 @@ describe('ProductSourceRepository', () => {
     expect(rows.map((r) => r.id)).toEqual([one]);
   });
 
+  it('pages a category by the last id it saw, in the order the index holds', async () => {
+    const ids = await insert([{ sku: 'SKU-N1' }, { sku: 'SKU-N2' }, { sku: 'SKU-N3' }], 'jumpers');
+    await insert([{ sku: 'SKU-N4' }], 'socks');
+    const source = new ProductSourceRepository(db());
+
+    await expect(source.idsInCategory('jumpers', 0)).resolves.toEqual(ids);
+    await expect(source.idsInCategory('jumpers', ids[1]!)).resolves.toEqual([ids[2]]);
+    await expect(source.idsInCategory('jumpers', ids[2]!)).resolves.toEqual([]);
+  });
+
   it('reads the instant from the database clock, as epoch microseconds', async () => {
     const [one] = await insert([{ sku: 'SKU-F' }]);
 

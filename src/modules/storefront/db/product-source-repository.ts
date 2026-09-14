@@ -33,6 +33,10 @@ const CANDIDATE = (alias: string) =>
 /** The rows a recompute works from, their candidate promotions, and the instant
  *  PostgreSQL read all of it (ADR-0003). */
 export class ProductSourceRepository {
+  /** The page the announcement carries, which is also the cap `product.upserted`
+   *  validates against. */
+  static readonly PAGE = 1_000;
+
   constructor(private readonly db: Db) {}
 
   async read(ids: readonly number[]): Promise<{ rows: SourceRow[]; sourceReadAt: string }> {
@@ -65,6 +69,20 @@ export class ProductSourceRepository {
       })),
       sourceReadAt: selected[0]?.source_read_at ?? (await this.instant()),
     };
+  }
+
+  /** One page of a category, by keyset: an OFFSET scan re-reads every row it
+   *  skipped, and a 50 000-product category is fifty pages of that. The index is
+   *  `products (category, id)`. */
+  async idsInCategory(category: string, afterId: number): Promise<number[]> {
+    const { rows } = await this.db.execute<Record<string, unknown> & { id: number }>(sql`
+      select id from products
+      where category = ${category} and id > ${afterId}
+      order by id
+      limit ${ProductSourceRepository.PAGE}
+    `);
+
+    return rows.map((row) => Number(row.id));
   }
 
   /** An empty batch still orders its removals, and the same clock has to render
