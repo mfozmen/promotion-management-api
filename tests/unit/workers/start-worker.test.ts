@@ -3,7 +3,7 @@ import { logger } from '../../../src/shared/logger.js';
 import { EventQueue } from '../../../src/shared/queue/event-queue.js';
 import { startWorker } from '../../../src/workers/start-worker.js';
 
-/** The three entry points are two lines each plus their wiring; this is what they all run. */
+/** What every entry point runs, whatever else it wires up afterwards. */
 describe('startWorker', () => {
   const close = vi.fn<() => Promise<void>>();
   const listeners = process.listeners('SIGTERM');
@@ -90,7 +90,8 @@ describe('startWorker', () => {
       { worker: 'event-handler', path: 'forced' },
       'shutdown complete',
     );
-    expect(exit).toHaveBeenCalledWith(0);
+    // A forced path abandoned whatever was in flight; `0` would report that as a clean finish.
+    expect(exit).toHaveBeenCalledWith(1);
   });
 
   it('exits non-zero when a close fails, so the restart is not silent', async () => {
