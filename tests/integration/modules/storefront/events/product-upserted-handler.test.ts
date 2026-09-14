@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ProductReadRepository } from '@src/modules/storefront/db/product-read-repository.js';
 import { ProductSourceRepository } from '@src/modules/storefront/db/product-source-repository.js';
-import {
-  ProductWriteRepository,
-  type ProductEntry,
-} from '@src/modules/storefront/db/product-write-repository.js';
+import { ProductWriteRepository } from '@src/modules/storefront/db/product-write-repository.js';
+import type { ProductEntry } from '@src/modules/storefront/domain/dto/product-entry.js';
 import { ProductUpsertedHandler } from '@src/modules/storefront/events/product-upserted-handler.js';
 import { products } from '@src/modules/product/db/schema/products.js';
 import { pino } from 'pino';

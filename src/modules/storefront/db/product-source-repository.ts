@@ -1,16 +1,7 @@
 import { inArray, sql } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
 import { products } from '../../product/db/schema/products.js';
-
-export interface SourceRow {
-  id: number;
-  sku: string;
-  name: string;
-  category: string;
-  basePriceCents: number;
-  stockQuantity: number;
-  pricingRulesVersion: number | null;
-}
+import type { SourceRow } from '../domain/dto/source-row.js';
 
 /** Epoch microseconds as digits: two renderings of a timestamp do not compare,
  *  and `clock_timestamp()::text` follows the session `TimeZone` (ADR-0003). */

@@ -1,18 +1,6 @@
 import type { Redis } from 'ioredis';
 import { ProductReadRepository } from './product-read-repository.js';
-
-export interface ProductEntry {
-  id: number;
-  sku: string;
-  name: string;
-  category: string;
-  basePriceCents: number;
-  effectivePriceCents: number;
-  stockQuantity: number;
-  promotionId?: number;
-  promotionName?: string;
-  pricingRulesVersion?: number;
-}
+import type { ProductEntry } from '../domain/dto/product-entry.js';
 
 /** A token is `<epoch microseconds>:<category>`, the category empty once the
  *  product is gone. Microseconds stay exact as Lua numbers until the year 2255. */

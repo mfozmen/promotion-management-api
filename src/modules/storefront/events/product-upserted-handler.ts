@@ -1,6 +1,7 @@
 import type { Logger } from 'pino';
 import type { ProductSourceRepository } from '../db/product-source-repository.js';
-import type { ProductEntry, ProductWriteRepository } from '../db/product-write-repository.js';
+import type { ProductWriteRepository } from '../db/product-write-repository.js';
+import type { ProductEntry } from '../domain/dto/product-entry.js';
 import type { ProductUpserted } from '../../product/events/product-upserted.js';
 
 /** Recomputes the read-model entry for every product an announcement named.
