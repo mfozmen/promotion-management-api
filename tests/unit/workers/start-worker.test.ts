@@ -3,7 +3,7 @@ import { logger } from '../../../src/shared/logger.js';
 import { EventQueue } from '../../../src/shared/queue/event-queue.js';
 import { scheduleLost, startWorker } from '../../../src/workers/start-worker.js';
 
-/** The three entry points are two lines each plus their wiring; this is what they all run. */
+/** What every entry point runs, whatever else it wires up afterwards. */
 describe('startWorker', () => {
   const close = vi.fn<() => Promise<void>>();
   const listeners = process.listeners('SIGTERM');

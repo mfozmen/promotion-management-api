@@ -111,9 +111,7 @@ describe('the worker services', () => {
     '%s is given longer to stop than it is given to drain',
     async (name) => {
       // Why the grace period has to exceed the drain budget: ADR-0003. `.env.example` is read
-      // too, because that is the file that invites raising the budget. `api` carries the grace
-      // period but does not yet spend it as a bound on its queue and pool close (ADR-0003);
-      // that belongs to the api's own shutdown.
+      // too, because that is the file that invites raising the budget.
       const service = (await services())[name] ?? {};
       const grace = Number(String(service['stop_grace_period']).replace('s', ''));
       const environment = service['environment'] as Record<string, string>;

@@ -4,6 +4,7 @@ import { loadConfig } from '../shared/config.js';
 import { GracefulShutdown } from '../shared/graceful-shutdown.js';
 import { logger } from '../shared/logger.js';
 import { EventQueue } from '../shared/queue/event-queue.js';
+import type { QueueName } from '../shared/queue/queue-name.js';
 
 /** The three services in `docker-compose.yml`; a name that is not one of them is not a worker. */
 type WorkerName = 'event-handler' | 'ingestion-worker' | 'reconciler';
@@ -31,7 +32,7 @@ export function scheduleLost(error: Error): boolean {
  * producer handle on all four queues in every process, so the line names what this one drains
  * rather than what it holds, and an empty list is how an idle queue is told from a drained one.
  */
-export function startWorker(name: WorkerName, consuming: string[] = []): Connected {
+export function startWorker(name: WorkerName, consuming: QueueName[] = []): Connected {
   const config = loadConfig();
   const queue = EventQueue.connect(
     config.REDIS_URL,

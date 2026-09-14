@@ -10,7 +10,10 @@ interface Sweep {
 export class ReconcilerRunHandler {
   constructor(private readonly sweep: Sweep) {}
 
-  async handle(): Promise<void> {
+  /** The name is checked here rather than in the entry point: `readmodel.rebuild` shares this
+   *  queue and has no handler yet, and a process that acknowledged it would drop a rebuild. */
+  async handle(name: string): Promise<void> {
+    if (name !== 'reconciler.run') throw new Error(`no handler for ${name}`);
     await this.sweep.execute();
   }
 }
