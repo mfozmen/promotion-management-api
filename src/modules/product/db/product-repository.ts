@@ -81,9 +81,21 @@ export class ProductRepository {
         // silently never update a product created through the API, which has
         // both provenance columns null. The schema checks the two columns are
         // null together, so one branch covers both (REVIEW.md 2.6).
-        setWhere: sql`${products.ingestJobId} is null
-          or (excluded.ingest_job_id, excluded.ingest_source_offset)
-             > (${products.ingestJobId}, ${products.ingestSourceOffset})`,
+        //
+        // And only when something actually changed. A weekly vendor file is mostly
+        // the same catalogue, so without this a re-import rewrites every row it
+        // touches: 500 000 dead tuples, 500 000 `updated_at` values moved, and an
+        // announcement per batch for products nobody edited. `IS DISTINCT FROM`
+        // over the row handles nulls the way `<>` does not — a column going to or
+        // from null is a change, and `null <> null` is null rather than true.
+        setWhere: sql`(${products.ingestJobId} is null
+            or (excluded.ingest_job_id, excluded.ingest_source_offset)
+               > (${products.ingestJobId}, ${products.ingestSourceOffset}))
+          and (${products.name}, ${products.category}, ${products.basePriceCents},
+               ${products.stockQuantity}, ${products.pricingRulesVersion})
+              is distinct from
+              (excluded.name, excluded.category, excluded.base_price_cents,
+               excluded.stock_quantity, excluded.pricing_rules_version)`,
       })
       .returning({ sku: products.sku, id: products.id });
 

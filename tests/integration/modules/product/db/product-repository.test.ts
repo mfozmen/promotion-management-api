@@ -176,6 +176,39 @@ describe('ProductRepository.upsertMany', () => {
     expect(ids[0]).toBe((await rowFor(existing.sku))?.id);
   });
 
+  it('skips a row whose values are unchanged, so a weekly re-import rewrites nothing', async () => {
+    // A vendor's weekly file is mostly the same catalogue. Without a value guard
+    // every re-import rewrites every row it touches — 500 000 dead tuples and
+    // 500 000 `updated_at` values moved for products nobody edited — which is the
+    // cost ADR-0004's `updated_at` bullet says the writer avoids.
+    const existing = product({ ingestJobId: 3, ingestSourceOffset: 10 });
+    await new ProductRepository(db()).upsertMany(db(), [existing]);
+    const before = (await rowFor(existing.sku))?.updatedAt;
+
+    // Next week's file: a later row, byte for byte the same product.
+    const ids = await new ProductRepository(db()).upsertMany(db(), [
+      { ...existing, ingestJobId: 4, ingestSourceOffset: 10 },
+    ]);
+
+    const after = await rowFor(existing.sku);
+    expect(after?.updatedAt?.getTime()).toBe(before?.getTime());
+    // Still announced: the caller hands back an id for every row it was given,
+    // because a product the read model has not seen is not the same as one that
+    // did not change here.
+    expect(ids).toEqual([after?.id]);
+  });
+
+  it('writes a row whose stock alone moved, because that is a change', async () => {
+    const existing = product({ ingestJobId: 3, ingestSourceOffset: 10, stockQuantity: 5 });
+    await new ProductRepository(db()).upsertMany(db(), [existing]);
+
+    await new ProductRepository(db()).upsertMany(db(), [
+      { ...existing, ingestJobId: 4, stockQuantity: 4 },
+    ]);
+
+    expect((await rowFor(existing.sku))?.stockQuantity).toBe(4);
+  });
+
   it('writes nothing and returns nothing for an empty batch', async () => {
     expect(await new ProductRepository(db()).upsertMany(db(), [])).toEqual([]);
   });

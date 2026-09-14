@@ -19,7 +19,7 @@ export default defineConfig({
       // `sonar-project.properties` repeats the list because SonarCloud reads its own.
       //
       // Everything an excluded file decides lives in a class it calls, so coverage
-      // still sees it: `ChunkJobHandler` carries the ingestion worker's concurrency
+      // still sees it: `ChunkProcessHandler` carries the ingestion worker's concurrency
       // and its lock duration for that reason. The last thing excluded here shipped
       // a 404 for every route in production with a green suite.
       exclude: [
