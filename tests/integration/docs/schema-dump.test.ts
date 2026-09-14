@@ -12,8 +12,14 @@ import { onAdmin } from '../db.js';
  */
 const FACTS = `
   select 'column ' || table_name || '.' || column_name || ' ' || data_type || ' ' || udt_name
-         || ' null=' || is_nullable || ' default=' || coalesce(column_default, '-') as fact
+         || ' null=' || is_nullable || ' default=' || coalesce(column_default, '-')
+         || ' identity=' || is_identity || coalesce(identity_generation, '') as fact
   from information_schema.columns where table_schema = 'public'
+  union all
+  select 'sequence ' || sequence_name || ' ' || data_type || ' start=' || start_value
+         || ' increment=' || increment || ' min=' || minimum_value || ' max=' || maximum_value
+         || ' cycle=' || cycle_option
+  from information_schema.sequences where sequence_schema = 'public'
   union all
   select 'enum ' || t.typname || ' ' || e.enumsortorder || ' ' || e.enumlabel
   from pg_enum e join pg_type t on t.oid = e.enumtypid

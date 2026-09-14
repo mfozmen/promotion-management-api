@@ -34,11 +34,9 @@ file reproduces what the command emits.
 the file being re-taken. It does not diff the two files: it builds one database from the
 migrations and one by executing this file, then compares what PostgreSQL's own catalog reports
 for each — every column with its type, nullability and default, every enum label in order, every
-index, constraint, trigger, function, view and extension. A text diff would fail on every
+index, constraint, trigger, function, view, sequence and extension, and whether a column is an identity and of which kind. A text diff would fail on every
 unchanged run because of the token above, and a check that fails when nothing is wrong is
-switched off within a week. The only thing the test drops from the file is the two `
-estrict`
-lines, which are psql meta-commands a server cannot execute; anything else dropped there would
+switched off within a week. The only thing the test drops from the file is the `\restrict` and `\unrestrict` lines, which are psql meta-commands a server cannot execute; anything else dropped there would
 be a difference it stops seeing. It was proved by adding a column to `0000_write_store.sql` and
 watching it name that column, not by arguing that it would.
 
