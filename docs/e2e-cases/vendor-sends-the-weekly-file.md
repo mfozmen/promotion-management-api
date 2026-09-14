@@ -109,7 +109,7 @@ Test cases
 - Given: the 500,000-row file
 - When: it is imported with the worker's memory sampled every two seconds
 - Then: peak resident memory stays under the plan's cap
-- Measure: peak RSS across three runs, each under 256 MB; the median is the reported number
+- Measure: peak memory across three runs, each under the 256 MiB the case study sets; the median is the reported number. Record which accounting produced it — `docker stats`' container figure is what the limit applies to, and a host `ps` RSS for the same run is a different quantity that has been mistaken for it
 
 ### vendor-8
 
