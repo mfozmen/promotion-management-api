@@ -15,6 +15,8 @@ Acceptance criteria
 - The file is accepted in one request and I get an identifier I can ask about.
 - I can see whether the import is still running, finished, or failed.
 - When it finishes, every row of the file is in the catalogue.
+- A file I have already sent is not imported a second time; I am told it is the one I sent
+  before and given that import's identifier (owner decision on issue #15).
 
 Test cases
 
@@ -34,7 +36,7 @@ Test cases
 ### vendor-2
 
 - Precondition: `POST /api/vendor/imports`
-- Given: the same file uploaded a second time
+- Given: next week's file from the same vendor, carrying the same SKUs with some prices changed
 - When: the second import finishes
 - Then: no SKU exists twice; changed prices are updated, unchanged rows are unchanged
 - Measure: product count after the second import equals the count after the first
@@ -45,6 +47,15 @@ Test cases
 - Given: a file where a handful of rows are malformed
 - When: the import finishes
 - Then: the well-formed rows are in the catalogue, the malformed ones are reported with their line numbers, and the import does not stop at the first bad row
+- Measure: none
+
+### vendor-10
+
+- Precondition: `POST /api/vendor/imports`
+- Given: a file the vendor has already uploaded, whose import is registered
+- When: the vendor uploads the identical file again
+- Then: it is refused as a duplicate and the answer carries the first import's job id, so the
+  vendor can poll that one instead of starting a second run over the same rows
 - Measure: none
 
 ## S2 Every row goes through ModaCo's pricing rules
