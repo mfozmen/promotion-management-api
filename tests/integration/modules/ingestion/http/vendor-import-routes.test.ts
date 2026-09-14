@@ -123,7 +123,7 @@ describe('POST /api/vendor/imports', () => {
       .attach('file', csv, 'b.csv');
 
     expect(refused.status).toBe(409);
-    expect(readdirSync(uploads).length).toBe(before);
+    expect(readdirSync(uploads)).toHaveLength(before);
   });
 
   it('leaves no file behind when the request names no vendor', async () => {
@@ -131,7 +131,30 @@ describe('POST /api/vendor/imports', () => {
 
     await request(appWith()).post('/api/vendor/imports').attach('file', vendorCsv(5), 'weekly.csv');
 
-    expect(readdirSync(uploads).length).toBe(before);
+    expect(readdirSync(uploads)).toHaveLength(before);
+  });
+
+  it('keeps the file when the announcement fails after the job is committed', async () => {
+    // The transaction commits before the chunks are announced, so a throw from
+    // here on belongs to a job that exists and whose chunks name this file.
+    // Discarding it would leave a running job whose bytes no worker can open,
+    // behind a one-import-per-vendor index that refuses the re-upload.
+    const before = readdirSync(uploads).length;
+    const app = createApp(
+      appDeps({
+        db: db(),
+        queue: { publish: () => Promise.reject(new Error('redis is away')) } as never,
+        uploads: { dir: uploads, chunkBytes: 1024, maxBytes: 5 * 1024 * 1024 },
+      }),
+    );
+
+    const res = await request(app)
+      .post('/api/vendor/imports')
+      .field('vendor', 'announce-fails')
+      .attach('file', vendorCsv(10), 'weekly.csv');
+
+    expect(res.status).toBe(500);
+    expect(readdirSync(uploads)).toHaveLength(before + 1);
   });
 
   it('rejects a file sent with no vendor named', async () => {

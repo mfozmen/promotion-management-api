@@ -44,7 +44,6 @@ export function vendorImportRoutes(deps: {
   router.post('/', (req: Request, res: Response, next) => {
     upload(req, res, (error: unknown) => {
       if (error instanceof multer.MulterError) {
-        void discard(req);
         next(
           error.code === 'LIMIT_FILE_SIZE'
             ? createError(413, 'Vendor file is larger than this endpoint accepts')
@@ -53,7 +52,6 @@ export function vendorImportRoutes(deps: {
         return;
       }
       if (error !== undefined && error !== null) {
-        void discard(req);
         next(error);
         return;
       }
@@ -83,25 +81,23 @@ async function registered(
     if (req.file === undefined) throw createError(400, 'Attach the vendor file as `file`');
 
     const vendor = typeof req.body?.vendor === 'string' ? req.body.vendor.trim() : '';
-    if (vendor === '') throw createError(400, 'Name the vendor in a `vendor` field');
+    if (vendor === '') {
+      await rm(req.file.path, { force: true });
+      throw createError(400, 'Name the vendor in a `vendor` field');
+    }
 
     const outcome = await register.execute(vendor, req.file.filename);
     if (!outcome.ok) {
+      // Discarded only here and above, where no row references the file. Past
+      // this point the job is committed and its chunks name these bytes, so a
+      // later failure must leave a resumable import rather than delete its source.
+      await rm(req.file.path, { force: true });
       const [status, message] = REFUSED[outcome.reason];
       throw createError(status, message);
     }
 
     res.status(202).json({ jobId: outcome.jobId, chunksTotal: outcome.chunksTotal });
   } catch (error) {
-    await discard(req);
     next(error);
   }
-}
-
-/**
- * Nothing references an upload that was not registered, so a file left in the
- * upload directory is one no job, no sweep and no operator can reclaim.
- */
-async function discard(req: Request): Promise<void> {
-  if (req.file !== undefined) await rm(req.file.path, { force: true });
 }
