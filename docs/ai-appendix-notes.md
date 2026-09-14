@@ -895,6 +895,20 @@ Each was written carefully, each was wrong, and none was caught by reading it ag
 - Resolution: the guard, its configuration variable and its tests were deleted before the pull request merged. What bounds memory is the chunked pipeline and the checkpoints; what turns an overrun into a stack trace instead of a silent kill is `--max-old-space-size` set below the cgroup limit. The issue that asked for it records why both variants were refused, so neither is re-proposed from it.
 - Lesson: a threshold nobody has measured against is a number nobody chose, defended by a test nobody can fail. Deleting working code is a result.
 
+### 2026-09-14 — The design's central claim failed through an event, not a query
+
+- Challenge: the read model exists so a storefront read never touches PostgreSQL, and a database restart killed the api process anyway. `createPool` attached no `'error'` listener, and node-postgres documents that an error on an idle client with no listener is fatal to the process. So the claim did not fail where it was defended — every query path was correct and the recompute survived the restart perfectly — it failed through an unhandled event, in the one component whose availability the whole design is about.
+- Verification: found by restarting PostgreSQL against the running stack rather than by reading the code, and the verification is the real lesson. The reviewer's first run passed _without_ the fix: there were no idle connections at the moment of the restart, so the error path never ran and the api survived. Forcing a dozen writes first, to leave clients idle in the pool, is what made the failure reproducible — a green run against an unexercised path is not evidence.
+- Resolution: an `'error'` listener that logs and lets the pool discard the client (#128), with a unit test for the handler and the restart repeated against warm connections.
+- Lesson: an availability guarantee has to be tested by removing the dependency, not by reading the code that avoids it. And a fault-injection run that passes needs one more question asked of it — was the path actually taken?
+
+### 2026-09-14 — Five notes that said "not yet", every one outlived by the work
+
+- Challenge: one file pair carried five sentences describing something as absent — "Scenario B has no measurement" beside Scenario B's measurement, "nothing runs that handler yet" after the handler shipped, "one of the four queues has a consumer" when all four did, a payload "whose module does not exist", and "the monitoring profile is not built yet" written directly above the dashboard tonight's evidence was read off. Each was true when written and a lie by the time it was read, and each read as a considered statement rather than as a stale one.
+- Verification: found by reading the two documents against the tree end to end, not by any test. Two of the five were introduced _while correcting the other three_, in the same session — which is the part worth recording, because it shows the failure is not carelessness but the shape of the note itself.
+- Resolution: all five deleted or rewritten, and REVIEW.md gained 13.15 — an absence note is a claim with an expiry date, and the pull request that builds the thing owns deleting it. Rule 8b already covered a comment inside a diff; nothing covered prose two hundred lines from the code that falsifies it.
+- Lesson: "not yet" is the only kind of sentence guaranteed to become false, and nothing in a test suite or a type checker can notice. The fix is a rule about who deletes it, not a better sentence.
+
 ## Overall reflection
 
 - Estimated ratio: for the scripting and documentation work measured so far, the code is roughly 80 % AI-generated and lightly edited; the documentation started AI-generated and is closer to half human, because nearly every correction recorded above came from a human or an agent reading a claim against the tree.
