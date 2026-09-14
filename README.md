@@ -59,7 +59,11 @@ process that migrates.
 - `ingestion-worker` will drain `ingestion` for the chunk processor; it consumes nothing yet
   (issue #105). It is capped at 256 MiB and half a CPU — the case study's own constraint, and what
   Scenario A's 500 000-row import is measured against — and runs with
-  `NODE_OPTIONS=--max-old-space-size=192` so V8's heap ceiling sits under that cap.
+  `NODE_OPTIONS=--max-old-space-size=192` so V8's heap ceiling sits under that cap. One
+  containerised run at those limits processed all 500 000 rows in 6 of 6 chunks with a peak of
+  49.9 MiB of the 256 by container accounting, and a V8 heap flat across chunks (25 MB falling to
+  18 MB); the reasoning and the host-side figures are in ADR-0005. Scenario B has no measurement
+  yet.
 
 Each start-up line carries a `consuming` list: `maintenance` for the reconciler, empty for the
 other two, so an idle queue is not read as a drained one. None of the three has a healthcheck, so
