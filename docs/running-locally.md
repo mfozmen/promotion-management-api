@@ -93,7 +93,7 @@ Docker-only reader has:
 Demo data. Once the schema is up, one more command fills it:
 
 ```bash
-DATABASE_URL=postgres://promo:promo@localhost:5432/promotion npm run seed
+npm run seed
 ```
 
 It applies [`scripts/demo-seed.sql`](../scripts/demo-seed.sql) as a single transaction: 1 000 products over `Electronics`, `Apparel`, `Home` and `Sports`, and one seven-day 20 % flash sale on `Electronics`. It fills PostgreSQL and nothing else: no worker builds the Redis read model, so a seeded stack still answers `503` on both product routes (ADR-0006). It is a script rather than a migration because a production database must be able to skip it; the `ingestion` pricing rules a vendor import applies are reference data, not demo data, and are seeded by migration `0001_seed_pricing_rules.sql`.

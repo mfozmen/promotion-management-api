@@ -91,9 +91,9 @@ to, and a category-wide flash sale under read load, both in
 ## Start here
 
 ```bash
-cp .env.example .env    # placeholders only; .env is gitignored
-npm run up              # stores, api, three workers, test stores, monitoring
-DATABASE_URL=postgres://promo:promo@localhost:5432/promotion npm run seed
+cp .env.example .env   # its defaults are the compose ones; .env is gitignored
+npm run up             # stores, api, three workers, test stores, monitoring
+npm run seed           # 1 000 products and a flash sale
 ```
 
 `npm run up` is the whole boot: `api` migrates before it listens, so the command returns only once
