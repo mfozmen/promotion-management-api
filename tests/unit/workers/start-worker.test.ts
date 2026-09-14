@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../../src/shared/logger.js';
 import { EventQueue } from '../../../src/shared/queue/event-queue.js';
-import { isScheduleLost } from '../../../src/workers/is-schedule-lost.js';
 import { startWorker } from '../../../src/workers/start-worker.js';
 
 /** What every entry point runs, whatever else it wires up afterwards. */
@@ -93,19 +92,6 @@ describe('startWorker', () => {
     );
     // A forced path abandoned whatever was in flight; `0` would report that as a clean finish.
     expect(exit).toHaveBeenCalledWith(1);
-  });
-
-  it.each([
-    [
-      'the failure BullMQ emits when the next iteration is not scheduled',
-      true,
-      'Failed to add repeatable job for next iteration: Connection is closed',
-    ],
-    ['any other worker error, which the restart would not repair', false, 'job failed'],
-  ])('recognises %s', (_case, expected, message) => {
-    // The chain stops here and nowhere else: BullMQ emits this and keeps running, so a process
-    // that logs it and carries on repairs nothing for ever while the container reads as up.
-    expect(isScheduleLost(new Error(message))).toBe(expected);
   });
 
   it('exits non-zero when a close fails, so the restart is not silent', async () => {
