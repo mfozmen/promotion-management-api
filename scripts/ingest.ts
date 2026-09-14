@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, rm } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { eventRegistry } from '../src/events/event-registry.js';
 import { eventRouting } from '../src/events/event-routing.js';
@@ -51,6 +51,8 @@ try {
   }).execute(vendor, fileRef);
 
   if (!outcome.ok) {
+    // The copy above is referenced by nothing once the registration is refused.
+    await rm(join(config.UPLOAD_DIR, fileRef), { force: true });
     console.error(
       outcome.reason === 'vendor-busy'
         ? `${vendor} already has an import running; wait for it to finish`

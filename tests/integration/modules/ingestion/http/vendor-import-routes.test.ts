@@ -84,7 +84,7 @@ describe('POST /api/vendor/imports', () => {
       .select()
       .from(ingestionJobs)
       .where(eq(ingestionJobs.id, res.body.jobId));
-    expect(readdirSync(uploads).length).toBe(before + 1);
+    expect(readdirSync(uploads)).toHaveLength(before + 1);
     // What is stored is a name inside that directory, never a path: the worker
     // resolves it against its own UPLOAD_DIR from a different filesystem.
     expect(job?.fileRef).not.toContain('/');
@@ -105,6 +105,33 @@ describe('POST /api/vendor/imports', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error.message).toMatch(/already/i);
+  });
+
+  it('leaves no file behind when the registration is refused', async () => {
+    // Nothing references the upload once the registration is refused, so a file
+    // left in UPLOAD_DIR is one no job, no sweep and no operator can ever reclaim.
+    const csv = vendorCsv(10);
+    await request(appWith())
+      .post('/api/vendor/imports')
+      .field('vendor', 'leak-a')
+      .attach('file', csv, 'a.csv');
+
+    const before = readdirSync(uploads).length;
+    const refused = await request(appWith())
+      .post('/api/vendor/imports')
+      .field('vendor', 'leak-b')
+      .attach('file', csv, 'b.csv');
+
+    expect(refused.status).toBe(409);
+    expect(readdirSync(uploads).length).toBe(before);
+  });
+
+  it('leaves no file behind when the request names no vendor', async () => {
+    const before = readdirSync(uploads).length;
+
+    await request(appWith()).post('/api/vendor/imports').attach('file', vendorCsv(5), 'weekly.csv');
+
+    expect(readdirSync(uploads).length).toBe(before);
   });
 
   it('rejects a file sent with no vendor named', async () => {

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import createError from 'http-errors';
@@ -43,6 +44,7 @@ export function vendorImportRoutes(deps: {
   router.post('/', (req: Request, res: Response, next) => {
     upload(req, res, (error: unknown) => {
       if (error instanceof multer.MulterError) {
+        void discard(req);
         next(
           error.code === 'LIMIT_FILE_SIZE'
             ? createError(413, 'Vendor file is larger than this endpoint accepts')
@@ -51,6 +53,7 @@ export function vendorImportRoutes(deps: {
         return;
       }
       if (error !== undefined && error !== null) {
+        void discard(req);
         next(error);
         return;
       }
@@ -90,6 +93,15 @@ async function registered(
 
     res.status(202).json({ jobId: outcome.jobId, chunksTotal: outcome.chunksTotal });
   } catch (error) {
+    await discard(req);
     next(error);
   }
+}
+
+/**
+ * Nothing references an upload that was not registered, so a file left in the
+ * upload directory is one no job, no sweep and no operator can reclaim.
+ */
+async function discard(req: Request): Promise<void> {
+  if (req.file !== undefined) await rm(req.file.path, { force: true });
 }
