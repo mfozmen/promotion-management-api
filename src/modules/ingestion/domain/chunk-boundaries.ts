@@ -9,7 +9,7 @@ const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
  * Splits a vendor file into byte ranges a worker can process independently.
  *
  * One streaming pass, and nothing but the offsets is kept: the file is the size
- * of the catalogue and must never be held in memory (REVIEW.md 4.1). Every
+ * of the catalogue and must never be held in memory. Every
  * boundary moves *forward* to the byte after a newline, so a row belongs to
  * exactly one chunk — moving backward would let two chunks claim the same row,
  * and the upsert would hide it rather than fail.

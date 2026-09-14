@@ -14,7 +14,7 @@ const STOCK = /^\d+$/;
  * The price is read digit by digit rather than through `Number`: `8.70 * 100` is
  * `869.9999999999999` in IEEE 754, and truncating that pays the vendor 869 cents
  * for an 870-cent product. Padding the fraction to two places and concatenating
- * is exact for every input the contract allows (REVIEW.md 1.1).
+ * is exact for every input the contract allows.
  */
 export function parseVendorRow(line: string): VendorRowOutcome {
   const fields = splitCsvLine(line.endsWith('\r') ? line.slice(0, -1) : line);
