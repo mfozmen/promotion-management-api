@@ -1,6 +1,8 @@
 import { asc, desc, eq } from 'drizzle-orm';
+import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
 import { pricingRules } from '@src/modules/pricing/db/schema/pricing-rules.js';
+import { PromotionResolver } from '@src/modules/promotion/domain/promotion-resolver.js';
 import { useTestDatabase } from '../../db.js';
 
 const db = useTestDatabase();
@@ -74,9 +76,45 @@ describe('seeded pricing rules', () => {
     expect(edited!.updatedAt.getTime()).toBeGreaterThan(edited!.createdAt.getTime());
   });
 
-  it('carries no promotion-typed rules yet, because the resolver rules are #36', async () => {
-    const rows = await db().select().from(pricingRules).where(eq(pricingRules.type, 'promotion'));
+  it('seeds a promotion policy of four rules at distinct priorities', async () => {
+    const rows = await db()
+      .select()
+      .from(pricingRules)
+      .where(eq(pricingRules.type, 'promotion'))
+      .orderBy(desc(pricingRules.priority));
 
-    expect(rows).toEqual([]);
+    // The one place a seeded rule is asserted: this is a migration row, so it
+    // changes by commit and the assertion changes with it. Every other test
+    // inserts the rule it argues about. Four because an event names one
+    // outcome, and two candidates and one candidate are four outcomes.
+    expect(rows.map((row) => [row.name, row.priority])).toEqual([
+      ['product-only', 30],
+      ['category-only', 25],
+      ['lower-price-product', 20],
+      ['lower-price-category', 15],
+    ]);
+    expect(new Set(rows.map((row) => row.priority)).size).toBe(rows.length);
+    expect(rows.every((row) => row.active)).toBe(true);
+  });
+
+  it('prices the seeded policy the way the shopper is promised, through the resolver itself', async () => {
+    const rows = await db().select().from(pricingRules);
+    const resolver = await PromotionResolver.fromRules(rows, pino({ level: 'silent' }));
+    const facts = (productPriceCents: number | null, categoryPriceCents: number | null) => ({
+      category: 'knitwear',
+      stockQuantity: 5,
+      basePriceCents: 10_000,
+      productPriceCents,
+      categoryPriceCents,
+    });
+
+    // A 5 % product promotion inside a 50 % category sale takes the sale price.
+    await expect(resolver.select(facts(9_500, 5_000))).resolves.toBe('category');
+    await expect(resolver.select(facts(5_000, 9_500))).resolves.toBe('product');
+    await expect(resolver.select(facts(5_000, 5_000))).resolves.toBe('product');
+    // And the arity-one pair, which is what keeps a later exclusion rule reachable.
+    await expect(resolver.select(facts(9_500, null))).resolves.toBe('product');
+    await expect(resolver.select(facts(null, 5_000))).resolves.toBe('category');
+    await expect(resolver.select(facts(null, null))).resolves.toBeUndefined();
   });
 });
