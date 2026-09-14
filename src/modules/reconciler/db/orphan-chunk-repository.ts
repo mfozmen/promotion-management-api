@@ -1,15 +1,22 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from '../../../shared/db/client.js';
 
-/** The chunks of a still-running import that no worker holds, and the jobs whose
- *  work is finished but whose status never moved. Both keep a vendor locked out
- *  of importing (issue #134). */
+/** The chunks of a still-running import that no worker holds. Both a chunk that
+ *  was never started and one whose holder died look the same in the table, so
+ *  the grace window is what separates "abandoned" from "queued a moment ago":
+ *  a lease is only stale once it has been expired for longer than a lease, and
+ *  a job is only a candidate once it has gone that long without progress. */
 export class OrphanChunkRepository {
+  /** A run repairs at most this many chunks, so one enormous backlog cannot
+   *  hold the five-minute tick; the next run takes the rest. */
+  static readonly LIMIT = 1_000;
+
   constructor(private readonly db: Db) {}
 
-  /** Exactly the shape `IngestionRepository.claimChunk` will accept, so a job
-   *  this returns is one a worker can take. */
-  async orphaned(): Promise<{ jobId: number; chunkIndex: number }[]> {
+  /** Exactly the shape `IngestionRepository.claimChunk` accepts, so a chunk this
+   *  returns is one a worker can take. */
+  async orphaned(graceMs: number): Promise<{ jobId: number; chunkIndex: number }[]> {
+    const grace = sql`make_interval(secs => ${graceMs / 1000})`;
     const { rows } = await this.db.execute<
       Record<string, unknown> & { job_id: number; chunk_index: number }
     >(sql`
@@ -17,33 +24,23 @@ export class OrphanChunkRepository {
       from ingestion_chunks c
       join ingestion_jobs j on j.id = c.job_id
       where j.status = 'running'
+        and j.updated_at < now() - ${grace}
         and (c.status = 'pending'
-             or (c.status = 'running' and (c.lease_until is null or c.lease_until < now())))
+             or (c.status = 'running'
+                 and (c.lease_until is null or c.lease_until < now() - ${grace})))
       order by c.job_id, c.chunk_index
+      limit ${OrphanChunkRepository.LIMIT}
     `);
 
     return rows.map((row) => ({ jobId: Number(row.job_id), chunkIndex: Number(row.chunk_index) }));
   }
 
-  /** A worker that died between its last checkpoint and `completeJobIfDone`
-   *  leaves a job running with nothing left to do. The counters are read in the
-   *  statement that settles it, so they are final by construction. */
-  async settleFinishedJobs(): Promise<number[]> {
-    const { rows } = await this.db.execute<Record<string, unknown> & { id: number }>(sql`
-      update ingestion_jobs j
-      set status = 'completed',
-          chunks_done = (select count(*) from ingestion_chunks c
-                         where c.job_id = j.id and c.status = 'done'),
-          rows_processed = (select coalesce(sum(c.rows_processed), 0) from ingestion_chunks c
-                            where c.job_id = j.id),
-          rows_rejected = (select coalesce(sum(c.rows_rejected), 0) from ingestion_chunks c
-                           where c.job_id = j.id),
-          updated_at = now()
-      where j.status = 'running'
-        and not exists (select 1 from ingestion_chunks c
-                        where c.job_id = j.id and c.status <> 'done')
-      returning j.id
-    `);
+  /** Every job still running, so the caller can ask the ingestion module to
+   *  settle the ones whose chunks all finished. */
+  async runningJobIds(): Promise<number[]> {
+    const { rows } = await this.db.execute<Record<string, unknown> & { id: number }>(
+      sql`select id from ingestion_jobs where status = 'running' order by id`,
+    );
 
     return rows.map((row) => Number(row.id));
   }

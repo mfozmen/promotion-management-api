@@ -41,19 +41,33 @@ async function job(
   return inserted!.id;
 }
 
+const GRACE_MS = 90_000;
+/** The grace window measures from the job's own progress, so a fixture has to
+ *  look like it has been sitting rather than like it was just registered. */
+async function aged(id: number): Promise<number> {
+  await db()
+    .update(ingestionJobs)
+    .set({ updatedAt: new Date(Date.now() - 3_600_000) })
+    .where(eq(ingestionJobs.id, id));
+
+  return id;
+}
+
 const expired = new Date(Date.now() - 3_600_000);
 const held = new Date(Date.now() + 3_600_000);
 
 describe('OrphanChunkRepository', () => {
   it('finds the chunks of a running import that no worker holds', async () => {
-    const abandoned = await job([
-      { status: 'running', leaseUntil: expired },
-      { status: 'pending' },
-      { status: 'running', leaseUntil: held },
-      { status: 'done' },
-    ]);
+    const abandoned = await aged(
+      await job([
+        { status: 'running', leaseUntil: expired },
+        { status: 'pending' },
+        { status: 'running', leaseUntil: held },
+        { status: 'done' },
+      ]),
+    );
 
-    const orphans = await new OrphanChunkRepository(db()).orphaned();
+    const orphans = await new OrphanChunkRepository(db()).orphaned(GRACE_MS);
 
     // The shape `claimChunk` accepts, and nothing else: a chunk someone is
     // holding right now is not abandoned, and a finished one has no work left.
@@ -64,37 +78,30 @@ describe('OrphanChunkRepository', () => {
   });
 
   it('leaves a job that is not running alone, however its chunks look', async () => {
-    const finished = await job([{ status: 'running', leaseUntil: expired }], 'failed');
+    const finished = await aged(await job([{ status: 'running', leaseUntil: expired }], 'failed'));
 
-    const orphans = await new OrphanChunkRepository(db()).orphaned();
+    const orphans = await new OrphanChunkRepository(db()).orphaned(GRACE_MS);
 
     expect(orphans.filter((o) => o.jobId === finished)).toEqual([]);
   });
 
-  it('settles a job whose chunks all finished, which is what frees the vendor', async () => {
-    const stranded = await job([
-      { status: 'done', rowsProcessed: 400, rowsRejected: 1 },
-      { status: 'done', rowsProcessed: 600, rowsRejected: 0 },
-    ]);
+  it('lists the jobs still running, so the caller can settle the finished ones', async () => {
+    const stranded = await job([{ status: 'done' }, { status: 'done' }]);
+    const finished = await job([{ status: 'done' }], 'completed');
 
-    await expect(new OrphanChunkRepository(db()).settleFinishedJobs()).resolves.toContain(stranded);
+    const running = await new OrphanChunkRepository(db()).runningJobIds();
 
-    const [row] = await db().select().from(ingestionJobs).where(eq(ingestionJobs.id, stranded));
-    // The counters are read in the statement that settles it, so a worker that
-    // died before its last refresh does not leave them short.
-    expect(row).toMatchObject({
-      status: 'completed',
-      chunksDone: 2,
-      rowsProcessed: 1000,
-      rowsRejected: 1,
-    });
+    expect(running).toContain(stranded);
+    expect(running).not.toContain(finished);
   });
 
-  it('leaves a job alone while any chunk is unfinished', async () => {
-    const working = await job([{ status: 'done' }, { status: 'running', leaseUntil: held }]);
+  it('leaves a young job alone, because a queued chunk looks exactly like an abandoned one', async () => {
+    const justRegistered = await job([{ status: 'pending' }]);
 
-    await expect(new OrphanChunkRepository(db()).settleFinishedJobs()).resolves.not.toContain(
-      working,
-    );
+    const orphans = await new OrphanChunkRepository(db()).orphaned(GRACE_MS);
+
+    // Registration enqueued it seconds ago; without the grace window every
+    // healthy import is swept on its first tick.
+    expect(orphans.filter((o) => o.jobId === justRegistered)).toEqual([]);
   });
 });

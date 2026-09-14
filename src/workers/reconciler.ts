@@ -3,6 +3,7 @@ import { RepairDriftCommand } from '../modules/reconciler/commands/repair-drift-
 import { SweepBoundariesCommand } from '../modules/reconciler/commands/sweep-boundaries-command.js';
 import { SweepOrphanChunksCommand } from '../modules/reconciler/commands/sweep-orphan-chunks-command.js';
 import { OrphanChunkRepository } from '../modules/reconciler/db/orphan-chunk-repository.js';
+import { IngestionRepository } from '../modules/ingestion/db/ingestion-repository.js';
 import { BoundaryRepository } from '../modules/reconciler/db/boundary-repository.js';
 import { ReconcilerRunHandler } from '../modules/reconciler/events/reconciler-run-handler.js';
 import { MaintenanceDispatcher } from '../events/maintenance-dispatcher.js';
@@ -34,9 +35,17 @@ const {
 } = await readModelConsumer(db, readModel, queue, logger);
 const handler = new MaintenanceDispatcher(
   new ReconcilerRunHandler(
-    new SweepBoundariesCommand(new BoundaryRepository(db), queue, logger),
-    new SweepOrphanChunksCommand(new OrphanChunkRepository(db), queue, logger),
-    new RepairDriftCommand(source, listing, rebuildCategory, driftRepairs, logger),
+    {
+      boundaries: new SweepBoundariesCommand(new BoundaryRepository(db), queue, logger),
+      imports: new SweepOrphanChunksCommand(
+        new OrphanChunkRepository(db),
+        new IngestionRepository(db),
+        queue,
+        config.INGESTION_LEASE_MS,
+        logger,
+      ),
+      drift: new RepairDriftCommand(source, listing, rebuildCategory, driftRepairs, logger),
+    },
     logger,
   ),
   rebuild,

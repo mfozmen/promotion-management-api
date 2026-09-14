@@ -1,16 +1,16 @@
 import type { Logger } from 'pino';
 
 interface OrphanChunks {
-  orphaned(): Promise<{ jobId: number; chunkIndex: number }[]>;
-  settleFinishedJobs(): Promise<number[]>;
+  orphaned(graceMs: number): Promise<{ jobId: number; chunkIndex: number }[]>;
+  runningJobIds(): Promise<number[]>;
+}
+
+interface Imports {
+  completeJobIfDone(jobId: number): Promise<boolean>;
 }
 
 interface AnnouncementQueue {
-  publish(
-    name: 'chunk.process',
-    payload: { jobId: number; chunkIndex: number },
-    options?: { jobId?: string },
-  ): Promise<unknown>;
+  publish(name: 'chunk.process', payload: { jobId: number; chunkIndex: number }): Promise<unknown>;
 }
 
 /**
@@ -24,28 +24,29 @@ interface AnnouncementQueue {
 export class SweepOrphanChunksCommand {
   constructor(
     private readonly chunks: OrphanChunks,
+    private readonly imports: Imports,
     private readonly queue: AnnouncementQueue,
+    private readonly graceMs: number,
     private readonly logger: Logger,
   ) {}
 
-  /** Keyed on the chunk, so a sweep that runs while the last one's jobs are still
-   *  queued adds nothing. */
-  static jobId(jobId: number, chunkIndex: number): string {
-    return `chunk:${String(jobId)}:${String(chunkIndex)}`;
-  }
-
   async execute(): Promise<number> {
-    const settled = await this.chunks.settleFinishedJobs();
-    const orphans = await this.chunks.orphaned();
+    const settled: number[] = [];
+
+    for (const jobId of await this.chunks.runningJobIds())
+      if (await this.imports.completeJobIfDone(jobId)) settled.push(jobId);
+
+    const orphans = await this.chunks.orphaned(this.graceMs);
     let enqueued = 0;
 
     for (const { jobId, chunkIndex } of orphans) {
       try {
-        await this.queue.publish(
-          'chunk.process',
-          { jobId, chunkIndex },
-          { jobId: SweepOrphanChunksCommand.jobId(jobId, chunkIndex) },
-        );
+        // No custom job id. One would be deduplicated against BullMQ's kept
+        // completed and failed keys, so the second attempt at a chunk would
+        // return the old job and queue nothing — the sweep would stop working
+        // on exactly the chunk that needed it twice. A duplicate delivery costs
+        // one `UPDATE` that matches no row.
+        await this.queue.publish('chunk.process', { jobId, chunkIndex });
         enqueued += 1;
       } catch (error) {
         // One unreachable publish must not strand the chunks after it: the next
