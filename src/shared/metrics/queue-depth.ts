@@ -1,4 +1,5 @@
 import { Gauge } from 'prom-client';
+import type { Logger } from 'pino';
 import { metricsRegistry } from './metrics-registry.js';
 import type { QueueName } from '../queue/queue-name.js';
 
@@ -25,40 +26,61 @@ interface Depths {
 const READ_TIMEOUT_MS = 2_000;
 
 /** A depth nobody could read is reported as -1 rather than as zero: zero is a
- *  queue that is empty, and an alert on either must be able to tell them apart. */
-async function within(read: Promise<number>): Promise<number> {
+ *  queue that is empty, and an alert on either must be able to tell them apart.
+ *  The reason is logged, because -1 says a read failed and never says why. */
+async function within(queue: QueueName, read: Promise<number>, logger: Logger): Promise<number> {
   // Definite assignment: the executor runs before the race is handed back.
   let timer!: NodeJS.Timeout;
   const capped = new Promise<number>((resolve) => {
-    timer = setTimeout(() => resolve(-1), READ_TIMEOUT_MS);
+    timer = setTimeout(() => {
+      logger.warn({ queue, timeoutMs: READ_TIMEOUT_MS }, 'queue depth read timed out');
+      resolve(-1);
+    }, READ_TIMEOUT_MS);
   });
-  return Promise.race([read.catch(() => -1), capped]).finally(() => clearTimeout(timer));
+  const answered = read.catch((err: unknown) => {
+    logger.warn({ queue, err }, 'queue depth read failed');
+    return -1;
+  });
+
+  return Promise.race([answered, capped]).finally(() => clearTimeout(timer));
 }
 
-export function queueDepth(queues: Depths, names: readonly QueueName[]): Gauge[] {
+/**
+ * The queues are read concurrently, not one after another: four serial reads of a
+ * Redis that accepts and never answers would spend 4 × the bound, and Prometheus
+ * clamps a scrape's timeout down to `scrape_interval`. Serially, one hung Redis
+ * cost the whole endpoint — heap, event-loop lag and the drift counter with it —
+ * and paged `TargetDown` for a process that was alive.
+ */
+export function queueDepth(queues: Depths, names: readonly QueueName[], logger: Logger): Gauge[] {
+  const each = async (gauge: Gauge, read: (name: QueueName) => Promise<number>): Promise<void[]> =>
+    Promise.all(
+      names.map(async (name) => {
+        gauge.set({ queue: name }, await within(name, read(name), logger));
+      }),
+    );
+
   const waiting = new Gauge({
     name: 'queue_waiting_jobs',
     help: 'Jobs waiting in a queue',
     labelNames: ['queue'],
     registers: [metricsRegistry],
     collect: async function () {
-      for (const name of names)
-        this.set({ queue: name }, await within(queues.inspect(name).getWaitingCount()));
+      await each(this, (name) => queues.inspect(name).getWaitingCount());
     },
   });
 
   const failed = new Gauge({
     name: 'queue_failed_jobs',
-    help: 'Jobs in a queue\u2019s failed set, which is this system\u2019s dead-letter queue',
+    help: 'Jobs in a queue’s failed set, which is this system’s dead-letter queue',
     labelNames: ['queue'],
     registers: [metricsRegistry],
     collect: async function () {
-      for (const name of names)
-        this.set({ queue: name }, await within(queues.inspect(name).getFailedCount()));
+      await each(this, (name) => queues.inspect(name).getFailedCount());
     },
   });
 
-  // Returned rather than discarded: a `new` whose result goes nowhere reads as a
-  // mistake, and the registry holding them is not visible at this line.
+  // Returned rather than discarded: a `new` whose result goes nowhere is a Sonar
+  // finding (S1848), and the registry holding them is not visible at this line.
   return [waiting, failed];
 }

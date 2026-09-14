@@ -3,6 +3,7 @@ import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { metricsRegistry } from '@src/shared/metrics/metrics-registry.js';
 import { queueDepth } from '@src/shared/metrics/queue-depth.js';
+import { captureLogger } from '../capture-logger.js';
 
 const read = async (file: string): Promise<string> =>
   readFile(new URL(`../../../${file}`, import.meta.url), 'utf8');
@@ -82,6 +83,7 @@ describe('the alert rules', () => {
         }),
       },
       ['promotions'],
+      captureLogger().logger,
     );
     const emitted = (await metricsRegistry.getMetricsAsJSON()).flatMap(({ name, type }) =>
       // A histogram is scraped under its suffixes, never under its own name.
@@ -121,7 +123,7 @@ describe('the alert rules', () => {
     const wiring = await read('src/workers/reconciler.ts');
 
     expect(wiring).toContain(
-      "queueDepth(queue, ['promotions', 'products', 'ingestion', 'maintenance'])",
+      "queueDepth(queue, ['promotions', 'products', 'ingestion', 'maintenance']",
     );
   });
 

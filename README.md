@@ -360,10 +360,10 @@ Redis did not answer within two seconds reads `-1`, which is not the `0` of an e
 A scenario run's latency and throughput still come from `autocannon`'s own output, and Grafana is
 where the shape of the run over time is visible (ADR-0011).
 
-[`monitoring/alerts.yml`](./monitoring/alerts.yml) holds six Prometheus rules over those numbers,
+[`monitoring/alerts.yml`](./monitoring/alerts.yml) holds seven Prometheus rules over those numbers,
 loaded by `rule_files` and listed at http://localhost:9090/alerts once `npm run up` is running: a
 target that stopped answering, a failed set that is not empty, a queue backlog, the read model
-drifting, the storefront answering `503`, and a p99 past a provisional 300 ms bar. Each says what
+drifting, the storefront answering `503`, a p99 past a provisional 300 ms bar, and a depth that has been unreadable for five minutes - `-1` is neither `> 0` nor `> 1000`, so without that last one the two queue rules would go quiet and look healthy. Each says what
 to do rather than only what happened — the dead-letter one names `npm run retry-failed`. Two of
 them were fired on purpose against the running stack, which is in
 [`docs/e2e-evidence/2026-09-14/09-alerts.md`](./docs/e2e-evidence/2026-09-14/09-alerts.md); the

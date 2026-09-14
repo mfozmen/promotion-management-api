@@ -159,6 +159,29 @@ Test cases
 - Then: p99 is recorded, and whether `StorefrontSlow` fires is recorded with it
 - Measure: p99 during the recompute against the rule's 300 ms bar and against S13's own measure — the two are the same number and must be changed together when a real run replaces it
 
+## S22 A depth nobody can read does not pass for a healthy queue
+
+As the operator, I want to be told when the queue depths stopped being readable,
+so that two rules watching those depths cannot go quiet and look like two rules
+with nothing to report.
+
+Acceptance criteria
+
+- A Redis that accepts connections and stops answering makes both depths read `-1`, not `0`.
+- `QueueDepthUnreadable` fires while the reconciler is still up, so `TargetDown` does not cover this.
+- The reconciler's log says which read failed and why; `-1` on its own never says.
+- The whole `/metrics` endpoint survives: heap, event-loop lag and the drift counter still answer.
+
+Test cases
+
+### alerts-11
+
+- Precondition: the reconciler scraped and reporting four series per depth gauge
+- Given: a healthy stack
+- When: Redis is paused rather than stopped - `docker pause` - so the connection stays open and no command is answered, and it is left paused past five minutes
+- Then: both depths read `-1`, a warning per failed read is in the reconciler's log, `QueueDepthUnreadable` fires, `TargetDown` does not fire for the reconciler, and the rest of `/metrics` still answers
+- Measure: the scrape's own duration while Redis is paused, against Prometheus's `scrape_interval` - four queues read one after another would spend four times the 2 s bound and lose the endpoint, which is the failure this case exists to catch
+
 ## Vantage
 
 Every case above is observed at a resolution of roughly one evaluation:

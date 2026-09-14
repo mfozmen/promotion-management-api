@@ -15,7 +15,12 @@ groups:
         labels: { severity: page }
         annotations:
           summary: '{{ $value }} jobs in the {{ $labels.queue }} failed set'
-          description: BullMQ stops at `attempts` and leaves the job here, so nothing retries it. Clear it with `npm run retry-failed -- {{ $labels.queue }}` once the cause is fixed.
+          description: >-
+            BullMQ stops at `attempts` and leaves the job here, so nothing retries it. Clear it with
+            `npm run retry-failed -- {{ $labels.queue }}` once the cause is fixed. Nothing trims this
+            set, so a job that is genuinely poisoned will fail again and keep the alert firing until
+            it is discarded in Bull Board at `/admin/queues` - the alert is cleared by a decision,
+            not by waiting.
 
       - alert: QueueBacklog
         expr: queue_waiting_jobs > 1000
@@ -37,6 +42,18 @@ groups:
             automatic; the cause is not. `increase()` extrapolates, so its value is not a
             whole number of categories and is deliberately not quoted here; the count is on
             `readmodel_drift_repairs_total` itself.
+
+      - alert: QueueDepthUnreadable
+        expr: queue_waiting_jobs == -1 or queue_failed_jobs == -1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: 'the depth of {{ $labels.queue }} has not been readable for five minutes'
+          description: >-
+            -1 is what a depth reports when nobody could read it, which is not zero and not a
+            backlog. While it stands, DeadLetterGrowing and QueueBacklog on that queue are
+            silent - neither `> 0` nor `> 1000` is satisfied by -1 - so this rule is what keeps
+            two dead rules from looking healthy. The reason is in the reconciler's log.
 
       - alert: StorefrontUnavailable
         expr: >

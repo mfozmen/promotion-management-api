@@ -1,6 +1,6 @@
 # Alert rules, fired on purpose
 
-Six rules in `monitoring/alerts.yml`, loaded by Prometheus at
+Seven rules in `monitoring/alerts.yml`, loaded by Prometheus at
 `http://localhost:9090/alerts` once `npm run up` is running. **A rule that has
 never fired is indistinguishable from a system that is never in trouble**, so each
 one below was made to fire against the running stack.
@@ -15,6 +15,12 @@ ReadModelDrifting     inactive
 StorefrontUnavailable inactive
 StorefrontSlow        inactive
 ```
+
+`QueueDepthUnreadable` was added after this run, from the architecture review of
+the same branch: `-1` satisfies neither `> 0` nor `> 1000`, so an unreadable depth
+left `DeadLetterGrowing` and `QueueBacklog` silent and indistinguishable from
+healthy. It has not been fired against the stack, and this file says so rather
+than listing it above as though it had.
 
 `queue_failed_jobs` and `queue_waiting_jobs` each return **four series**, one per
 queue; `readmodel_drift_repairs_total` returns one. Nothing in the file names a
