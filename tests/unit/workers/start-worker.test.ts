@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../../src/shared/logger.js';
 import { EventQueue } from '../../../src/shared/queue/event-queue.js';
-import { scheduleLost, startWorker } from '../../../src/workers/start-worker.js';
+import { isScheduleLost } from '../../../src/workers/is-schedule-lost.js';
+import { startWorker } from '../../../src/workers/start-worker.js';
 
 /** What every entry point runs, whatever else it wires up afterwards. */
 describe('startWorker', () => {
@@ -104,7 +105,7 @@ describe('startWorker', () => {
   ])('recognises %s', (_case, expected, message) => {
     // The chain stops here and nowhere else: BullMQ emits this and keeps running, so a process
     // that logs it and carries on repairs nothing for ever while the container reads as up.
-    expect(scheduleLost(new Error(message))).toBe(expected);
+    expect(isScheduleLost(new Error(message))).toBe(expected);
   });
 
   it('exits non-zero when a close fails, so the restart is not silent', async () => {
