@@ -1,13 +1,13 @@
 import { Worker } from 'bullmq';
-import { Redis } from 'ioredis';
 import { readModelConsumer } from '../modules/storefront/read-model-consumer.js';
 import { createDb, createPool } from '../shared/db/client.js';
 import { logger } from '../shared/logger.js';
+import { createReadModelWriterClient } from '../shared/read-model-writer-client.js';
 import { startWorker } from './start-worker.js';
 
 const { config, queue, closeOnSigterm } = startWorker('event-handler', ['products', 'promotions']);
 const pool = createPool(config.DATABASE_URL);
-const readModel = new Redis(config.REDIS_URL, { db: config.REDIS_READ_MODEL_DB });
+const readModel = createReadModelWriterClient(config.REDIS_URL, config.REDIS_READ_MODEL_DB);
 const { upserted, promotionChanged, rebuildOnBoot } = await readModelConsumer(
   createDb(pool),
   readModel,
