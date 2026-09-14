@@ -107,6 +107,17 @@ describe('POST /api/vendor/imports', () => {
     expect(res.body.error.message).toMatch(/already/i);
   });
 
+  it('rejects a file sent with no vendor named', async () => {
+    // The file is on disk by the time this is checked, so the rejection has to be
+    // the caller's mistake rather than a stored job nobody can attribute.
+    const res = await request(appWith())
+      .post('/api/vendor/imports')
+      .attach('file', vendorCsv(5), 'weekly.csv');
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/vendor/i);
+  });
+
   it('rejects a request with no file rather than registering nothing', async () => {
     const res = await request(appWith()).post('/api/vendor/imports').field('vendor', 'acme');
 
@@ -120,6 +131,45 @@ describe('POST /api/vendor/imports', () => {
       .attach('file', Buffer.alloc(6 * 1024 * 1024, 'x'), 'huge.csv');
 
     expect(res.status).toBe(413);
+  });
+});
+
+describe('POST /api/vendor/imports, upload failures', () => {
+  it('says which conflict it is when the vendor already has an import running', async () => {
+    // Two unique indexes answer 409 and they mean different things. Reporting a
+    // busy vendor as a duplicate file sends the caller to the wrong fix.
+    await request(appWith())
+      .post('/api/vendor/imports')
+      .field('vendor', 'busy-vendor')
+      .attach('file', vendorCsv(5), 'first.csv');
+
+    const res = await request(appWith())
+      .post('/api/vendor/imports')
+      .field('vendor', 'busy-vendor')
+      .attach('file', vendorCsv(5), 'second.csv');
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.message).toMatch(/already has an import running/);
+  });
+
+  it('rejects a file sent under a field the route does not take', async () => {
+    // multer raises its own error for an unexpected field, which is the caller's
+    // mistake rather than ours: a 400, not the 413 the size limit answers with.
+    const res = await request(appWith())
+      .post('/api/vendor/imports')
+      .field('vendor', 'acme')
+      .attach('attachment', vendorCsv(5), 'weekly.csv');
+
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses a file that is not a csv, rather than rejecting every row later', async () => {
+    const res = await request(appWith())
+      .post('/api/vendor/imports')
+      .field('vendor', 'acme-not-csv')
+      .attach('file', Buffer.from('not a csv'), 'catalogue.xlsx');
+
+    expect(res.status).toBe(415);
   });
 });
 

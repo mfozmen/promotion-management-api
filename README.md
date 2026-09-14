@@ -98,7 +98,24 @@ That one command is the whole boot. `api` migrates before it listens, so `--wait
 
 It is one verb rather than two because a one-shot migration service cannot be waited on: `--wait` means "running, or healthy where a healthcheck exists", and a one-shot is neither for long, so it reports green over a migration still installing and red over one that finished. A long-lived service with a healthcheck has no such gap — the check cannot answer in front of a missing schema. ADR-0003 holds the measurements.
 
-For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. `npm run ingest -- <file> [vendor]` registers a vendor file: it copies the file into `UPLOAD_DIR`,
+For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. Against a running stack the same registration goes over HTTP, which is the only door a
+Docker-only reader has:
+
+```
+curl -s http://127.0.0.1:3100/api/ready
+curl -X POST http://127.0.0.1:3100/api/vendor/imports -F vendor=acme -F file=@fixtures/vendor-sample.csv
+curl -s http://127.0.0.1:3100/api/vendor/imports/1
+```
+
+The first says whether PostgreSQL and Redis are reachable and names which is not; the second
+answers `202 {"jobId":1,"chunksTotal":1}`; the third reports the import until `status` reads
+`completed`. Measured on this build through the compose stack, a 300-row file: `202`, then
+`completed` with `chunksDone: 1`, `rowsProcessed: 300`, `rowsRejected: 0`, and 300 products stored
+at the marked-up price. The `api` container wrote the file and the `ingestion-worker` container
+read the same bytes back through the shared `./uploads` mount — the same registration the command
+below performs from a checkout.
+
+`npm run ingest -- <file> [vendor]` registers a vendor file: it copies the file into `UPLOAD_DIR`,
 stores the job and one chunk row per byte range, and enqueues a `chunk.process` job for each, which
 the `ingestion-worker` drains. `npm run generate:vendor -- --rows 500000` writes a file to register.
 The HTTP upload endpoint arrives with issue #15.
@@ -276,18 +293,20 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are JSON, capped at 100 kB, and validated strictly: an unknown field is a `400`, never a silently dropped one. The Statuses column lists what a route decides for itself; `400`, `413` and `415` come from the shared boundary and can answer any of them.
 
-| Method | Path                         | Description                                                                                                             | Statuses            |
-| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`               |
-| GET    | `/api/ready`                 | Readiness probe: asks PostgreSQL and Redis and names which one is unreachable                                           | `200`, `503`        |
-| GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503` |
-| GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503` |
-| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`        |
-| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `201`, `404`, `409` |
-| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `200`, `404`, `409` |
-| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`        |
-| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`               |
-| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`        |
+| Method | Path                         | Description                                                                                                             | Statuses                   |
+| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`                      |
+| GET    | `/api/ready`                 | Readiness probe: asks PostgreSQL and Redis and names which one is unreachable                                           | `200`, `503`               |
+| GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503`        |
+| GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503`        |
+| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`               |
+| POST   | `/api/vendor/imports`        | Register a vendor file (multipart `file`, field `vendor`); answers `{ jobId, chunksTotal }` and queues a job per chunk  | `202`, `400`, `409`, `413` |
+| GET    | `/api/vendor/imports/:id`    | Follow an import: `status`, `chunksTotal`, `chunksDone`, `rowsProcessed`, `rowsRejected`, `lastError`                   | `200`, `404`               |
+| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `201`, `404`, `409`        |
+| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `200`, `404`, `409`        |
+| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`               |
+| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`                      |
+| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`               |
 
 **Operations.** After `npm run up`, BullMQ's own dashboard is at
 http://localhost:3100/admin/queues — the four queues with their counts, the dead-letter set

@@ -35,6 +35,15 @@ export function vendorImportRoutes(deps: {
       filename: (_req, file, done) => done(null, `${randomUUID()}${extname(file.originalname)}`),
     }),
     limits: { files: 1, fileSize: deps.maxBytes },
+    // The parser reads one contract, so a file that is not a CSV is refused here
+    // rather than becoming 500 000 rejected rows and an import that stored nothing.
+    fileFilter: (_req, file, done) => {
+      if (extname(file.originalname).toLowerCase() === '.csv') {
+        done(null, true);
+        return;
+      }
+      done(createError(415, 'The vendor file must be a .csv'));
+    },
   }).single('file');
 
   router.post('/', (req: Request, res: Response, next) => {
@@ -82,12 +91,30 @@ async function registered(
 
     res.status(202).json(await deps.register.register(vendor, req.file.filename));
   } catch (error) {
-    // The same bytes twice is a vendor resending, not a second import, and the
-    // unique index on `file_sha256` is what decides it rather than a read first.
-    next(
-      hasSqlState(error, SqlState.uniqueViolation)
-        ? createError(409, 'A file with these contents has already been registered')
-        : error,
-    );
+    next(conflict(error) ?? error);
   }
+}
+
+/**
+ * Two different unique indexes answer `409` here and they mean different things:
+ * the same bytes arriving twice, and a vendor who already has an import running.
+ * Reporting either as the other sends the caller to the wrong fix.
+ */
+function conflict(error: unknown): Error | undefined {
+  if (!hasSqlState(error, SqlState.uniqueViolation)) return undefined;
+
+  return alreadyImporting(error)
+    ? createError(409, 'This vendor already has an import running; wait for it to finish')
+    : createError(409, 'A file with these contents has already been registered');
+}
+
+/** Walked rather than read: the driver error arrives wrapped, so the constraint
+ *  sits on a cause rather than on what was thrown. */
+function alreadyImporting(error: unknown): boolean {
+  for (let at: unknown = error; at instanceof Error; at = at.cause) {
+    if ('constraint' in at && at.constraint === 'ingestion_jobs_one_running_per_vendor')
+      return true;
+  }
+
+  return false;
 }
