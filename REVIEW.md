@@ -1222,6 +1222,19 @@ green throughout. One assertion anchored outside the generator is the remedy,
 not a different generator test: the other parity assertions are still worth
 having.
 
+13.17 **A command whose failure output you discard cannot report a failure, and
+"no output" is not a pass.** Filtering a gate's output through `tail`, `grep` or
+`head` makes a failing run and a passing one look identical from the outside,
+and the run that looks identical is the one that gets reported. Read the exit
+status, and say what you read.
+
+Evidence: `npm run lint 2>&1 | tail -1` was used to check a branch and its last
+line is the same whether eslint found nothing or found four errors. The branch
+was described as lint-clean twice, in messages, before a pre-commit hook
+rejected four unused-variable errors in a file that had just been claimed clean.
+The hook caught the code; nothing caught the claim, and the claim is what
+reached the people deciding whether to merge.
+
 ## 13b. The rulebook learns
 
 **Severity: warning.**
