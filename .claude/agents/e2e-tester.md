@@ -24,6 +24,22 @@ This agent runs when the owner asks for it, not before every push. Running it
 on every pull request measured an unchanged application over and over. So when
 you are asked to run, run properly: the numbers are the point.
 
+**Before the journeys, check the DDL deliverable replays and matches the
+migrations.** `docs/schema.sql` is a file a reviewer may build from and nobody
+runs, so nothing else here notices it going stale — and it had gone stale by
+three migrations once. Create two empty databases; replay the dump into one with
+`psql -v ON_ERROR_STOP=1`, run `drizzle-kit migrate` into the other, and compare
+the two schemas object by object: tables, columns with their type and precision,
+indexes, constraints, enum labels, triggers, functions, extensions and views.
+They must be identical, and the comparison must be shown to be capable of
+failing — a query that errors on both sides produces two empty lists and a diff
+that says nothing.
+
+Then report what the dump does not carry: `pg_dump --schema-only` omits data, so
+the `reconciler_state` watermark row and the seeded `pricing_rules` are absent
+and a database built from the file alone cannot run the reconciler. That is a
+property to state, not a failure.
+
 The application comes up through Docker Compose, one command. Nothing comes up
 without the compose file, so the system under test is the compose project, not
 a server you launched by hand.
@@ -106,23 +122,6 @@ Windows notes: `jq` may be missing, so use a `node -e` one-liner for JSON
 assertions.
 
 ## What to test, in this order
-
-0a. **The DDL deliverable replays into an empty database and matches the
-migrations.** `docs/schema.sql` is a deliverable a reviewer may build from
-rather than a file anyone runs, so nothing else in this repository would
-notice it going stale — and it had already gone stale by three migrations
-once. Create two empty databases; replay the dump into one with
-`psql -v ON_ERROR_STOP=1`, run `drizzle-kit migrate` into the other, and
-compare the two schemas object by object: tables, columns with their type
-and precision, indexes, constraints, enum labels, triggers, functions,
-extensions and views. They must be identical, and the comparison must be
-shown to be capable of failing — a query that errors on both sides produces
-two empty lists and a diff that says nothing.
-
-Then report what the dump does **not** carry: `pg_dump --schema-only` omits
-data, so the `reconciler_state` watermark row and the seeded `pricing_rules`
-are absent, and a database built from the dump alone cannot run the
-reconciler. That is a property to state, not a failure.
 
 0. **The cases in `docs/e2e-cases/`**, first. Each file is one user journey
    from the case study — the vendor sending the weekly file, staff running a
@@ -245,7 +244,7 @@ first result is ambiguous, and say so.
   study's 256 MiB container limit, measured as the container's own accounting
   (`docker stats` or the cgroup) rather than host RSS — the two count different
   things and a host sampler cannot see a container boundary. A measured run of
-  500 000 rows peaked at 49.9 MiB of 256.
+  500 000 rows peaked at 49.9 MiB of 256 (ADR-0005).
 - `docs/schema.sql` replays clean and matches the migrated schema (0a).
 - Every invariant in section 2 holds after every race scenario in section 3.
 

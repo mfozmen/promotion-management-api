@@ -210,7 +210,7 @@ Inside a layer the tree mirrors `src/`, one test file per source file. Every tes
 
 ## Database schema
 
-[`docs/schema.sql`](./docs/schema.sql) is the schema as a single file, for a reader who wants to It is `--schema-only`, so it carries no data: the `reconciler_state` watermark row and the seeded `pricing_rules` come from the migrations, and a database built from this file alone has the shape but cannot run the reconciler. Use `npm run db:migrate` to get a working database; this file is for reading the schema in one place.
+[`docs/schema.sql`](./docs/schema.sql) is the schema as a single file, for a reader who wants to
 open one rather than read six migrations. It is a copy, not an input: nothing reads it at
 runtime and no check compares it, and it is re-taken when a migration lands, from a throwaway
 database created empty and migrated forward — never from a store that has been developed
