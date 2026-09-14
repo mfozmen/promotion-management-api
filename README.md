@@ -73,8 +73,8 @@ other two, so an idle queue is not read as a drained one. None of the three has 
 file writes it there and the worker reads it back by `file_ref` — a name inside that directory
 rather than a path, so the two processes agree on where it is across a container boundary. A named
 volume would not have done: the host's `./uploads`, which `npm run ingest` writes to, would have
-been a different directory that looked identical in this file. `npm run ingest -- <file>` is the
-writer today; the upload endpoint arrives with issue #15.
+been a different directory that looked identical in this file. Both `npm run ingest -- <file>`
+and `POST /api/vendor/imports` write there.
 
 `docker compose stop` gives those four services — `api` and the three workers, the ones that close
 a queue — `stop_grace_period: 15s` for a shutdown budgeted at `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s),
@@ -118,7 +118,8 @@ below performs from a checkout.
 `npm run ingest -- <file> [vendor]` registers a vendor file: it copies the file into `UPLOAD_DIR`,
 stores the job and one chunk row per byte range, and enqueues a `chunk.process` job for each, which
 the `ingestion-worker` drains. `npm run generate:vendor -- --rows 500000` writes a file to register.
-The HTTP upload endpoint arrives with issue #15.
+`POST /api/vendor/imports` does the same registration over HTTP, for a file that is not already
+on the machine running the command.
 
 Demo data. Once the schema is up, one more command fills it:
 
@@ -132,7 +133,7 @@ Run it as often as you like: what you get depends on the migrations and this run
 
 Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own: an active `Electronics` promotion under another name is not deleted by name, so the insert aborts on `23P01` and the whole file rolls back, leaving no half-written catalogue behind.
 
-[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. `npm run ingest -- fixtures/vendor-sample.csv` registers it and the `ingestion-worker` drains it; the HTTP upload endpoint that would accept it over the wire arrives with issue #15.
+[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. `npm run ingest -- fixtures/vendor-sample.csv` registers it and the `ingestion-worker` drains it; `curl -F file=@fixtures/vendor-sample.csv` sends the same file over the wire.
 
 Tests and checks. The whole integration layer runs against the `test` profile's own PostgreSQL and Redis, never the ones `api` and the workers use: the queue and shutdown tests obliterate the queues they touch, and the layer clones a database per test file. `npm run up` starts both, and neither holds anything worth keeping.
 
@@ -291,22 +292,22 @@ the rule that rejected it, never a throw. The code is `src/modules/pricing/domai
 
 ## API
 
-All endpoints are mounted under the `/api` prefix (ADR-0009). Request bodies are JSON, capped at 100 kB, and validated strictly: an unknown field is a `400`, never a silently dropped one. The Statuses column lists what a route decides for itself; `400`, `413` and `415` come from the shared boundary and can answer any of them.
+All endpoints are mounted under the `/api` prefix (ADR-0009). JSON bodies are capped at 100 kB and validated strictly: an unknown field is a `400`, never a silently dropped one, and that `400` can answer any route. The vendor upload is the exception — it is multipart, so it never reaches the JSON parser and carries its own size cap and its own `415`.
 
-| Method | Path                         | Description                                                                                                             | Statuses            |
-| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`               |
-| GET    | `/api/ready`                 | Readiness probe: asks PostgreSQL and Redis and names which one is unreachable                                           | `200`, `503`        |
-| GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503` |
-| GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503` |
-| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`        |
-| POST   | `/api/vendor/imports`        | Register a vendor file (multipart `file`, field `vendor`); answers `{ jobId, chunksTotal }` and queues a job per chunk  | `202`, `409`, `415` |
-| GET    | `/api/vendor/imports/:id`    | Follow an import: `status`, `chunksTotal`, `chunksDone`, `rowsProcessed`, `rowsRejected`, `lastError`                   | `200`, `404`        |
-| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `201`, `404`, `409` |
-| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `200`, `404`, `409` |
-| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`        |
-| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`               |
-| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`        |
+| Method | Path                         | Description                                                                                                             | Statuses                          |
+| ------ | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| GET    | `/api/health`                | Liveness probe, returns `{"status":"ok"}`                                                                               | `200`                             |
+| GET    | `/api/ready`                 | Readiness probe: asks PostgreSQL and Redis and names which one is unreachable                                           | `200`, `503`                      |
+| GET    | `/api/products`              | Storefront listing, `{ items, page, pageSize, total }`                                                                  | `200`, `400`, `503`               |
+| GET    | `/api/products/:id`          | One product with its applied promotion                                                                                  | `200`, `404`, `503`               |
+| POST   | `/api/products`              | Create a product (`sku`, `name`, `category`, `basePriceCents`, `stockQuantity`); emits `product.upserted`               | `201`, `409`                      |
+| POST   | `/api/vendor/imports`        | Register a vendor file (multipart `file`, field `vendor`); answers `{ jobId, chunksTotal }` and queues a job per chunk  | `202`, `400`, `409`, `413`, `415` |
+| GET    | `/api/vendor/imports/:id`    | Follow an import: `status`, `chunksTotal`, `chunksDone`, `rowsProcessed`, `rowsRejected`, `lastError`                   | `200`, `404`                      |
+| POST   | `/api/promotions`            | Create a promotion; with `productId` or `category` it is born `active`, with neither it is a `draft`                    | `201`, `404`, `409`               |
+| POST   | `/api/promotions/:id/assign` | Give a draft its one target (`productId` **or** `category`) and make it `active`                                        | `200`, `404`, `409`               |
+| POST   | `/api/promotions/:id/cancel` | Cancel a promotion and drop its scheduled boundaries; idempotent, so a second call also answers `200`                   | `200`, `404`                      |
+| GET    | `/api/promotions`            | List promotions, filtered and paged (`status`, `category`, `productId`, `limit`, `after`); returns `{ "items": [...] }` | `200`                             |
+| GET    | `/api/promotions/:id`        | One promotion                                                                                                           | `200`, `404`                      |
 
 **Operations.** After `npm run up`, BullMQ's own dashboard is at
 http://localhost:3100/admin/queues — the four queues with their counts, the dead-letter set
