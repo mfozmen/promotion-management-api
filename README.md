@@ -56,23 +56,14 @@ process that migrates.
   stack with nothing to start by hand.
 - `event-handler` will drain `promotions` and `products` for the read model; it consumes nothing
   yet (issue #12).
-- `ingestion-worker` drains `ingestion`, one chunk at a time. It is capped at 256 MiB and half a
-  CPU — the case study's own constraint, and what Scenario A's 500 000-row import is measured
-  against — and runs with `NODE_OPTIONS=--max-old-space-size=192` so V8's heap ceiling sits under
-  that cap.
-
-  **Measured on 500 000 rows, inside this container**, under its own 256 MiB and half a CPU:
-  500 000 products stored with none rejected, across six chunks, `status = completed` and
-  `rows_processed = 500000`.
-
-  Two numbers, because they answer different questions. The **container's own accounting** —
-  what the kernel enforces and would kill on — peaked at **49.9 MiB of 256 MiB, 19.5 %**, with CPU
-  pegged at the 0.5 limit while working and idle at zero after. **V8's heap inside it**, which is
-  what `--max-old-space-size=192` bounds, reported 25, 22, 22, 22, 22 and 18 MB as each chunk
-  finished — **flat from the first chunk to the last**, which is the property that matters rather
-  than the peak: nothing accumulates as the file is consumed, so a larger file costs time and not
-  memory. The worker reports its own figures because a host-side sampler cannot see a container
-  boundary and counts every other process on the machine.
+- `ingestion-worker` drains `ingestion` for the chunk processor, one chunk at a time. It is
+  capped at 256 MiB and half a CPU — the case study's own constraint, and what Scenario A's
+  500 000-row import is measured against — and runs with `NODE_OPTIONS=--max-old-space-size=192`
+  so V8's heap ceiling sits under that cap. One containerised run at those limits processed all
+  500 000 rows in 6 of 6 chunks with none rejected, peaking at 49.9 MiB of the 256 by container
+  accounting, and a V8 heap flat across chunks (25 MB falling to 18 MB) — flat being the property
+  rather than the peak, since nothing accumulates as the file is consumed. The reasoning and the
+  host-side figures are in ADR-0005. Scenario B has no measurement yet.
 
 Each start-up line carries a `consuming` list: `maintenance` for the reconciler, empty for the
 other two, so an idle queue is not read as a drained one. None of the three has a healthcheck, so
