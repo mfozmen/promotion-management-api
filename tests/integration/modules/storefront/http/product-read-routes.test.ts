@@ -7,13 +7,14 @@ import { ProductReadRepository } from '@src/modules/storefront/db/product-read-r
 import pino from 'pino';
 import {
   seedProducts,
+  TEST_DATABASE,
   useTestRedis,
   type SeedFields,
   type SeedProduct,
   type SeedPromotion,
 } from '../../../redis.js';
 
-const redis = useTestRedis();
+const redis = useTestRedis(TEST_DATABASE.productReadRoutes);
 // The 500 and 503 cases log by design; silent keeps that out of the report.
 const testLogger = pino({ level: 'silent' });
 const app = () =>

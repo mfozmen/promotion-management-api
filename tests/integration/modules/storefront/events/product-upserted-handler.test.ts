@@ -7,10 +7,10 @@ import { ProductUpsertedHandler } from '@src/modules/storefront/events/product-u
 import { products } from '@src/modules/product/db/schema/products.js';
 import { pino } from 'pino';
 import { useTestDatabase } from '../../../db.js';
-import { useTestRedis } from '../../../redis.js';
+import { TEST_DATABASE, useTestRedis } from '../../../redis.js';
 
 const db = useTestDatabase();
-const redis = useTestRedis();
+const redis = useTestRedis(TEST_DATABASE.productUpsertedHandler);
 
 async function insert(sku: string): Promise<number> {
   const [inserted] = await db()

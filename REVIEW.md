@@ -559,7 +559,15 @@ fixtures, no random data, no `sleep` to wait for a worker. Poll a condition with
 a timeout. A flaky test is a finding, not a retry.
 
 7.6 **Isolation.** Each test file owns its data; tests pass in any order and in
-parallel. Shared mutable fixtures across files are a finding.
+parallel. Shared mutable fixtures across files are a finding. A helper that
+clears a whole store between tests carries the rule with it: the second file to
+call it deletes the first file's keys mid-run, and the suite then fails a
+different test on every run. Give each file its own store — a cloned database,
+its own Redis logical database — rather than a shared one that is emptied.
+
+Evidence: one Redis logical database served every integration file and was
+flushed in `beforeEach`. One file made that safe; the day a second and third
+arrived, four tests failed per run and never the same four.
 
 7.7 **Layout.** `tests/unit`, `tests/integration`, `tests/e2e`; inside a layer
 the tree mirrors `src/`, one test file per source file, with the same name
