@@ -5,3 +5,6 @@ coverage
 *.log
 .DS_Store
 .claude/review-state
+
+# Vendor files staged for import; the compose stack bind-mounts this directory.
+uploads/

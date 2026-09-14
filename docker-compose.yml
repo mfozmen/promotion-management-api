@@ -66,7 +66,7 @@ services:
     ports:
       - '127.0.0.1:3100:3100'
     volumes:
-      - uploads:/app/uploads
+      - ./uploads:/app/uploads
     depends_on:
       <<: *stores-healthy
     networks:
@@ -108,7 +108,7 @@ services:
       UPLOAD_DIR: /app/uploads
       NODE_OPTIONS: --max-old-space-size=192
     volumes:
-      - uploads:/app/uploads
+      - ./uploads:/app/uploads
     depends_on:
       <<: *stores-healthy
       api:
@@ -200,4 +200,3 @@ networks:
 volumes:
   postgres-data:
   redis-data:
-  uploads:

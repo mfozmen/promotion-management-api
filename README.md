@@ -56,18 +56,25 @@ process that migrates.
   stack with nothing to start by hand.
 - `event-handler` will drain `promotions` and `products` for the read model; it consumes nothing
   yet (issue #12).
-- `ingestion-worker` will drain `ingestion` for the chunk processor; it consumes nothing yet
-  (issue #105). It is capped at 256 MiB and half a CPU — the case study's own constraint, and what
-  Scenario A's 500 000-row import is measured against — and runs with
-  `NODE_OPTIONS=--max-old-space-size=192` so V8's heap ceiling sits under that cap.
+- `ingestion-worker` drains `ingestion` for the chunk processor, one chunk at a time. It is
+  capped at 256 MiB and half a CPU — the case study's own constraint, and what Scenario A's
+  500 000-row import is measured against — and runs with `NODE_OPTIONS=--max-old-space-size=192`
+  so V8's heap ceiling sits under that cap. One containerised run at those limits processed all
+  500 000 rows in 6 of 6 chunks with none rejected, peaking at 49.9 MiB of the 256 by container
+  accounting, and a V8 heap flat across chunks (25 MB falling to 18 MB) — flat being the property
+  rather than the peak, since nothing accumulates as the file is consumed. The reasoning and the
+  host-side figures are in ADR-0005. Scenario B has no measurement yet.
 
 Each start-up line carries a `consuming` list: `maintenance` for the reconciler, empty for the
 other two, so an idle queue is not read as a drained one. None of the three has a healthcheck, so
 `--wait` treats them as up once they are running.
 
-`api` and `ingestion-worker` share a named `uploads` volume at `/app/uploads`, because `api` writes
-the uploaded file and the worker reads it back by `file_ref`; nothing writes to it yet (the upload
-endpoint and chunk worker arrive with issue #16).
+`api` and `ingestion-worker` bind-mount `./uploads` at `/app/uploads`, because whoever registers a
+file writes it there and the worker reads it back by `file_ref` — a name inside that directory
+rather than a path, so the two processes agree on where it is across a container boundary. A named
+volume would not have done: the host's `./uploads`, which `npm run ingest` writes to, would have
+been a different directory that looked identical in this file. `npm run ingest -- <file>` is the
+writer today; the upload endpoint arrives with issue #15.
 
 `docker compose stop` gives those four services — `api` and the three workers, the ones that close
 a queue — `stop_grace_period: 15s` for a shutdown budgeted at `SHUTDOWN_DRAIN_TIMEOUT_MS` (10 s),
@@ -91,7 +98,10 @@ That one command is the whole boot. `api` migrates before it listens, so `--wait
 
 It is one verb rather than two because a one-shot migration service cannot be waited on: `--wait` means "running, or healthy where a healthcheck exists", and a one-shot is neither for long, so it reports green over a migration still installing and red over one that finished. A long-lived service with a healthcheck has no such gap — the check cannot answer in front of a missing schema. ADR-0003 holds the measurements.
 
-For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. There is no ingestion command yet; the upload endpoint and chunk worker arrive with issue #16.
+For a database that is not the compose one, `npm run db:migrate` applies the same migrations from the host against whatever `DATABASE_URL` names (`drizzle.config.ts` reads it from the environment, not from `.env`). `npm run dev` needs no such step: it runs the same `src/server.ts` the image does, so it migrates its `DATABASE_URL` before it listens. `npm run ingest -- <file> [vendor]` registers a vendor file: it copies the file into `UPLOAD_DIR`,
+stores the job and one chunk row per byte range, and enqueues a `chunk.process` job for each, which
+the `ingestion-worker` drains. `npm run generate:vendor -- --rows 500000` writes a file to register.
+The HTTP upload endpoint arrives with issue #15.
 
 Demo data. Once the schema is up, one more command fills it:
 
@@ -105,7 +115,7 @@ Run it as often as you like: what you get depends on the migrations and this run
 
 Two seeds at once are safe. They serialise on the product rows — `ON CONFLICT DO UPDATE` takes the row lock before it evaluates its guard — and whichever commits second deletes the first's sale by name before writing its own, so you still get one catalogue and one sale. What the seed will not do is replace a promotion it does not own: an active `Electronics` promotion under another name is not deleted by name, so the insert aborts on `23P01` and the whole file rolls back, leaving no half-written catalogue behind.
 
-[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. Nothing consumes it yet: the `ingestion-worker` container runs but registers no consumer, and the upload endpoint and chunk worker arrive with issue #16.
+[`fixtures/vendor-sample.csv`](./fixtures/vendor-sample.csv) is the matching vendor file, in the contract of the design spec's section 7 (`sku,name,category,vendor_price,stock_quantity`): rows above and below the bulk-discount stock threshold, an `Electronics` row for the markup, and a quoted field containing a comma. `npm run ingest -- fixtures/vendor-sample.csv` registers it and the `ingestion-worker` drains it; the HTTP upload endpoint that would accept it over the wire arrives with issue #15.
 
 Tests and checks. The whole integration layer runs against the `test` profile's own PostgreSQL and Redis, never the ones `api` and the workers use: the queue and shutdown tests obliterate the queues they touch, and the layer clones a database per test file. `npm run up` starts both, and neither holds anything worth keeping.
 
@@ -178,8 +188,8 @@ takes `reconciler.run` off `maintenance` and runs the boundary sweep
 (`src/modules/reconciler/commands/sweep-boundaries-command.ts`). `readmodel.rebuild`
 shares that queue and has no handler, so publishing one fails into the dead-letter
 set rather than being acknowledged by a process that ignored it — deliberate, and the
-read-model story adds the handler. Nothing consumes `promotions`, `products` or
-`ingestion` yet (issues #12 and #105).
+read-model story adds the handler. `ingestion` has a consumer — the chunk worker — and `maintenance` has the
+reconciler. `promotions` and `products` have none yet (issue #12).
 
 BullMQ uses the logical database `REDIS_QUEUE_DB` names, while `REDIS_READ_MODEL_DB`
 holds the read model, so queue maintenance and read-model rebuilds cannot destroy
