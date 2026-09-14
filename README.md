@@ -11,6 +11,20 @@ Writes go to PostgreSQL, reads are served from a Redis read model, and the two a
 by a BullMQ queue and a reconciler that repairs what the queue cannot. The reasoning behind every
 such choice is in [ADR.md](./ADR.md), which is the document to read after this one.
 
+## What the case study asks to be submitted
+
+| Deliverable                           | Where it is                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The database schema DDL**           | [`docs/schema.sql`](./docs/schema.sql) - the whole schema as one file, taken with `pg_dump` from a database created empty and migrated forward. The migrations that produce it are [`src/shared/db/migrations/`](./src/shared/db/migrations), and they are the input; the file is a copy kept for a reader who wants to open one thing. |
+| **The architectural decisions (ADR)** | [ADR.md](./ADR.md) - twelve records, each with what was decided, the trade-offs it carries and what was rejected. Scenario A is [ADR-0005](./ADR.md), Scenario B is [ADR-0006](./ADR.md).                                                                                                                                               |
+| **The AI usage appendix (Form 5)**    | [Form 5 - AI Appendix](<./Form 5_AI Appendix.docx>), with the working notes it is written from in [`docs/ai-appendix-notes.md`](./docs/ai-appendix-notes.md) - what each AI mistake was, how it was caught, and what the fix changed.                                                                                                   |
+| The code                              | this repository; the map is [below](#repository-map).                                                                                                                                                                                                                                                                                   |
+
+The two scenarios are the part the case study says it weighs most, so they are also the part with
+measurements rather than claims: a 500 000-row import on the 256 MiB container it is constrained
+to, and a category-wide flash sale under read load, both in
+[docs/e2e-evidence/](./docs/e2e-evidence) with the vantage point of every number.
+
 ## Start here
 
 ```bash
