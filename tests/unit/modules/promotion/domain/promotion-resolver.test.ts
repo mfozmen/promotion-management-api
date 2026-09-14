@@ -76,23 +76,18 @@ describe('PromotionResolver', () => {
   it('breaks a tie the way the row spells it, not with an id', async () => {
     const resolver = await resolverOf(policy);
 
-    // `lessThanInclusive` is the whole tiebreak. A comparison here would be a
-    // branch no policy edit could reach.
     await expect(resolver.select(facts(8_000, 8_000))).resolves.toBe('product');
   });
 
   it('sends a product with one candidate through the rules too', async () => {
     const resolver = await resolverOf(policy);
 
-    // Not a shortcut in the resolver: a rule that rejects a candidate outright
-    // has to be consulted here, or it is a control that never runs.
     await expect(resolver.select(facts(9_000, null))).resolves.toBe('product');
   });
 
   it('applies nothing when no rule fired', async () => {
     const resolver = await resolverOf(policy);
 
-    // No candidate at either level, and the arity-one rules say so themselves.
     await expect(resolver.select(facts(null, null))).resolves.toBeUndefined();
   });
 
@@ -107,7 +102,6 @@ describe('PromotionResolver', () => {
     const resolver = await resolverOf([...policy, keepProduct]);
 
     const inAccessories = { ...facts(9_000, 1_000), category: 'accessories' };
-    // `lower-price-category` also matches here; the override outranks it.
     await expect(resolver.select(inAccessories)).resolves.toBe('product');
   });
 
@@ -144,8 +138,6 @@ describe('PromotionResolver', () => {
       event: { type: 'adjustPercentBps', params: { value: 500 } },
     });
 
-    // The arithmetic is the calculator's. A rule that could carry a price would
-    // be a second place money is computed.
     await expect(resolverOf([carriesAPrice])).rejects.toThrow(
       /promotion rule 7 \("discounts by itself"\) has a malformed event/,
     );

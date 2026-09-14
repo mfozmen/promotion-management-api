@@ -1,5 +1,3 @@
-import { boundaryRepairs } from '../../../shared/metrics/boundary-repairs.js';
-
 interface Sweep {
   execute(): Promise<number>;
 }
@@ -12,12 +10,7 @@ interface Sweep {
 export class ReconcilerRunHandler {
   constructor(private readonly sweep: Sweep) {}
 
-  /** The `maintenance` dispatcher, here rather than in the entry point so a test can fail it
-   *  (ADR-0003). */
-  async handle(name: string): Promise<void> {
-    if (name !== 'reconciler.run') throw new Error(`no handler for ${name}`);
-    // Counted here rather than in the command, so the number a scrape reads and the number the
-    // run returns cannot drift apart.
-    boundaryRepairs.inc(await this.sweep.execute());
+  async handle(): Promise<void> {
+    await this.sweep.execute();
   }
 }
