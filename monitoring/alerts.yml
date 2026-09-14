@@ -30,8 +30,13 @@ groups:
         for: 0m
         labels: { severity: warning }
         annotations:
-          summary: The reconciler rebuilt {{ $value }} categories it found drifted
-          description: Redis and PostgreSQL disagreed on a category's size, which no event describes — an eviction, a partial restore, or a write that was lost after being consumed. The repair is automatic; the cause is not.
+          summary: The reconciler found the read model drifted and rebuilt it
+          description: >-
+            Redis and PostgreSQL disagreed on a category's size, which no event describes - an eviction,
+            a partial restore, or a write that was lost after being consumed. The repair is
+            automatic; the cause is not. `increase()` extrapolates, so its value is not a
+            whole number of categories and is deliberately not quoted here; the count is on
+            `readmodel_drift_repairs_total` itself.
 
       - alert: StorefrontUnavailable
         expr: >
