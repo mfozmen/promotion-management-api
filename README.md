@@ -11,6 +11,69 @@ Writes go to PostgreSQL, reads are served from a Redis read model, and the two a
 by a BullMQ queue and a reconciler that repairs what the queue cannot. The reasoning behind every
 such choice is in [ADR.md](./ADR.md), which is the document to read after this one.
 
+## Topology
+
+Four application containers share two stores. Everything a shopper reads comes from the Redis
+read model, everything anyone writes lands in PostgreSQL, and the queue carries the writes across
+to the read model - except on the paths that repair it, where the reconciler and a worker's boot
+rebuild read PostgreSQL and write the read model directly.
+
+```mermaid
+flowchart LR
+  shopper([Shopper]):::actor --> api
+  admin([Admin]):::actor --> api
+  vendor([Vendor]):::actor -- "CSV upload" --> api
+
+  subgraph application["Application (one image, four commands)"]
+    api["api :3100<br/>REST, Bull Board, /metrics"]
+    handler["event-handler<br/>products, promotions"]
+    ingestion["ingestion-worker<br/>ingestion"]
+    reconciler["reconciler<br/>maintenance"]
+  end
+
+  subgraph stores["Stores"]
+    postgres[("PostgreSQL 16<br/>system of record")]
+    queue[("Redis db 1<br/>BullMQ queues")]
+    readmodel[("Redis db 0<br/>read model")]
+    uploads[/"./uploads bind mount"/]
+  end
+
+  subgraph monitoring["Monitoring (profile)"]
+    prometheus["Prometheus :9090<br/>alert rules"]
+    grafana["Grafana :3001"]
+  end
+
+  api -- "writes" --> postgres
+  api -- "listings" --> readmodel
+  api -- "publishes" --> queue
+  api -- "stores the file" --> uploads
+
+  queue --> handler
+  queue --> ingestion
+  queue --> reconciler
+
+  handler -- "reads rows" --> postgres
+  handler -- "rebuilds keys" --> readmodel
+  handler -- "product.upserted" --> queue
+  ingestion -- "reads its chunk" --> uploads
+  ingestion -- "upserts products" --> postgres
+  ingestion -- "product.upserted" --> queue
+  reconciler -- "boundaries, drift" --> postgres
+  reconciler -- "repairs" --> readmodel
+  reconciler -- "promotion.changed, reconciler.run" --> queue
+
+  prometheus -- "scrapes /metrics" --> application
+  grafana --> prometheus
+
+  classDef actor fill:#fff,stroke:#888,stroke-dasharray:3 3
+```
+
+The four queues are one per urgency class, so a 500 000-row import cannot delay a flash sale
+([ADR-0003](./ADR.md)). `event-handler` and `reconciler` both write the read model: the first on
+the events a write produces ([ADR-0006](./ADR.md)), the second on a five-minute sweep that
+repairs what the queue lost ([ADR-0007](./ADR.md)). Prometheus scrapes all four containers - the
+API on `3100`, each worker on its own `3101` ([docs/operations.md](./docs/operations.md)).
+
 ## What the case study asks to be submitted
 
 | Deliverable                           | Where it is                                                                                                                                                                                                                                                                                                                             |
