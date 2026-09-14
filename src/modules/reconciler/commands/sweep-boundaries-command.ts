@@ -34,7 +34,9 @@ export class SweepBoundariesCommand {
     return `sweep:${String(promotionId)}:${String(since.getTime())}`;
   }
 
-  async execute(): Promise<void> {
+  /** The count is the return value and the log line both: `promotion-20` asserts exactly one
+   *  repair per boundary, and a sweep that says only "ran" cannot answer that. */
+  async execute(): Promise<number> {
     const { since, windowEnd, promotionIds } = await this.boundaries.crossedSince();
 
     for (const promotionId of promotionIds) {
@@ -53,5 +55,11 @@ export class SweepBoundariesCommand {
         'another sweep advanced the watermark first; this window will be read again',
       );
     }
+
+    this.logger.info(
+      { since, windowEnd, repaired: promotionIds.length },
+      'boundary sweep complete',
+    );
+    return promotionIds.length;
   }
 }

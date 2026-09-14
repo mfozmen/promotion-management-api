@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import request from 'supertest';
+import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { appDeps } from '@tests/app-deps.js';
 import { createApp } from '@src/app.js';
@@ -30,4 +31,41 @@ describe('the api healthcheck', () => {
   it('is the /api-prefixed probe, since every route is mounted there', () => {
     expect(probePath()).toBe('/api/health');
   });
+});
+
+describe('every PostgreSQL healthcheck', () => {
+  // `pg_isready` exits 0 for a server that is up and holds no such database, and
+  // `POSTGRES_DB` is honoured only when the volume is initialised — so a store whose
+  // database name changed reports healthy and fails the first query (ADR-0003). The check
+  // has to name the database it is certifying.
+  const services = (
+    parse(compose, { merge: true }) as {
+      services: Record<
+        string,
+        { image?: string; healthcheck?: { test: string[]; start_period?: string } }
+      >;
+    }
+  ).services;
+  const stores = Object.entries(services).filter(([, service]) =>
+    service.image?.startsWith('postgres'),
+  );
+
+  it('covers both stores, so neither can be added without one', () => {
+    expect(stores.map(([name]) => name).sort()).toEqual(['postgres', 'postgres-test']);
+  });
+
+  it.each(stores)(
+    '%s queries its own database rather than asking whether the server is up',
+    (_name, service) => {
+      const test = (service.healthcheck?.test ?? []).join(' ');
+
+      expect(test).toContain('-d "$$POSTGRES_DB"');
+      expect(test).not.toContain('pg_isready');
+      // Over TCP rather than the local socket (ADR-0003).
+      expect(test).toContain('-h 127.0.0.1');
+      // A TCP check fails its whole first interval on a cold volume, so without a start
+      // period every boot spends a retry on a store that is merely still initialising.
+      expect(service.healthcheck?.start_period).toBeDefined();
+    },
+  );
 });

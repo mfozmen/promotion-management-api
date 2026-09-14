@@ -36,7 +36,6 @@ const NAMED_BUT_ABSENT = new Map([
   ],
   ['src/shared/db/schema/', 'where the table schemas were before they moved into their modules'],
   ['src/modules/vendor/', 'a module the agent triggers name before it is written'],
-  ['src/workers/', 'one thin entry point per queue, arrives with the reconciler schedule'],
   [
     'scripts/generate-vendor-csv.ts',
     'the vendor-file generator the ingestion story names as a deliverable, not written yet',

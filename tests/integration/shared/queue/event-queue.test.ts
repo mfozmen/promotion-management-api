@@ -9,7 +9,7 @@ import { PromotionScheduler } from '@src/modules/promotion/domain/promotion-sche
 import { logger } from '@src/shared/logger.js';
 import { randomUUID } from 'node:crypto';
 
-// These tests need a real Redis: docker run -d --rm -p 6399:6379 redis:7-alpine
+// These tests need a real Redis: `npm run up` starts one on 6399 (the `test` profile).
 const redisUrl = process.env.QUEUE_TEST_REDIS_URL ?? 'redis://127.0.0.1:6399';
 
 const READ_MODEL_DB = 0;
@@ -307,6 +307,34 @@ describe('EventQueue', () => {
     } finally {
       errors.mockRestore();
       await unreachable.close().catch(() => undefined);
+    }
+  });
+
+  it('schedules a repeatable the real library accepts, and re-asserting it adds no second', async () => {
+    // REVIEW.md 7.11: BullMQ parses the scheduler id, so the only proof it accepts ours is
+    // BullMQ accepting it. A hand-written double would pass whatever we wrote.
+    const maintenance = new Queue('maintenance', {
+      connection: { url: redisUrl, db: QUEUE_DB },
+      prefix: PREFIX,
+    });
+    try {
+      await bus.schedule('reconciler.run', 60_000, {});
+      await bus.schedule('reconciler.run', 60_000, {});
+      const schedulers = await maintenance.getJobSchedulers();
+
+      expect(schedulers.map((scheduler) => scheduler.key)).toEqual(['reconciler.run']);
+      expect(schedulers[0]?.every).toBe(60_000);
+      // The job the schedule produces carries the event name a handler dispatches on. It is
+      // not necessarily delayed: BullMQ runs the first iteration straight away, so waiting
+      // and delayed are both where it can legitimately be.
+      await waitFor(
+        async () => (await maintenance.getJobs(['waiting', 'delayed'])).length === 1,
+        4_000,
+      );
+      expect((await maintenance.getJobs(['waiting', 'delayed']))[0]?.name).toBe('reconciler.run');
+    } finally {
+      await maintenance.removeJobScheduler('reconciler.run');
+      await maintenance.close();
     }
   });
 
