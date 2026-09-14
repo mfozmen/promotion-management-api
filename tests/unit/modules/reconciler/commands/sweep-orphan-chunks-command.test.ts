@@ -9,7 +9,10 @@ function collaborators(orphans: { jobId: number; chunkIndex: number }[], settled
     orphaned: vi.fn().mockResolvedValue(orphans),
     runningJobIds: vi.fn().mockResolvedValue(settled),
   };
-  const imports = { completeJobIfDone: vi.fn().mockResolvedValue(true) };
+  const imports = {
+    completeJobIfDone: vi.fn().mockResolvedValue(true),
+    failJobIfExhausted: vi.fn().mockResolvedValue(false),
+  };
   const queue = { publish: vi.fn().mockResolvedValue(undefined) };
   const { logger, lines } = captureLogger();
 
@@ -56,6 +59,18 @@ describe('SweepOrphanChunksCommand', () => {
     // work once and then silently stop, on the chunk that needed it most.
     expect(vi.mocked(c.queue.publish).mock.calls.every((call) => call.length === 2)).toBe(true);
     expect(c.queue.publish).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up on a job whose chunks have all spent their attempts', async () => {
+    const c = collaborators([], [9]);
+    c.imports.completeJobIfDone.mockResolvedValue(false);
+    c.imports.failJobIfExhausted.mockResolvedValue(true);
+
+    await sweepOf(c).execute();
+
+    // Leaving it `running` is the lockout by another road: a vendor waiting on
+    // work that can never be done.
+    expect(c.lines.at(-1)).toMatchObject({ givenUp: [9] });
   });
 
   it('does nothing and says nothing when no import is stuck', async () => {

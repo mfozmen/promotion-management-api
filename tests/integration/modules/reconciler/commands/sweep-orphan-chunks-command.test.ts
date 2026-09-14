@@ -16,7 +16,10 @@ const chunks = {
   orphaned: () => Promise.resolve([{ jobId: 7, chunkIndex: 2 }]),
   runningJobIds: () => Promise.resolve([]),
 };
-const imports = { completeJobIfDone: () => Promise.resolve(false) };
+const imports = {
+  completeJobIfDone: () => Promise.resolve(false),
+  failJobIfExhausted: () => Promise.resolve(false),
+};
 
 describe('SweepOrphanChunksCommand against a real queue', () => {
   let bus: ReturnType<typeof EventQueue.connect<typeof eventRegistry>>;

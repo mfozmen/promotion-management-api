@@ -635,6 +635,21 @@ on every publish — a reconciler that repaired nothing and never advanced its
 watermark — and the only test of that path used a hand-written queue that
 validated nothing.
 
+7.12 **A double that always accepts proves nothing about a dependency that
+refuses.** A queue, store or client written as `{ send: vi.fn().mockResolvedValue(undefined) }`
+answers the same way to the call the real one silently drops, so the test asserts
+the arguments and not the outcome. Where a library deduplicates, rejects or
+rate-limits on a value the code composes, the test that proves the code right is
+one against the real library — and it is worth breaking the code once to watch
+that test fail, because a test that has never failed is a claim, not evidence.
+
+Evidence: the orphan-chunk sweep published each chunk with a fixed BullMQ job
+id. BullMQ keeps completed keys and every failed one, and an add whose id
+already exists returns the old job and queues nothing, so the sweep would have
+repaired a chunk once and silently never again — in the pull request whose whole
+purpose was recovering a chunk nothing had retried. The unit test passed
+throughout: its queue accepted everything.
+
 ---
 
 ## 8. Boundaries, errors and API shape

@@ -7,6 +7,7 @@ interface OrphanChunks {
 
 interface Imports {
   completeJobIfDone(jobId: number): Promise<boolean>;
+  failJobIfExhausted(jobId: number): Promise<boolean>;
 }
 
 interface AnnouncementQueue {
@@ -32,9 +33,15 @@ export class SweepOrphanChunksCommand {
 
   async execute(): Promise<number> {
     const settled: number[] = [];
+    const givenUp: number[] = [];
 
-    for (const jobId of await this.chunks.runningJobIds())
+    for (const jobId of await this.chunks.runningJobIds()) {
       if (await this.imports.completeJobIfDone(jobId)) settled.push(jobId);
+      // A job whose every remaining chunk has spent its attempts is finished
+      // too, badly: it has to leave `running` or the vendor stays locked out by
+      // work that can never be done.
+      else if (await this.imports.failJobIfExhausted(jobId)) givenUp.push(jobId);
+    }
 
     const orphans = await this.chunks.orphaned(this.graceMs);
     let enqueued = 0;
@@ -55,9 +62,9 @@ export class SweepOrphanChunksCommand {
       }
     }
 
-    if (settled.length > 0 || orphans.length > 0)
+    if (settled.length > 0 || givenUp.length > 0 || orphans.length > 0)
       this.logger.warn(
-        { settled, enqueued, orphaned: orphans.length },
+        { settled, givenUp, enqueued, orphaned: orphans.length },
         'abandoned imports were swept',
       );
 

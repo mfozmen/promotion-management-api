@@ -111,6 +111,67 @@ export class IngestionRepository {
       })
       .where(and(eq(ingestionJobs.id, jobId), eq(ingestionJobs.status, 'running')));
   }
+  /** A failed attempt is recorded on the chunk and on its job, and a chunk that
+   *  has spent its attempts becomes `failed` — the terminal status that takes it
+   *  out of the reconciler's reach, so a chunk that can never succeed stops
+   *  being retried every five minutes. */
+  async recordChunkFailure(
+    jobId: number,
+    chunkIndex: number,
+    reason: string,
+    maxFailures: number,
+  ): Promise<{ failures: number; exhausted: boolean }> {
+    const [chunk] = await this.db
+      .update(ingestionChunks)
+      .set({
+        failures: sql`${ingestionChunks.failures} + 1`,
+        lastError: reason.slice(0, 1_000),
+        status: sql`case when ${ingestionChunks.failures} + 1 >= ${maxFailures}
+          then 'failed'::chunk_status else ${ingestionChunks.status} end`,
+      })
+      .where(and(eq(ingestionChunks.jobId, jobId), eq(ingestionChunks.chunkIndex, chunkIndex)))
+      .returning({ failures: ingestionChunks.failures, status: ingestionChunks.status });
+
+    await this.db
+      .update(ingestionJobs)
+      .set({ lastError: reason.slice(0, 1_000), updatedAt: sql`now()` })
+      .where(eq(ingestionJobs.id, jobId));
+
+    return { failures: chunk?.failures ?? 0, exhausted: chunk?.status === 'failed' };
+  }
+
+  /** A job with no chunk left to run and at least one that gave up is `failed`,
+   *  which is what releases the vendor from the one-running-import index. */
+  async failJobIfExhausted(jobId: number): Promise<boolean> {
+    const failed = await this.db
+      .update(ingestionJobs)
+      .set({
+        status: 'failed',
+        chunksDone: sql`(select count(*) from ${ingestionChunks}
+          where ${ingestionChunks.jobId} = ${jobId} and ${ingestionChunks.status} = 'done')`,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(ingestionJobs.id, jobId),
+          eq(ingestionJobs.status, 'running'),
+          sql`not exists (
+            select 1 from ${ingestionChunks}
+            where ${ingestionChunks.jobId} = ${jobId}
+              and ${ingestionChunks.status} not in ('done', 'failed')
+          )`,
+          sql`exists (
+            select 1 from ${ingestionChunks}
+            where ${ingestionChunks.jobId} = ${jobId}
+              and ${ingestionChunks.status} = 'failed'
+          )`,
+        ),
+      )
+      .returning({ id: ingestionJobs.id });
+
+    return failed.length === 1;
+  }
+
   /** The counters go in the statement that completes the job, so they are final by construction. */
   async completeJobIfDone(jobId: number): Promise<boolean> {
     const completed = await this.db
